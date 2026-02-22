@@ -32,11 +32,33 @@ class SelectEmpresaScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(FluentIcons.company_directory, size: 48),
+              Icon(
+                FluentIcons.company_directory,
+                size: 48,
+                color: FluentTheme.of(context).inactiveColor,
+              ),
               const SizedBox(height: 16),
               Text(
                 'No tienes empresas asignadas.',
                 style: FluentTheme.of(context).typography.body,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Crea tu primera empresa para comenzar a usar PILAR ERP.',
+                style: FluentTheme.of(context).typography.caption,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(FluentIcons.add, size: 16),
+                    SizedBox(width: 8),
+                    Text('Crear empresa'),
+                  ],
+                ),
+                onPressed: () => context.go(PilarRoutes.onboarding),
               ),
             ],
           ),

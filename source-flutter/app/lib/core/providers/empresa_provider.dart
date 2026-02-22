@@ -102,10 +102,15 @@ final misEmpresasProvider = FutureProvider<List<EmpresaResumen>>((ref) async {
   ref.watch(authStateProvider);
 
   final client = ref.watch(supabaseClientProvider);
-  final data = await client.rpc('get_mis_empresas');
-  return (data as List)
-      .map((e) => EmpresaResumen.fromJson(e as Map<String, dynamic>))
-      .toList();
+  try {
+    final data = await client.rpc('get_mis_empresas');
+    return (data as List)
+        .map((e) => EmpresaResumen.fromJson(e as Map<String, dynamic>))
+        .toList();
+  } catch (_) {
+    // RPC no existe aún (migraciones no aplicadas): mostrar empty state.
+    return const <EmpresaResumen>[];
+  }
 });
 
 /// ID de la empresa activa extraido del JWT (appMetadata).
