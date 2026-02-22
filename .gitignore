@@ -1,0 +1,71 @@
+# =============================================================================
+# PILAR ERP — .gitignore
+# =============================================================================
+
+# ─── Paquetes de desarrollo local (no trackear) ──────────────────────────────
+# fluent_ui fork local — solo para desarrollo Flutter, tiene su propio repo
+source-flutter/paquetes/fluent_ui/
+
+# ─── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# ─── Flutter / Dart ───────────────────────────────────────────────────────────
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# Brick generated files (se regeneran con build_runner)
+lib/brick/
+lib/core/brick/adapters/
+lib/core/brick/db/
+
+# ─── Supabase ─────────────────────────────────────────────────────────────────
+# Entorno local de Supabase (levantado con `supabase start`)
+foundation/supabase/.branches/
+foundation/supabase/.temp/
+.supabase/
+
+# ─── Variables de entorno y secretos ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.p12
+*.pem
+*.key
+secrets/
+
+# ─── Editores e IDEs ─────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Deno ─────────────────────────────────────────────────────────────────────
+.deno/
+deno.lock
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+
+# ─── Logs / Temporales ───────────────────────────────────────────────────────
+*.log
+logs/
+*.tmp
+*.temp
+tmp/
+temp/
+.env0

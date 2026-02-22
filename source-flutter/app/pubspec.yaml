@@ -1,0 +1,83 @@
+name: pilar_erp
+description: PILAR ERP — SaaS multi-tenant para Ecuador. Facturación electrónica SRI, offline-first.
+version: 0.1.0+1
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # === Paquetes locales PILAR ===
+  fluent_ui:
+    path: ../paquetes/fluent_ui
+  fluent_ui_reactive:
+    path: ../paquetes/fluent_ui_reactive
+  supabase_auth_ui_fluent:
+    path: ../paquetes/flutter-auth-fluent-ui
+
+  # === State management ===
+  flutter_riverpod: ^2.5.0
+  riverpod_annotation: ^2.3.5
+
+  # === Routing ===
+  go_router: ^14.6.0
+
+  # === Backend ===
+  supabase_flutter: ^2.5.6
+
+  # === Offline-first (Brick) ===
+  brick_offline_first_with_supabase: ^2.1.0
+  brick_supabase: ^2.1.1
+  sqflite: ^2.3.3+1
+
+  # === Desktop ===
+  window_manager: ^0.5.0
+  flutter_acrylic: ^1.0.0+2
+  system_theme: ^3.1.2
+
+  # === Syncfusion ===
+  syncfusion_flutter_core: ^32.2.5
+  syncfusion_flutter_datagrid: ^32.2.5
+
+  # === Utilities ===
+  decimal: ^2.3.3
+  intl: ^0.20.2
+  shared_preferences: ^2.3.0
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  riverpod_generator: ^2.4.0
+  build_runner: ^2.4.0
+  flutter_launcher_icons: ^0.14.3
+  # brick_offline_first_with_supabase_build y brick_build se mantienen en
+  # un workspace separado (brick_models/) para evitar conflicto build ^2 vs ^3
+  # con riverpod_generator ^2.x
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/pilar_icon.png"
+  web:
+    generate: true
+    image_path: "assets/icon/pilar_icon.png"
+    background_color: "#0078D4"
+  windows:
+    generate: true
+    image_path: "assets/icon/pilar_icon.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/pilar_icon.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logos/
+    - assets/images/
+    - assets/icon/

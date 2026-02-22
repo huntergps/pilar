@@ -1,0 +1,339 @@
+# =============================================================================
+# PILAR ERP — Supabase Local Development Configuration
+# https://supabase.com/docs/guides/cli/config
+#
+# Uso:
+#   supabase start          → Levanta entorno local completo
+#   supabase db push        → Aplica migraciones
+#   supabase db lint        → Valida schema
+#   supabase functions serve <nombre> → Dev local de Edge Functions
+#
+# IMPORTANTE: Este archivo NO contiene secretos. Las variables de entorno
+# sensibles (OPENAI_API_KEY, FCM_SERVICE_ACCOUNT_KEY, etc.) se definen en
+# supabase/.env.local (excluido de Git via .gitignore).
+# =============================================================================
+
+project_id = "pilar-erp"
+
+# =============================================================================
+# API (PostgREST)
+# =============================================================================
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+# =============================================================================
+# BASE DE DATOS (PostgreSQL 15+)
+# =============================================================================
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.pooler]
+enabled = true
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+# =============================================================================
+# STUDIO (Dashboard local)
+# =============================================================================
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+openai_api_key = "env(OPENAI_API_KEY)"
+
+# =============================================================================
+# INBUCKET (Servidor de email local para pruebas de Auth)
+# =============================================================================
+
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+# =============================================================================
+# AUTH (GoTrue)
+# =============================================================================
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:54321",
+  "pilar://auth/callback",
+  "pilarsalon://auth/callback",
+  "pilarcliente://auth/callback"
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+minimum_password_length = 8
+password_requirements = "letters_digits"
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = true
+otp_length = 6
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+# Proveedores OAuth (configurar con credenciales reales en producción)
+[auth.external.google]
+enabled = false
+client_id = "env(AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(AUTH_GOOGLE_SECRET)"
+
+# =============================================================================
+# STORAGE
+# =============================================================================
+
+[storage]
+enabled = true
+file_size_limit = "52428800"  # 50 MB límite global
+
+# ---------------------------------------------------------------------------
+# Bucket: logos
+# Logotipos de empresa para branding multi-tenant.
+# Público: las apps cargan el logo sin necesidad de JWT.
+# ---------------------------------------------------------------------------
+[storage.buckets.logos]
+public = true
+file_size_limit = "2097152"  # 2 MB
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
+
+# ---------------------------------------------------------------------------
+# Bucket: assets
+# Assets de UI generales (iconos, imágenes, plantillas PDF, etc.).
+# Público: accesibles sin autenticación.
+# ---------------------------------------------------------------------------
+[storage.buckets.assets]
+public = true
+file_size_limit = "10485760"  # 10 MB
+allowed_mime_types = [
+  "image/png", "image/jpeg", "image/webp", "image/svg+xml",
+  "application/pdf", "text/html", "text/css"
+]
+
+# ---------------------------------------------------------------------------
+# Bucket: certificados
+# Certificados digitales SRI (.p12/.pfx) por empresa.
+# Privado: lectura solo via service_role (Edge Function sri-firma-envio).
+# La contraseña del .p12 se guarda en Supabase Vault (pgsodium), no aquí.
+# ---------------------------------------------------------------------------
+[storage.buckets.certificados]
+public = false
+file_size_limit = "10485760"  # 10 MB
+allowed_mime_types = ["application/x-pkcs12", "application/octet-stream"]
+
+# ---------------------------------------------------------------------------
+# Bucket: xml-firmados
+# XMLs comprobantes electrónicos firmados con XAdES-BES, antes de enviar al SRI.
+# Privado: escritura desde Edge Function sri-firma-envio.
+# Path convention: xml-firmados/<empresa_id>/<clave_acceso>.xml
+# ---------------------------------------------------------------------------
+[storage.buckets.xml-firmados]
+public = false
+file_size_limit = "5242880"  # 5 MB
+allowed_mime_types = ["application/xml", "text/xml"]
+
+# ---------------------------------------------------------------------------
+# Bucket: xml-autorizados
+# XMLs autorizados por el SRI con clave de acceso y número de autorización.
+# Privado: acceso por empresa autenticada.
+# Path convention: xml-autorizados/<empresa_id>/<clave_acceso>.xml
+# ---------------------------------------------------------------------------
+[storage.buckets.xml-autorizados]
+public = false
+file_size_limit = "5242880"  # 5 MB
+allowed_mime_types = ["application/xml", "text/xml"]
+
+# ---------------------------------------------------------------------------
+# Bucket: rides
+# Comprobantes PDF (RIDE — Representación Impresa de Documentos Electrónicos).
+# Privado: generados por Edge Function generate-ride.
+# Path convention: rides/<empresa_id>/<clave_acceso>.pdf
+# ---------------------------------------------------------------------------
+[storage.buckets.rides]
+public = false
+file_size_limit = "5242880"  # 5 MB
+allowed_mime_types = ["application/pdf"]
+
+# =============================================================================
+# EDGE FUNCTIONS
+# Configuración por función: verify_jwt y variables de entorno.
+# Las funciones sin sección explícita heredan verify_jwt = true (default).
+# Las variables de entorno se definen en supabase/.env.local (nunca en este archivo).
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# upload-logo: Sube y valida logotipo de empresa al bucket logos.
+# Requiere JWT para verificar empresa_id del usuario autenticado.
+# ---------------------------------------------------------------------------
+[functions.upload-logo]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# upload-certificate: Sube certificado .p12 SRI y registra contraseña en Vault.
+# Requiere JWT (solo administradores de empresa pueden subir certificados).
+# ---------------------------------------------------------------------------
+[functions.upload-certificate]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# sri-firma-envio: Firma XML con XAdES-BES y envía al SRI via SOAP.
+# Requiere JWT (invocado desde Flutter o desde otras Edge Functions con service_role).
+# ---------------------------------------------------------------------------
+[functions.sri-firma-envio]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# generate-ride: Genera PDF RIDE desde datos de factura autorizada.
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.generate-ride]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# poll-autorizacion: Consulta estado de autorización de documentos en cola SRI.
+# Invocado periódicamente via pg_cron con service_role key.
+# verify_jwt = true — la autenticación se hace con service_role JWT de pg_cron.
+# ---------------------------------------------------------------------------
+[functions.poll-autorizacion]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# send-notification: Envía notificaciones multi-canal (Email/WhatsApp/Telegram).
+# Requiere JWT de usuario o service_role para invocaciones internas.
+# ---------------------------------------------------------------------------
+[functions.send-notification]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# generate-ats: Genera el Anexo Transaccional Simplificado (ATS) en XML.
+# Requiere JWT (solo usuarios con permiso de Tributación).
+# ---------------------------------------------------------------------------
+[functions.generate-ats]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# generate-declaracion-103: Genera formulario 103 (Retenciones en la Fuente).
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.generate-declaracion-103]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# generate-declaracion-104: Genera formulario 104 (IVA mensual/semestral).
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.generate-declaracion-104]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# import-bank-statement: Importa extracto bancario (CSV/XLS) y concilia.
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.import-bank-statement]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# process-payment: Procesa pago online (Kushki / Paymentez / PayPhone).
+# Requiere JWT del cliente autenticado.
+# ---------------------------------------------------------------------------
+[functions.process-payment]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# webhook-kushki: Recibe notificaciones de eventos de Kushki.
+# verify_jwt = false — llamado por Kushki, NO por usuarios.
+# Autenticación propia via firma HMAC-SHA256 en header X-Kushki-Signature.
+# ---------------------------------------------------------------------------
+[functions.webhook-kushki]
+verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# webhook-paymentez: Recibe notificaciones de eventos de Paymentez/Nuvei.
+# verify_jwt = false — llamado por Paymentez, NO por usuarios.
+# Autenticación propia via campo "sync_token" en el body.
+# ---------------------------------------------------------------------------
+[functions.webhook-paymentez]
+verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# ai-embed: Genera embeddings semánticos con OpenAI text-embedding-3-small.
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.ai-embed]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# ai-query: Búsqueda semántica + contexto para chat NLP (pgvector similarity).
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.ai-query]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# ai-report: Genera reportes en lenguaje natural usando IA generativa.
+# Requiere JWT.
+# ---------------------------------------------------------------------------
+[functions.ai-report]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# push-notify: Envía notificaciones push via Firebase Cloud Messaging v1 API.
+# Requiere JWT de usuario o service_role para invocaciones internas.
+# ---------------------------------------------------------------------------
+[functions.push-notify]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# booking-reminders: Batch job de recordatorios de citas (invocado por pg_cron).
+# verify_jwt = false — llamado por pg_cron, NO por usuarios.
+# Autenticación propia: header "Authorization: Bearer {CRON_SECRET}".
+# ---------------------------------------------------------------------------
+[functions.booking-reminders]
+verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# auth-setup-handler: Crea bucket Storage cuando se registra una empresa nueva.
+# Invocado por Database Webhook sobre empresas INSERT (no por usuarios).
+# verify_jwt = false — valida internamente que el Bearer sea SERVICE_ROLE_KEY.
+# ---------------------------------------------------------------------------
+[functions.auth-setup-handler]
+verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# invite-user: Envía invitaciones a nuevos usuarios vía Supabase Auth Admin API.
+# Invocado por usuarios autenticados con permiso plataforma.usuarios.gestionar.
+# ---------------------------------------------------------------------------
+[functions.invite-user]
+verify_jwt = true
+
+# =============================================================================
+# ANALYTICS (opcional, deshabilitado en local)
+# =============================================================================
+
+[analytics]
+enabled = false
+port = 54327
+backend = "postgres"

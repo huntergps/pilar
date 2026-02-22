@@ -1,0 +1,28 @@
+name: fluent_ui_reactive
+description: >
+  Reactive fluent_ui widgets for PILAR ERP.
+  When local SQLite (Brick + Riverpod) data changes, widgets update automatically.
+  Uses AsyncValue<T> from Riverpod as the reactive bridge between Brick streams and UI.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fluent_ui:
+    path: ../fluent_ui
+  flutter_riverpod: ^2.5.0
+  syncfusion_flutter_core: ^32.2.5
+  syncfusion_flutter_datagrid: ^32.2.5
+  syncfusion_flutter_charts: ^32.2.5
+  decimal: ^2.3.3
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0

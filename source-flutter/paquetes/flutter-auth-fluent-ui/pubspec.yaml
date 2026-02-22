@@ -1,0 +1,30 @@
+name: supabase_auth_ui_fluent
+description: >-
+  UI library to implement Supabase auth forms using the Fluent UI design system.
+  A port of supabase_auth_ui that uses fluent_ui instead of Material widgets.
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fluent_ui:
+    path: ../fluent_ui
+  supabase_flutter: ^2.5.6
+  email_validator: ^2.0.1
+  font_awesome_flutter: ^10.6.0
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.0
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  assets:
+    - assets/logos/
