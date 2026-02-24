@@ -41,23 +41,38 @@ class EmpresaResumen {
 }
 
 /// Configuracion completa de la empresa activa.
-/// Incluye branding, SRI y moneda funcional.
+/// Incluye datos de contacto, branding y moneda funcional.
 class EmpresaConfig {
   const EmpresaConfig({
     required this.empresaId,
     required this.nombre,
+    this.nombreComercial,
     this.ruc,
+    this.tipoRuc,
+    this.provinciaId,
+    this.ciudadId,
+    this.direccion,
+    this.telefono,
+    this.email,
+    this.web,
     this.logoUrl,
     this.colorPrimario,
     this.colorSecundario,
     this.loginTitulo,
-    required this.ambienteSri,
     required this.monedaFuncional,
   });
 
   final String empresaId;
   final String nombre;
+  final String? nombreComercial;
   final String? ruc;
+  final String? tipoRuc;
+  final int? provinciaId;
+  final int? ciudadId;
+  final String? direccion;
+  final String? telefono;
+  final String? email;
+  final String? web;
   final String? logoUrl;
 
   /// Color primario en formato hex, p.ej. "#0078D4".
@@ -69,9 +84,6 @@ class EmpresaConfig {
   /// Titulo personalizado que se muestra en la pantalla de login.
   final String? loginTitulo;
 
-  /// Ambiente SRI: 'pruebas' | 'produccion'.
-  final String ambienteSri;
-
   /// Codigo ISO de la moneda funcional, por defecto 'USD'.
   final String monedaFuncional;
 
@@ -79,12 +91,19 @@ class EmpresaConfig {
     return EmpresaConfig(
       empresaId: json['empresa_id'] as String,
       nombre: json['nombre'] as String,
+      nombreComercial: json['nombre_comercial'] as String?,
       ruc: json['ruc'] as String?,
+      tipoRuc: json['tipo_ruc'] as String?,
+      provinciaId: json['provincia_id'] as int?,
+      ciudadId: json['ciudad_id'] as int?,
+      direccion: json['direccion'] as String?,
+      telefono: json['telefono'] as String?,
+      email: json['email'] as String?,
+      web: json['web'] as String?,
       logoUrl: json['logo_url'] as String?,
       colorPrimario: json['color_primario'] as String?,
       colorSecundario: json['color_secundario'] as String?,
       loginTitulo: json['login_titulo'] as String?,
-      ambienteSri: json['ambiente_sri'] as String? ?? 'pruebas',
       monedaFuncional: json['moneda_funcional'] as String? ?? 'USD',
     );
   }
@@ -131,7 +150,7 @@ final empresaConfigProvider = FutureProvider<EmpresaConfig?>((ref) async {
 
   final client = ref.watch(supabaseClientProvider);
   final data = await client
-      .rpc('get_company_config', params: {'empresa_id': empresaId});
+      .rpc('get_company_config', params: {'p_empresa_id': empresaId});
   if (data == null) return null;
   return EmpresaConfig.fromJson(data as Map<String, dynamic>);
 });

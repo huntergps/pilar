@@ -51,7 +51,7 @@ class AdminPanelScreen extends ConsumerWidget {
     _AdminSection(
       FluentIcons.settings,
       'Configuración',
-      'SRI, notificaciones, parámetros',
+      'Servidor y parámetros generales',
       PilarRoutes.adminConfiguracion,
     ),
   ];

@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/auth_provider.dart';
-import '../providers/empresa_provider.dart';
 import '../shell/pilar_shell.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
@@ -11,7 +11,6 @@ import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/onboarding/screens/onboarding_wizard.dart';
 import '../../features/select_empresa/screens/select_empresa_screen.dart';
 import '../../features/setup/screens/supabase_setup_screen.dart';
-import '../../features/administracion/screens/admin_panel_screen.dart';
 import '../../features/administracion/screens/empresa_screen.dart';
 import '../../features/administracion/screens/usuarios_screen.dart';
 import '../../features/administracion/screens/modulos_screen.dart';
@@ -75,7 +74,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         return loc == PilarRoutes.setup ? null : PilarRoutes.setup;
       }
 
-      final session = ref.read(sessionProvider);
+      // Read session directly from the Supabase client (synchronous, always
+      // up-to-date). Using ref.read(sessionProvider) here would cause a race
+      // condition on mobile: the Riverpod StreamProvider may not yet reflect
+      // the new session at the moment the redirect fires.
+      final supabase = Supabase.instance.client;
+      final session = supabase.auth.currentSession;
       final isLoggedIn = session != null;
       final isAuthRoute = loc.startsWith('/auth');
 
@@ -84,10 +88,22 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 3. Authenticated on auth screen → into the app.
       if (isLoggedIn && isAuthRoute) {
-        final empresaId = ref.read(empresaActivaIdProvider);
+        final empresaId = session.user.appMetadata['empresa_id'] as String?;
         return empresaId != null
             ? PilarRoutes.dashboard
             : PilarRoutes.selectEmpresa;
+      }
+
+      // 4. Authenticated anywhere without empresa_id → empresa setup.
+      //    Handles the email-confirmation deep link: the user arrives at
+      //    /dashboard (initial location) after confirming their email without
+      //    ever passing through an /auth/* route, so condition 3 never fires.
+      if (isLoggedIn) {
+        const setupRoutes = [PilarRoutes.selectEmpresa, PilarRoutes.onboarding];
+        if (!setupRoutes.contains(loc)) {
+          final empresaId = session.user.appMetadata['empresa_id'] as String?;
+          if (empresaId == null) return PilarRoutes.selectEmpresa;
+        }
       }
 
       return null;
@@ -131,7 +147,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: PilarRoutes.admin,
-            builder: (_, __) => const AdminPanelScreen(),
+            redirect: (_, __) => PilarRoutes.adminEmpresa,
           ),
           GoRoute(
             path: PilarRoutes.adminEmpresa,

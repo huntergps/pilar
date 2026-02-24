@@ -3,43 +3,19 @@
  *
  * Crea el bucket privado de Storage cuando se registra una nueva empresa.
  *
- * NOTA: Con la introducción del custom_access_token_hook (019_auth_hook.sql),
- * esta función ya NO necesita actualizar app_metadata del JWT. El hook lo hace
- * automáticamente en cada generación de token. Esta función solo gestiona el
- * efecto de infraestructura que PL/pgSQL no puede hacer directamente:
- *   → Crear el bucket privado de Storage para la empresa (Storage Admin API).
+ * Invocada por:
+ *   1. Trigger pg_net (migración 025): AFTER INSERT ON empresas
+ *   2. GitHub Actions catch-up step
+ *   3. Llamada manual para testing/reintentos
  *
- * ---------------------------------------------------------------------------
- * CÓMO SE INVOCA
- * ---------------------------------------------------------------------------
- * Database Webhook sobre empresas INSERT (configurar en Supabase Dashboard):
- *   Database → Webhooks → Create webhook
- *   Table: public.empresas | Event: INSERT
- *   URL: https://<project-ref>.supabase.co/functions/v1/auth-setup-handler
- *   Headers:
- *     Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>
- *     Content-Type: application/json
+ * Auth: verify_jwt = true — Supabase valida el JWT.
+ *       La función verifica además que role == 'service_role'.
  *
- * El webhook envía el payload estándar de Supabase:
- *   {
- *     "type":       "INSERT",
- *     "table":      "empresas",
- *     "schema":     "public",
- *     "record":     { "id": "<empresa_id>", "nombre": "...", ... },
- *     "old_record": null
- *   }
+ * Payload acepta dos formatos:
+ *   Trigger pg_net / manual: { empresa_id: "<uuid>" }
+ *   Database Webhook legacy: { type, table, schema, record: { id } }
  *
- * También acepta llamadas manuales para testing o reintentos:
- *   curl -X POST .../functions/v1/auth-setup-handler \
- *     -H 'Authorization: Bearer <SERVICE_ROLE_KEY>' \
- *     -H 'Content-Type: application/json' \
- *     -d '{"empresa_id": "<uuid>"}'
- *
- * Método:   POST
- * Auth:     Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>
- *           (verify_jwt: false — la función valida el token internamente)
- *
- * Respuesta (siempre 200 para evitar retries no deseados del webhook):
+ * Respuesta (siempre 200 para evitar retries innecesarios):
  *   { ok: true,  empresa_id: string, step: string }
  *   { ok: false, error: string, message: string }
  */
@@ -52,7 +28,6 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts';
 // Constantes
 // ---------------------------------------------------------------------------
 
-/** Límite de tamaño por archivo en el bucket privado de cada empresa */
 const BUCKET_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50 MB
 
 // ---------------------------------------------------------------------------
@@ -67,30 +42,39 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
- * Verifica que la llamada provenga del sistema (Bearer = SERVICE_ROLE_KEY).
- * Los Database Webhooks de Supabase incluyen este header automáticamente
- * si se configura en el Dashboard.
+ * Verifica que la llamada provenga de un service_role.
+ * Con verify_jwt = true, Supabase ya validó la firma del JWT.
+ * Aquí solo verificamos que el rol en el payload sea 'service_role'.
  */
 function verificarOrigen(req: Request): boolean {
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  return token === serviceRoleKey && serviceRoleKey.length > 0;
+  if (!token) return false;
+
+  try {
+    // Decodificar payload del JWT (sin reverificar firma — Supabase ya lo hizo)
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    // Padding Base64URL → Base64 standard
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(padded));
+    return payload.role === 'service_role';
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Extrae empresa_id del payload. Acepta dos formatos:
- *   1. Database Webhook de Supabase: { type, table, schema, record: { id } }
- *   2. Llamada manual para testing:  { empresa_id }
+ * Extrae empresa_id del payload.
+ *   Manual/pg_net:      { empresa_id: "<uuid>" }
+ *   Database Webhook:   { record: { id: "<uuid>", ... } }
  */
 function extraerEmpresaId(payload: Record<string, unknown>): string | null {
-  // Formato Database Webhook
+  if (typeof payload.empresa_id === 'string') return payload.empresa_id;
   if (payload.record && typeof payload.record === 'object') {
     const record = payload.record as Record<string, unknown>;
     if (typeof record.id === 'string') return record.id;
   }
-  // Formato manual
-  if (typeof payload.empresa_id === 'string') return payload.empresa_id;
   return null;
 }
 
@@ -107,10 +91,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
   }
 
-  // 2. Verificar origen
+  // 2. Verificar que el llamador tiene rol service_role
   if (!verificarOrigen(req)) {
-    console.warn('[auth-setup-handler] Llamada rechazada — token inválido');
-    return jsonResponse({ ok: false, error: 'UNAUTHORIZED', message: 'Token inválido' }, 401);
+    console.warn('[auth-setup-handler] Llamada rechazada — se requiere service_role JWT');
+    return jsonResponse({
+      ok: false,
+      error: 'UNAUTHORIZED',
+      message: 'Se requiere service_role JWT',
+    }, 401);
   }
 
   // 3. Parsear payload
@@ -126,7 +114,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({
       ok: false,
       error: 'EMPRESA_ID_REQUERIDO',
-      message: 'No se encontró empresa_id en el payload (record.id o empresa_id)',
+      message: 'No se encontró empresa_id en el payload',
     });
   }
 
@@ -140,11 +128,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { error: bucketError } = await adminClient.storage.createBucket(empresaId, {
     public: false,
     fileSizeLimit: BUCKET_FILE_SIZE_LIMIT,
-    allowedMimeTypes: null, // Sin restricción global; cada módulo filtra en su función
+    allowedMimeTypes: null,
   });
 
   if (bucketError) {
-    // Bucket ya existe → idempotente, no es error real
     const yaExiste =
       bucketError.message?.toLowerCase().includes('already exists') ||
       bucketError.message?.toLowerCase().includes('duplicate');
@@ -159,9 +146,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     console.error(`[auth-setup-handler] Error al crear bucket ${empresaId}:`, bucketError);
-    // Retornamos 200 para que el webhook no reintente indefinidamente errores
-    // permanentes (ej: nombre de bucket inválido). Los errores transitorios
-    // sí deberían reintentarse — en ese caso cambiar a status 5xx.
     return jsonResponse({
       ok: false,
       error: 'BUCKET_CREATE_ERROR',

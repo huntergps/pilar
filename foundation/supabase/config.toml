@@ -96,6 +96,18 @@ otp_expiry = 3600
 enable_signup = false
 enable_confirmations = false
 
+# =============================================================================
+# AUTH HOOKS
+# Funciones PostgreSQL invocadas automáticamente por Supabase Auth.
+# En producción se habilitan via Management API (ver deploy-supabase.yml).
+# =============================================================================
+
+# Inyecta empresa_id en el JWT en cada generación de token.
+# CRÍTICO: sin esto, private.get_empresa_id() retorna NULL y todas las RLS fallan.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
 # Proveedores OAuth (configurar con credenciales reales en producción)
 [auth.external.google]
 enabled = false
@@ -316,11 +328,11 @@ verify_jwt = false
 
 # ---------------------------------------------------------------------------
 # auth-setup-handler: Crea bucket Storage cuando se registra una empresa nueva.
-# Invocado por Database Webhook sobre empresas INSERT (no por usuarios).
-# verify_jwt = false — valida internamente que el Bearer sea SERVICE_ROLE_KEY.
+# Invocado por pg_net trigger (migración 025) o GitHub Actions catch-up step.
+# verify_jwt = true — Supabase valida el JWT; la función verifica role=service_role.
 # ---------------------------------------------------------------------------
 [functions.auth-setup-handler]
-verify_jwt = false
+verify_jwt = true
 
 # ---------------------------------------------------------------------------
 # invite-user: Envía invitaciones a nuevos usuarios vía Supabase Auth Admin API.

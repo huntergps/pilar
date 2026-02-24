@@ -14,6 +14,7 @@ El **Sistema Base** es el núcleo funcional de PILAR: puede desplegarse solo, si
 6. [Module Launcher](#6-module-launcher)
 7. [Panel de Administración](#7-panel-de-administración)
 8. [Core Foundation (servicios compartidos)](#8-core-foundation)
+   - 8.1 Secuencias · 8.2 Adjuntos · 8.3 Audit Trail · 8.4 Configuración · 8.5 Sesiones · [8.6 Alertas de Empresa](#86-alertas-de-empresa)
 9. [Función RLS: `private.get_empresa_id()`](#9-función-rls)
 10. [RPCs del Sistema Base](#10-rpcs-del-sistema-base)
 11. [Flujo de Onboarding](#11-flujo-de-onboarding)
@@ -31,7 +32,7 @@ SISTEMA BASE (funcional sin módulos de negocio)
 ├── Roles & Permisos  SUPER_ADMIN / SAAS_ADMIN / ADMIN / GERENTE / CONTADOR / FACTURADOR / VENDEDOR / COMPRADOR / BODEGUERO / CAJERO / LECTURA + permisos granulares (definidos por cada módulo al activarse)
 ├── Module Launcher   App Launcher dinámico según módulos activos + planes SaaS
 ├── Admin Panel       Configurar empresa, gestionar usuarios, activar módulos
-└── Core Foundation   Adjuntos, notificaciones, audit trail, catálogos, secuencias
+└── Core Foundation   Adjuntos, notificaciones, alertas, audit trail, catálogos, secuencias
 ```
 
 Cuando el sistema base arranca **sin ningún módulo activado**, el usuario ve:
@@ -703,6 +704,161 @@ Config en `parametros_sistema`:
 - `max_sesiones_simultaneas`: 5 (default)
 - `timeout_inactividad_minutos`: 30 (default)
 
+### 8.6 Alertas de Empresa
+
+Las **alertas de empresa** son mensajes persistentes visibles para todos (o un subconjunto de roles) dentro de una empresa. A diferencia de `notificaciones_usuario` (efímeras, por usuario, se marcan como leídas), una alerta permanece **activa** hasta que alguien la **resuelva** o **ignore**.
+
+#### Casos de uso
+
+| Origen | Ejemplo |
+|--------|---------|
+| SRI / facturación | "Certificado digital vence en 7 días" |
+| Inventario | "Stock negativo en producto X" |
+| Contabilidad | "Período fiscal sin cerrar" |
+| Tesorería | "Cheque rechazado sin gestionar" |
+| Sistema | "Copia de seguridad fallida" |
+
+#### Tabla `alertas_empresa`
+
+```sql
+CREATE TABLE alertas_empresa (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa_id      UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+
+  -- Origen
+  origen_modulo   VARCHAR(60) NOT NULL,    -- 'facturacion', 'inventario', etc.
+  codigo_alerta   VARCHAR(100),            -- Clave semántica, ej: 'SRI_CERT_EXPIRING'
+  registro_id     UUID,                    -- Soft ref al registro relacionado (sin FK)
+
+  -- Contenido
+  severidad       VARCHAR(20) NOT NULL DEFAULT 'warning',  -- 'info'|'warning'|'error'|'critical'
+  titulo          VARCHAR(300) NOT NULL,
+  cuerpo          TEXT,
+  datos           JSONB NOT NULL DEFAULT '{}',  -- Metadata extra (días restantes, etc.)
+  accion_url      TEXT,                         -- Deep-link opcional para navegar al problema
+
+  -- Visibilidad
+  roles_destino   TEXT[],                  -- NULL = todos; ['ADMIN','CONTADOR'] = solo esos roles
+
+  -- Ciclo de vida
+  estado          VARCHAR(20) NOT NULL DEFAULT 'activa',   -- 'activa'|'resuelta'|'ignorada'
+  resuelta_por    UUID REFERENCES auth.users(id),
+  resuelta_at     TIMESTAMPTZ,
+  nota_resolucion TEXT,
+  expira_at       TIMESTAMPTZ,            -- NULL = no expira (expiran automáticamente vía pg_cron)
+
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Índice para queries de alertas activas (más frecuentes)
+CREATE INDEX idx_alertas_empresa_activas
+  ON alertas_empresa(empresa_id, severidad, created_at DESC)
+  WHERE estado = 'activa';
+
+-- Índice parcial de deduplicación: evita alertas activas duplicadas del mismo tipo
+CREATE UNIQUE INDEX idx_alertas_dedup
+  ON alertas_empresa(empresa_id, codigo_alerta)
+  WHERE estado = 'activa' AND codigo_alerta IS NOT NULL;
+
+-- Realtime habilitado
+ALTER TABLE alertas_empresa REPLICA IDENTITY FULL;
+ALTER PUBLICATION supabase_realtime ADD TABLE alertas_empresa;
+```
+
+#### Ciclo de vida
+
+```
+[Módulo llama crear_alerta()]
+         ↓
+    estado = 'activa'
+         ↓
+  visible en PilarHeader
+  (badge con color por severidad)
+         ↓
+   Usuario abre AlertasPanel
+         ↓
+    ┌────┴────┐
+  Resolver  Ignorar
+    ↓         ↓
+ 'resuelta'  'ignorada'
+  (con nota opcional)
+```
+
+**Deduplicación**: Si un módulo llama `crear_alerta()` con el mismo `codigo_alerta` y ya existe una alerta activa con ese código para la empresa, la llamada hace `ON CONFLICT DO UPDATE` (actualiza `titulo`, `cuerpo`, `datos` y `updated_at`) en lugar de crear un duplicado. Esto garantiza que un proceso recurrente (ej: pg_cron revisando certificados) no genere spam de alertas.
+
+#### RPCs
+
+| Función | Descripción |
+|---------|-------------|
+| `crear_alerta(origen, severidad, titulo, ...)` | Crea o actualiza (upsert por `codigo_alerta`) |
+| `resolver_alerta(p_alerta_id, p_nota?)` | Marca como resuelta con nota opcional |
+| `ignorar_alerta(p_alerta_id)` | Marca como ignorada |
+| `get_alertas_activas(p_limite, p_offset)` | Lista alertas activas visibles para el rol del usuario |
+| `get_count_alertas_activas()` | Conteo para badge del header (sin paginación) |
+
+`crear_alerta` solo puede ser llamada con `SECURITY DEFINER` desde el backend (Edge Functions, pg_cron, otros RPCs). **No está expuesta al cliente Flutter.**
+
+`get_alertas_activas` aplica la visibilidad por `roles_destino`: si es NULL muestra a todos; si tiene valores, filtra por el rol del usuario en la empresa.
+
+#### pg_cron jobs
+
+| Job | Schedule | Acción |
+|-----|----------|--------|
+| `pilar_expire_alertas` | Cada hora `:00` | `UPDATE estado='ignorada' WHERE expira_at < NOW() AND estado='activa'` |
+| `pilar_cleanup_old_alertas` | Diario 03:30 | `DELETE WHERE estado IN ('resuelta','ignorada') AND updated_at < NOW() - INTERVAL '1 year'` |
+
+#### Cómo los módulos crean alertas
+
+Cualquier módulo (Edge Function, pg_cron, RPC) puede crear alertas llamando a `crear_alerta()`. La función tiene `SECURITY DEFINER` y no requiere que el usuario tenga ningún permiso especial.
+
+```sql
+-- Ejemplo desde un job pg_cron en facturacion_ec:
+SELECT crear_alerta(
+  p_empresa_id    := v_empresa_id,
+  p_origen_modulo := 'facturacion_ec',
+  p_codigo_alerta := 'SRI_CERT_EXPIRING',   -- clave de deduplicación
+  p_severidad     := 'critical',
+  p_titulo        := 'Certificado SRI vence en ' || v_dias || ' días',
+  p_cuerpo        := 'El certificado .p12 expira el ' || to_char(v_fecha, 'DD/MM/YYYY') ||
+                     '. Renuévelo para evitar interrupciones en la facturación.',
+  p_datos         := jsonb_build_object('dias_restantes', v_dias, 'empresa_id', v_empresa_id),
+  p_roles_destino := ARRAY['ADMIN', 'CONTADOR'],
+  p_expira_at     := NULL   -- permanece hasta que alguien la resuelva
+);
+```
+
+```typescript
+// Ejemplo desde una Edge Function (Deno):
+const { error } = await supabaseAdmin.rpc('crear_alerta', {
+  p_empresa_id:    empresaId,
+  p_origen_modulo: 'tesoreria',
+  p_codigo_alerta: 'CHEQUE_RECHAZADO_' + chequeId,
+  p_severidad:     'error',
+  p_titulo:        `Cheque #${numero} rechazado por el banco`,
+  p_datos:         { cheque_id: chequeId, monto, banco },
+  p_roles_destino: ['ADMIN', 'TESORERO'],
+});
+```
+
+#### Flutter — integración en PilarShell
+
+```dart
+// En PilarHeader (lib/core/shell/pilar_header.dart):
+final alertasCount = ref.watch(alertasCountProvider).valueOrNull ?? 0;
+final alertas      = ref.watch(alertasActivasProvider).valueOrNull ?? [];
+
+// Badge rojo si hay critical/error, ámbar si solo warning/info
+final alertaColor = alertas.any((a) => a.severidad == 'critical' || a.severidad == 'error')
+    ? Colors.errorPrimaryColor
+    : const Color(0xFFF59E0B);
+
+// Icono FluentIcons.shield_alert — visible solo cuando alertasCount > 0
+// Al pulsar → showDialog<void>(builder: (_) => const AlertasPanel())
+```
+
+`alertasCountProvider` usa Realtime (INSERT + UPDATE en `alertas_empresa`) + refresh periódico de 60 s como fallback. El proveedor se invalida al cambiar sesión o empresa activa.
+
 ---
 
 ## 9. Función RLS
@@ -763,6 +919,15 @@ CREATE POLICY "own_records" ON usuarios_empresa
 | `admin_deactivate_user(usuario_id)` | Desactiva acceso de usuario | `administracion.usuarios.gestionar` |
 | `get_audit_trail(tabla, registro_id)` | Historial de cambios de un registro | Autenticado |
 | `get_next_sequence(codigo)` | Obtiene siguiente número de secuencia | Autenticado |
+| `get_notificaciones(p_limite, p_offset)` | Lista notificaciones del usuario (leídas + no leídas) | Autenticado |
+| `marcar_notificacion_leida(p_notificacion_id)` | Marca una notificación como leída | Autenticado |
+| `marcar_todas_notificaciones_leidas()` | Marca todas las notificaciones del usuario como leídas | Autenticado |
+| `get_count_notificaciones_no_leidas()` | Conteo para badge del header | Autenticado |
+| `crear_alerta(p_empresa_id, p_origen_modulo, p_severidad, p_titulo, ...)` | Crea o actualiza alerta activa (upsert por `codigo_alerta`) | SECURITY DEFINER (solo backend) |
+| `resolver_alerta(p_alerta_id, p_nota?)` | Resuelve una alerta con nota opcional | Autenticado (cualquier rol visible) |
+| `ignorar_alerta(p_alerta_id)` | Ignora una alerta | Autenticado (cualquier rol visible) |
+| `get_alertas_activas(p_limite, p_offset)` | Lista alertas activas filtradas por rol del usuario | Autenticado |
+| `get_count_alertas_activas()` | Conteo de alertas activas para badge del header | Autenticado |
 
 ### RPC: `get_mis_empresas()`
 

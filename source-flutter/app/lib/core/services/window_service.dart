@@ -34,7 +34,16 @@ class WindowService {
     if (!_isDesktop) return;
 
     await SystemTheme.accentColor.load();
-    await Window.initialize();
+
+    // flutter_acrylic: initialize only on platforms where we apply effects.
+    // Windows: also hide native caption controls (custom WindowCaption used).
+    if (Platform.isWindows) {
+      await Window.initialize();
+      await Window.hideWindowControls();
+    } else if (Platform.isMacOS) {
+      await Window.initialize(); // needed for sidebar translucency effect
+    }
+
     await windowManager.ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();
@@ -42,16 +51,28 @@ class WindowService {
     final height = prefs.getDouble(_keyHeight) ?? 800.0;
     final isMaximized = prefs.getBool(_keyMaximized) ?? false;
 
+    // Set title bar style before waitUntilReadyToShow for reliable application.
+    // windowButtonVisibility: false on all platforms — WindowCaption widget
+    // (window_manager) renders the correct native controls per platform:
+    //   macOS  → traffic-light buttons (red/yellow/green)
+    //   Windows/Linux → minimize / maximize / close
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+    );
+
+    await windowManager.setMinimumSize(const Size(800, 600));
+
+    // Restore saved window geometry or fall back to defaults.
+    if (width >= 800 && height >= 600) {
+      await windowManager.setSize(Size(width, height));
+    } else {
+      await windowManager.setSize(const Size(1280, 800));
+    }
+    await windowManager.center();
+
     await windowManager.waitUntilReadyToShow(
-      WindowOptions(
-        size: Size(width, height),
-        minimumSize: const Size(800, 600),
-        center: true,
-        // Native title bar is hidden; PilarShell provides a custom
-        // DragToMoveArea + window control buttons.
-        titleBarStyle: TitleBarStyle.hidden,
-        windowButtonVisibility: false,
-      ),
+      null,
       () async {
         if (isMaximized) {
           await windowManager.maximize();
@@ -65,12 +86,12 @@ class WindowService {
     if (Platform.isWindows) {
       await Window.setEffect(
         effect: WindowEffect.acrylic,
-        color: const Color(0xCCF5F5F5),
+        color: const Color(0xCC1C1C1C),
       );
     } else if (Platform.isMacOS) {
       await Window.setEffect(effect: WindowEffect.sidebar);
     }
-    // Linux: no translucency effect applied (limited compositor support).
+    // Linux: no translucency effect (limited compositor support).
   }
 
   /// Persists the current window geometry and maximized state.

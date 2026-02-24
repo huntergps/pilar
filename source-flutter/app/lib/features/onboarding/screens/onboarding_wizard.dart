@@ -1,31 +1,18 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 
+import '../../../core/providers/empresa_provider.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/pilar_spacing.dart';
+import '../../../features/administracion/providers/admin_providers.dart';
 
 // ---------------------------------------------------------------------------
-// Private data models
+// Data models
 // ---------------------------------------------------------------------------
-
-class _ModuloCard {
-  const _ModuloCard({
-    required this.id,
-    required this.nombre,
-    required this.desc,
-    required this.icono,
-    this.obligatorio = false,
-  });
-
-  final String id;
-  final String nombre;
-  final String desc;
-  final IconData icono;
-  final bool obligatorio;
-}
 
 class _InvitacionPendiente {
   _InvitacionPendiente();
@@ -35,71 +22,72 @@ class _InvitacionPendiente {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
+// Geographic catalog (embedded — static Ecuador SRI data)
 // ---------------------------------------------------------------------------
 
-const _provinciasEcuador = [
-  'Azuay',
-  'Bolívar',
-  'Cañar',
-  'Carchi',
-  'Chimborazo',
-  'Cotopaxi',
-  'El Oro',
-  'Esmeraldas',
-  'Galápagos',
-  'Guayas',
-  'Imbabura',
-  'Loja',
-  'Los Ríos',
-  'Manabí',
-  'Morona Santiago',
-  'Napo',
-  'Orellana',
-  'Pastaza',
-  'Pichincha',
-  'Santa Elena',
-  'Santo Domingo de los Tsáchilas',
-  'Sucumbíos',
-  'Tungurahua',
-  'Zamora Chinchipe',
+// (id, nombre)
+const _provincias = [
+  (1, 'Azuay'),
+  (2, 'Bolívar'),
+  (3, 'Cañar'),
+  (4, 'Carchi'),
+  (5, 'Cotopaxi'),
+  (6, 'Chimborazo'),
+  (7, 'El Oro'),
+  (8, 'Esmeraldas'),
+  (9, 'Guayas'),
+  (10, 'Imbabura'),
+  (11, 'Loja'),
+  (12, 'Los Ríos'),
+  (13, 'Manabí'),
+  (14, 'Morona Santiago'),
+  (15, 'Napo'),
+  (16, 'Pastaza'),
+  (17, 'Pichincha'),
+  (18, 'Tungurahua'),
+  (19, 'Zamora Chinchipe'),
+  (20, 'Galápagos'),
+  (21, 'Sucumbíos'),
+  (22, 'Orellana'),
+  (23, 'Santo Domingo de los Tsáchilas'),
+  (24, 'Santa Elena'),
 ];
 
-const _availableModulos = [
-  _ModuloCard(
-    id: 'facturacion',
-    nombre: 'Facturación',
-    desc: 'Emisión de facturas electrónicas SRI',
-    icono: FluentIcons.receipt_processing,
-    obligatorio: true,
-  ),
-  _ModuloCard(
-    id: 'ventas',
-    nombre: 'Ventas',
-    desc: 'Cotizaciones y órdenes de venta',
-    icono: FluentIcons.money,
-  ),
-  _ModuloCard(
-    id: 'compras',
-    nombre: 'Compras',
-    desc: 'Órdenes de compra y proveedores',
-    icono: FluentIcons.shopping_cart,
-  ),
-  _ModuloCard(
-    id: 'inventario',
-    nombre: 'Inventario',
-    desc: 'Control de stock y bodegas',
-    icono: FluentIcons.product_catalog,
-  ),
-  _ModuloCard(
-    id: 'contabilidad',
-    nombre: 'Contabilidad',
-    desc: 'Plan de cuentas y asientos',
-    icono: FluentIcons.calculator,
-  ),
+// (id, nombre, provinciaId)
+const _ciudades = [
+  (101, 'Cuenca', 1),
+  (201, 'Guaranda', 2),
+  (301, 'Azogues', 3),
+  (401, 'Tulcán', 4),
+  (501, 'Latacunga', 5),
+  (601, 'Riobamba', 6),
+  (701, 'Machala', 7),
+  (801, 'Esmeraldas', 8),
+  (901, 'Guayaquil', 9),
+  (1001, 'Ibarra', 10),
+  (1101, 'Loja', 11),
+  (1201, 'Babahoyo', 12),
+  (1301, 'Portoviejo', 13),
+  (1401, 'Macas', 14),
+  (1501, 'Tena', 15),
+  (1601, 'Puyo', 16),
+  (1701, 'Quito', 17),
+  (1702, 'Cayambe', 17),
+  (1703, 'Rumiñahui', 17),
+  (1801, 'Ambato', 18),
+  (1901, 'Zamora', 19),
+  (2001, 'Puerto Baquerizo Moreno', 20),
+  (2101, 'Nueva Loja (Lago Agrio)', 21),
+  (2201, 'Puerto Francisco de Orellana', 22),
+  (2301, 'Santo Domingo', 23),
+  (2401, 'Santa Elena', 24),
 ];
 
-const _rolesDisponibles = [
+// ---------------------------------------------------------------------------
+// Roles fallback (used while rolesProvider is loading)
+// ---------------------------------------------------------------------------
+
+const _rolesFallback = [
   ('ADMIN', 'Administrador'),
   ('CONTADOR', 'Contador'),
   ('VENDEDOR', 'Vendedor'),
@@ -107,7 +95,6 @@ const _rolesDisponibles = [
   ('LECTURA', 'Solo lectura'),
 ];
 
-// Tipo contribuyente constants — avoids magic strings in the step indicator.
 const _tipoSociedad = 'sociedad';
 const _tipoPersonaNatural = 'persona_natural';
 
@@ -115,12 +102,12 @@ const _tipoPersonaNatural = 'persona_natural';
 // Screen
 // ---------------------------------------------------------------------------
 
-/// Wizard de configuración inicial mostrado cuando empresa.ruc IS NULL.
+/// Wizard de configuración inicial mostrado cuando la empresa es un placeholder.
 ///
 /// Pasos:
-///   0 — Datos de empresa (nombre, RUC/cédula, tipo, dirección, provincia)
-///   1 — Selección de módulos del plan
-///   2 — Invitación de colaboradores (opcional)
+///   0 — Datos de empresa (nombre, RUC, tipo, dirección, provincia, ciudad, logo)
+///   1 — Comunicación (email, teléfono, WhatsApp, Telegram)
+///   2 — Equipo (invitaciones — opcional)
 class OnboardingWizardScreen extends ConsumerStatefulWidget {
   const OnboardingWizardScreen({super.key});
 
@@ -141,25 +128,43 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   final _rucController = TextEditingController();
   final _direccionController = TextEditingController();
   String _tipoContribuyente = _tipoSociedad;
-  String? _provinciaSeleccionada;
+  int? _provinciaId;
+  int? _ciudadId;
 
-  // ---- Step 1 — Módulos ----
-  // 'facturacion' is always pre-selected and locked (obligatorio).
-  final Set<String> _modulosSeleccionados = {'facturacion'};
+  // Logo
+  String? _logoUploadedUrl; // URL after successful upload
+  bool _logoUploading = false;
+  String? _logoFileName;
+
+  // ---- Step 1 — Comunicación ----
+  final _emailController = TextEditingController();
+  final _telefonoController = TextEditingController();
+  final _whatsappController = TextEditingController();
+  final _telegramController = TextEditingController();
 
   // ---- Step 2 — Equipo ----
   final List<_InvitacionPendiente> _invitaciones = [];
+  final List<TextEditingController> _emailInvControllers = [];
 
-  // Parallel list of controllers for email TextFormBox fields.
-  // Kept in sync with _invitaciones so content survives setState rebuilds.
-  final List<TextEditingController> _emailControllers = [];
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill company email with the authenticated user's email.
+    final userEmail =
+        Supabase.instance.client.auth.currentUser?.email ?? '';
+    _emailController.text = userEmail;
+  }
 
   @override
   void dispose() {
     _nombreController.dispose();
     _rucController.dispose();
     _direccionController.dispose();
-    for (final c in _emailControllers) {
+    _emailController.dispose();
+    _telefonoController.dispose();
+    _whatsappController.dispose();
+    _telegramController.dispose();
+    for (final c in _emailInvControllers) {
       c.dispose();
     }
     super.dispose();
@@ -219,17 +224,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Step indicator (manual Row + Containers, no third-party step widget)
+  // Step indicator
   // ---------------------------------------------------------------------------
 
-  static const _stepTitles = ['Empresa', 'Módulos', 'Equipo'];
+  static const _stepTitles = ['Empresa', 'Comunicación', 'Equipo'];
 
   Widget _buildStepIndicator(FluentThemeData theme) {
     final itemCount = _stepTitles.length;
 
     return Row(
       children: List.generate(itemCount * 2 - 1, (i) {
-        // Even indices are step circles; odd indices are connector lines.
         if (i.isOdd) {
           final leftStep = i ~/ 2;
           final isCompleted = _currentStep > leftStep;
@@ -250,13 +254,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
         final circleColor = (isActive || isCompleted)
             ? theme.accentColor
             : theme.resources.controlFillColorDefault;
-
         final borderColor = (isActive || isCompleted)
             ? theme.accentColor
             : theme.resources.controlStrokeColorDefault;
-
-        final iconOrLabelColor =
-            (isActive || isCompleted) ? Colors.white : theme.resources.textFillColorPrimary;
+        final iconOrLabelColor = (isActive || isCompleted)
+            ? Colors.white
+            : theme.resources.textFillColorPrimary;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -271,11 +274,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
               ),
               child: Center(
                 child: isCompleted
-                    ? Icon(
-                        FluentIcons.check_mark,
-                        size: 14,
-                        color: iconOrLabelColor,
-                      )
+                    ? Icon(FluentIcons.check_mark,
+                        size: 14, color: iconOrLabelColor)
                     : Text(
                         '${stepIndex + 1}',
                         style: TextStyle(
@@ -313,7 +313,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
       case 0:
         return _buildStepEmpresa();
       case 1:
-        return _buildStepModulos();
+        return _buildStepComunicacion();
       case 2:
         return _buildStepEquipo();
       default:
@@ -326,6 +326,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildStepEmpresa() {
+    final theme = FluentTheme.of(context);
+
+    // Cities filtered by selected province
+    final ciudadesFiltradas = _provinciaId == null
+        ? <(int, String, int)>[]
+        : _ciudades
+            .where((c) => c.$3 == _provinciaId)
+            .toList()
+          ..sort((a, b) => a.$2.compareTo(b.$2));
+
     return SingleChildScrollView(
       child: Form(
         key: _formKeyEmpresa,
@@ -340,7 +350,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
             ),
             const SizedBox(height: Spacing.lg),
 
-            // ---- Tipo contribuyente — RadioGroup pattern ----
+            // ---- Tipo contribuyente ----
             InfoLabel(
               label: 'Tipo de contribuyente',
               child: Padding(
@@ -405,8 +415,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) return null;
-                final digits = value.trim().replaceAll(RegExp(r'\D'), '');
-                if (_tipoContribuyente == _tipoSociedad && digits.length != 13) {
+                final digits =
+                    value.trim().replaceAll(RegExp(r'\D'), '');
+                if (_tipoContribuyente == _tipoSociedad &&
+                    digits.length != 13) {
                   return 'El RUC debe tener 13 dígitos';
                 }
                 if (_tipoContribuyente == _tipoPersonaNatural &&
@@ -432,25 +444,67 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
             ),
             const SizedBox(height: Spacing.md),
 
-            // ---- Provincia ----
-            InfoLabel(
-              label: 'Provincia',
-              child: ComboBox<String>(
-                value: _provinciaSeleccionada,
-                placeholder: const Text('Seleccione una provincia'),
-                items: _provinciasEcuador
-                    .map(
-                      (p) => ComboBoxItem<String>(
-                        value: p,
-                        child: Text(p),
+            // ---- Provincia + Ciudad (row) ----
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: InfoLabel(
+                    label: 'Provincia',
+                    child: ComboBox<int>(
+                      value: _provinciaId,
+                      placeholder: const Text('Seleccione'),
+                      items: _provincias
+                          .map((p) => ComboBoxItem<int>(
+                                value: p.$1,
+                                child: Text(p.$2),
+                              ))
+                          .toList(),
+                      onChanged: (value) => setState(() {
+                        _provinciaId = value;
+                        _ciudadId = null; // reset city when province changes
+                      }),
+                      isExpanded: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: InfoLabel(
+                    label: 'Ciudad',
+                    child: ComboBox<int>(
+                      value: _ciudadId,
+                      placeholder: Text(
+                        _provinciaId == null
+                            ? 'Seleccione provincia primero'
+                            : 'Seleccione ciudad',
                       ),
-                    )
-                    .toList(),
-                onChanged: (value) =>
-                    setState(() => _provinciaSeleccionada = value),
-                isExpanded: true,
-              ),
+                      items: ciudadesFiltradas
+                          .map((c) => ComboBoxItem<int>(
+                                value: c.$1,
+                                child: Text(c.$2),
+                              ))
+                          .toList(),
+                      onChanged: ciudadesFiltradas.isEmpty
+                          ? null
+                          : (value) =>
+                              setState(() => _ciudadId = value),
+                      isExpanded: true,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: Spacing.lg),
+
+            // ---- Logo ----
+            _buildSectionHeader(
+              FluentIcons.image_pixel,
+              'Logo de la empresa',
+              'Sube el logo que aparecerá en documentos y el encabezado del ERP.',
+            ),
+            const SizedBox(height: Spacing.md),
+            _buildLogoSection(theme),
             const SizedBox(height: Spacing.xl),
           ],
         ),
@@ -458,39 +512,234 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     );
   }
 
+  Widget _buildLogoSection(FluentThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: theme.resources.cardBackgroundFillColorDefault,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.resources.controlStrokeColorDefault),
+      ),
+      child: Row(
+        children: [
+          // Preview area
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: theme.resources.subtleFillColorSecondary,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: theme.resources.controlStrokeColorDefault),
+            ),
+            child: _logoUploadedUrl != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.network(
+                      _logoUploadedUrl!,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                : Icon(
+                    FluentIcons.image_pixel,
+                    size: 28,
+                    color: theme.resources.textFillColorTertiary,
+                  ),
+          ),
+          const SizedBox(width: Spacing.md),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_logoFileName != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: Spacing.xs),
+                    child: Text(
+                      _logoFileName!,
+                      style: theme.typography.caption,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (_logoUploadedUrl != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: Spacing.xs),
+                    child: Row(
+                      children: [
+                        Icon(FluentIcons.check_mark,
+                            size: 12, color: Colors.successPrimaryColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Logo subido correctamente',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.successPrimaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Text(
+                  'Formatos: PNG, JPG, WebP, SVG. Máx. 5 MB.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.resources.textFillColorSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: Spacing.md),
+
+          // Upload / change button
+          _logoUploading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: ProgressRing(strokeWidth: 2),
+                )
+              : Button(
+                  onPressed: _pickAndUploadLogo,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(FluentIcons.upload, size: 14),
+                      const SizedBox(width: Spacing.xs),
+                      Text(_logoUploadedUrl == null
+                          ? 'Seleccionar'
+                          : 'Cambiar'),
+                    ],
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadLogo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    if (file.bytes == null) return;
+
+    final empresaId = ref.read(empresaActivaIdProvider);
+    if (empresaId == null) {
+      setState(() => _errorMessage = 'No se pudo obtener el ID de empresa.');
+      return;
+    }
+
+    setState(() {
+      _logoUploading = true;
+      _logoFileName = file.name;
+      _errorMessage = null;
+    });
+
+    try {
+      final ext = file.extension ?? 'png';
+      final path = '$empresaId/logo.$ext';
+      final client = Supabase.instance.client;
+
+      await client.storage.from('logos').uploadBinary(
+            path,
+            file.bytes!,
+            fileOptions: FileOptions(
+              upsert: true,
+              contentType: 'image/$ext',
+            ),
+          );
+
+      final url = client.storage.from('logos').getPublicUrl(path);
+      setState(() => _logoUploadedUrl = url);
+    } on StorageException catch (e) {
+      setState(() => _errorMessage = 'Error al subir logo: ${e.message}');
+    } catch (e) {
+      setState(() => _errorMessage = 'Error al subir logo: $e');
+    } finally {
+      setState(() => _logoUploading = false);
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Step 1 — Módulos
+  // Step 1 — Comunicación
   // ---------------------------------------------------------------------------
 
-  Widget _buildStepModulos() {
-    final theme = FluentTheme.of(context);
+  Widget _buildStepComunicacion() {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSectionHeader(
-            FluentIcons.app_icon_default,
-            'Módulos del sistema',
-            'Seleccione los módulos que desea activar. '
-                'Puede cambiarlos después desde Administración.',
+            FluentIcons.mail,
+            'Parámetros de comunicación',
+            'Configure los canales por los que PILAR enviará notificaciones y '
+                'se comunicará con sus clientes. Todos los campos son opcionales.',
           ),
           const SizedBox(height: Spacing.lg),
-          ..._availableModulos.map(
-            (modulo) => _ModuloToggleCard(
-              modulo: modulo,
-              isSelected: _modulosSeleccionados.contains(modulo.id),
-              onToggle: modulo.obligatorio
-                  ? null
-                  : (value) {
-                      setState(() {
-                        if (value) {
-                          _modulosSeleccionados.add(modulo.id);
-                        } else {
-                          _modulosSeleccionados.remove(modulo.id);
-                        }
-                      });
-                    },
-              theme: theme,
+
+          // ---- Email ----
+          PilarTextField(
+            name: 'email',
+            label: 'Correo electrónico empresarial',
+            controller: _emailController,
+            placeholder: 'contacto@miempresa.com',
+            keyboardType: TextInputType.emailAddress,
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: Spacing.sm),
+              child: Icon(FluentIcons.mail, size: 16),
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+
+          // ---- Teléfono ----
+          PilarTextField(
+            name: 'telefono',
+            label: 'Teléfono',
+            controller: _telefonoController,
+            placeholder: '+593 99 123 4567',
+            keyboardType: TextInputType.phone,
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: Spacing.sm),
+              child: Icon(FluentIcons.phone, size: 16),
+            ),
+          ),
+          const SizedBox(height: Spacing.lg),
+
+          _buildSectionHeader(
+            FluentIcons.chat,
+            'Mensajería instantánea',
+            'Integre WhatsApp Business y Telegram para enviar notificaciones '
+                'automáticas a clientes y su equipo.',
+          ),
+          const SizedBox(height: Spacing.md),
+
+          // ---- WhatsApp ----
+          PilarTextField(
+            name: 'whatsapp',
+            label: 'WhatsApp Business (número)',
+            controller: _whatsappController,
+            placeholder: '+593 99 123 4567',
+            keyboardType: TextInputType.phone,
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: Spacing.sm),
+              child: Icon(FluentIcons.device_run, size: 16),
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+
+          // ---- Telegram ----
+          PilarTextField(
+            name: 'telegram',
+            label: 'Telegram (canal o ID de chat)',
+            controller: _telegramController,
+            placeholder: '@miempresa o -100123456789',
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: Spacing.sm),
+              child: Icon(FluentIcons.send, size: 16),
             ),
           ),
           const SizedBox(height: Spacing.xl),
@@ -504,6 +753,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildStepEquipo() {
+    final rolesAsync = ref.watch(rolesProvider);
+    final roles = rolesAsync.valueOrNull ?? const [];
+
+    // Build ComboBox items: prefer live roles, fall back to static list
+    final roleItems = roles.isNotEmpty
+        ? roles
+            .map((r) => (r.codigo, r.nombre))
+            .toList()
+        : _rolesFallback.toList();
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -516,30 +775,29 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
           ),
           const SizedBox(height: Spacing.lg),
 
-          // ---- Invitation rows or empty hint ----
           if (_invitaciones.isEmpty)
             _buildEmptyEquipoHint()
           else
             ...List.generate(_invitaciones.length, (index) {
               return _InvitacionRow(
                 key: ValueKey(index),
-                emailController: _emailControllers[index],
+                emailController: _emailInvControllers[index],
                 rolCodigo: _invitaciones[index].rolCodigo,
+                roleItems: roleItems,
                 onRolChanged: (rol) {
                   setState(() => _invitaciones[index].rolCodigo = rol);
                 },
                 onRemove: () {
                   setState(() {
                     _invitaciones.removeAt(index);
-                    final controller = _emailControllers.removeAt(index);
-                    controller.dispose();
+                    final c = _emailInvControllers.removeAt(index);
+                    c.dispose();
                   });
                 },
               );
             }),
           const SizedBox(height: Spacing.md),
 
-          // ---- Add collaborator button ----
           Button(
             onPressed: _addInvitacion,
             child: const Row(
@@ -576,7 +834,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
           const SizedBox(height: Spacing.sm),
           Text(
             'No hay colaboradores agregados',
-            style: TextStyle(color: theme.resources.textFillColorSecondary),
+            style: TextStyle(
+                color: theme.resources.textFillColorSecondary),
           ),
           const SizedBox(height: Spacing.xs),
           Text(
@@ -595,7 +854,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   void _addInvitacion() {
     setState(() {
       _invitaciones.add(_InvitacionPendiente());
-      _emailControllers.add(TextEditingController());
+      _emailInvControllers.add(TextEditingController());
     });
   }
 
@@ -604,10 +863,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildNavButtons(FluentThemeData theme) {
+    final isLastStep = _currentStep == 2;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // ---- Back button (hidden on first step) ----
         if (_currentStep > 0)
           Button(
             onPressed: _isLoading
@@ -628,18 +888,17 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
         else
           const SizedBox.shrink(),
 
-        // ---- Skip (step 2 only) + Continue/Complete ----
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_currentStep == 2) ...[
+            if (isLastStep) ...[
               Button(
                 onPressed: _isLoading ? null : _onComplete,
                 child: const Text('Omitir e ingresar'),
               ),
               const SizedBox(width: Spacing.sm),
             ],
-            if (_currentStep < 2)
+            if (!isLastStep)
               FilledButton(
                 onPressed: _isLoading ? null : _onContinue,
                 child: const Row(
@@ -683,8 +942,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     setState(() => _errorMessage = null);
 
     if (_currentStep == 0) {
-      // Validate step 0 form — non-empty checks are handled by PilarTextField
-      // with required:true; the form key catches RUC format errors.
       if (!(_formKeyEmpresa.currentState?.validate() ?? false)) return;
     }
 
@@ -700,46 +957,68 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     try {
       final client = Supabase.instance.client;
 
-      // ---- 1. Update empresa ----
-      final params = <String, dynamic>{
-        'p_nombre': _nombreController.text.trim(),
-        'p_ruc': _rucController.text.trim(),
-        'p_tipo_contribuyente': _tipoContribuyente,
-        'p_direccion': _direccionController.text.trim(),
+      // ---- 1. Update empresa (nombre, RUC, tipo, dirección, geo, logo) ----
+      final empresaData = <String, dynamic>{
+        'nombre': _nombreController.text.trim(),
+        'ruc': _rucController.text.trim(),
+        'tipo_ruc': _tipoContribuyente,
+        'direccion': _direccionController.text.trim(),
       };
-      if (_provinciaSeleccionada != null) {
-        params['p_provincia'] = _provinciaSeleccionada;
+      if (_provinciaId != null) {
+        empresaData['provincia_id'] = _provinciaId;
       }
-      await client.rpc('admin_update_empresa', params: params);
+      if (_ciudadId != null) {
+        empresaData['ciudad_id'] = _ciudadId;
+      }
+      if (_logoUploadedUrl != null) {
+        empresaData['logo_url'] = _logoUploadedUrl;
+      }
+      // Communication fields that live directly on the empresas table
+      final email = _emailController.text.trim();
+      final telefono = _telefonoController.text.trim();
+      if (email.isNotEmpty) empresaData['email'] = email;
+      if (telefono.isNotEmpty) empresaData['telefono'] = telefono;
 
-      // ---- 2. Activate selected modules ----
-      // 'facturacion' is obligatorio: the backend pre-activates it during
-      // onboarding, so we only send the user-selected non-mandatory modules.
-      final toActivate = _modulosSeleccionados
-          .where((id) => id != 'facturacion')
-          .toList();
+      final result =
+          await client.rpc('admin_update_empresa', params: {'p_data': empresaData});
 
-      for (final moduloId in toActivate) {
-        await client.rpc(
-          'admin_activate_module',
-          params: {'p_modulo_id': moduloId},
-        );
+      if (result is Map && result['ok'] == false) {
+        throw Exception(result['error'] ?? 'Error al actualizar empresa');
       }
 
-      // ---- 3. Send invitations ----
+      // ---- 2. Update communication config_extra (WhatsApp, Telegram) ----
+      final whatsapp = _whatsappController.text.trim();
+      final telegram = _telegramController.text.trim();
+      if (whatsapp.isNotEmpty || telegram.isNotEmpty) {
+        final configData = <String, dynamic>{};
+        if (whatsapp.isNotEmpty) configData['whatsapp_numero'] = whatsapp;
+        if (telegram.isNotEmpty) configData['telegram_id'] = telegram;
+
+        await client.rpc('admin_update_config_extra',
+            params: {'p_data': configData});
+      }
+
+      // ---- 3. Send team invitations ----
+      final roles = ref.read(rolesProvider).valueOrNull ?? [];
       for (int i = 0; i < _invitaciones.length; i++) {
-        // Sync email from the TextEditingController back into the model.
-        _invitaciones[i].email = _emailControllers[i].text.trim();
-
+        _invitaciones[i].email = _emailInvControllers[i].text.trim();
         if (_invitaciones[i].email.isNotEmpty) {
-          await client.rpc('admin_invite_user', params: {
-            'p_email': _invitaciones[i].email,
-            'p_rol_codigo': _invitaciones[i].rolCodigo,
-          });
+          final rol = roles.firstWhere(
+            (r) => r.codigo == _invitaciones[i].rolCodigo,
+            orElse: () =>
+                throw Exception('Rol "${_invitaciones[i].rolCodigo}" no encontrado'),
+          );
+          await client.functions.invoke(
+            'invite-user',
+            body: {
+              'email': _invitaciones[i].email,
+              'rol_id': rol.id,
+            },
+          );
         }
       }
 
-      // ---- 4. Refresh session — new JWT includes updated empresa state ----
+      // ---- 4. Refresh session ----
       await client.auth.refreshSession();
 
       if (mounted) {
@@ -750,9 +1029,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     } catch (e) {
       setState(() => _errorMessage = e.toString());
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -760,7 +1037,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  Widget _buildSectionHeader(IconData icon, String title, String subtitle) {
+  Widget _buildSectionHeader(
+      IconData icon, String title, String subtitle) {
     final theme = FluentTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,137 +1067,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// _ModuloToggleCard — module selection card with animated border
-// ---------------------------------------------------------------------------
-
-class _ModuloToggleCard extends StatelessWidget {
-  const _ModuloToggleCard({
-    required this.modulo,
-    required this.isSelected,
-    required this.theme,
-    this.onToggle,
-  });
-
-  final _ModuloCard modulo;
-  final bool isSelected;
-  final FluentThemeData theme;
-
-  /// Null when the card is locked (obligatorio = true).
-  final void Function(bool)? onToggle;
-
-  bool get _isLocked => onToggle == null;
-
-  @override
-  Widget build(BuildContext context) {
-    final activeBg = theme.accentColor.withValues(alpha: 0.08);
-    final defaultBg = theme.resources.cardBackgroundFillColorDefault;
-    final activeBorder = theme.accentColor.withValues(alpha: 0.50);
-    final defaultBorder = theme.resources.controlStrokeColorDefault;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Spacing.sm),
-      child: GestureDetector(
-        onTap: _isLocked ? null : () => onToggle!(!isSelected),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.md,
-            vertical: Spacing.md,
-          ),
-          decoration: BoxDecoration(
-            color: isSelected ? activeBg : defaultBg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? activeBorder : defaultBorder,
-              width: isSelected ? 1.5 : 1.0,
-            ),
-          ),
-          child: Row(
-            children: [
-              // ---- Module icon container ----
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? theme.accentColor.withValues(alpha: 0.15)
-                      : theme.resources.subtleFillColorSecondary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  modulo.icono,
-                  size: 20,
-                  color: isSelected
-                      ? theme.accentColor
-                      : theme.resources.textFillColorSecondary,
-                ),
-              ),
-              const SizedBox(width: Spacing.md),
-
-              // ---- Name + description ----
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          modulo.nombre,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: theme.resources.textFillColorPrimary,
-                          ),
-                        ),
-                        if (_isLocked) ...[
-                          const SizedBox(width: Spacing.xs),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 1,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.accentColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Obligatorio',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: theme.accentColor,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      modulo.desc,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.resources.textFillColorSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ---- Toggle switch (disabled for locked modules) ----
-              ToggleSwitch(
-                checked: isSelected,
-                onChanged: _isLocked ? null : onToggle,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _InvitacionRow — one row per invited collaborator
+// _InvitacionRow
 // ---------------------------------------------------------------------------
 
 class _InvitacionRow extends StatelessWidget {
@@ -927,18 +1075,28 @@ class _InvitacionRow extends StatelessWidget {
     super.key,
     required this.emailController,
     required this.rolCodigo,
+    required this.roleItems,
     required this.onRolChanged,
     required this.onRemove,
   });
 
   final TextEditingController emailController;
   final String rolCodigo;
+
+  /// List of (codigo, nombre) tuples for the role ComboBox.
+  final List<(String, String)> roleItems;
+
   final void Function(String) onRolChanged;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
+
+    // Ensure current rolCodigo is in items; if not, pick first available.
+    final validCodigo = roleItems.any((r) => r.$1 == rolCodigo)
+        ? rolCodigo
+        : (roleItems.isNotEmpty ? roleItems.first.$1 : rolCodigo);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.sm),
@@ -947,12 +1105,12 @@ class _InvitacionRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: theme.resources.cardBackgroundFillColorDefault,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: theme.resources.controlStrokeColorDefault),
+          border:
+              Border.all(color: theme.resources.controlStrokeColorDefault),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ---- Email field ----
             Expanded(
               flex: 5,
               child: InfoLabel(
@@ -965,19 +1123,25 @@ class _InvitacionRow extends StatelessWidget {
                     padding: EdgeInsets.only(left: Spacing.sm),
                     child: Icon(FluentIcons.mail, size: 14),
                   ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    final e = v.trim();
+                    if (!e.contains('@') || !e.contains('.')) {
+                      return 'Ingresa un correo válido';
+                    }
+                    return null;
+                  },
                 ),
               ),
             ),
             const SizedBox(width: Spacing.md),
-
-            // ---- Rol picker ----
             Expanded(
               flex: 3,
               child: InfoLabel(
                 label: 'Rol',
                 child: ComboBox<String>(
-                  value: rolCodigo,
-                  items: _rolesDisponibles
+                  value: validCodigo,
+                  items: roleItems
                       .map(
                         (r) => ComboBoxItem<String>(
                           value: r.$1,
@@ -993,8 +1157,6 @@ class _InvitacionRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: Spacing.sm),
-
-            // ---- Remove button — aligned to the input row ----
             Padding(
               padding: const EdgeInsets.only(top: 22),
               child: IconButton(

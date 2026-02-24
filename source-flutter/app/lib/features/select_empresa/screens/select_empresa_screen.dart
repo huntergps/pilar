@@ -9,60 +9,66 @@ import '../../../core/router/app_router.dart';
 /// Company-selection screen shown after login when the user belongs to
 /// more than one empresa (or when no empresa_id is present in the JWT).
 ///
+/// Auto-selection rules (via [ref.listen]):
+/// - 0 empresas → go to [PilarRoutes.onboarding] (create first empresa).
+/// - 1 empresa  → auto-select silently, then:
+///     • placeholder empresa (nombre "Mi Empresa" / ruc "9999999999999")
+///       → [PilarRoutes.onboarding] to complete company setup.
+///     • configured empresa → [PilarRoutes.dashboard].
+/// - >1 empresas → show the picker grid so the user can choose.
+///
 /// Layout: responsive card grid.
 /// - >900px  → 4 columns
 /// - >600px  → 3 columns
 /// - <=600px → 2 columns
-///
-/// Tapping a card calls [switchEmpresaProvider], refreshes the session so
-/// the JWT includes the new empresa_id, then navigates to the dashboard.
 class SelectEmpresaScreen extends ConsumerWidget {
   const SelectEmpresaScreen({super.key});
+
+  /// Returns true when the empresa was created as a placeholder by the
+  /// onboarding trigger and still needs the user to complete the wizard.
+  static bool _esPlaceholder(EmpresaResumen e) =>
+      e.nombre == 'Mi Empresa' || e.ruc == '9999999999999' || e.ruc == null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final misEmpresasAsync = ref.watch(misEmpresasProvider);
+
+    ref.listen<AsyncValue<List<EmpresaResumen>>>(misEmpresasProvider, (_, next) {
+      next.whenData((empresas) async {
+        if (!context.mounted) return;
+
+        if (empresas.isEmpty) {
+          // No empresa at all → create first one.
+          context.go(PilarRoutes.onboarding);
+          return;
+        }
+
+        if (empresas.length == 1) {
+          // Single empresa → auto-select without user interaction.
+          final empresa = empresas.first;
+          try {
+            final switchFn = ref.read(switchEmpresaProvider);
+            await switchFn(empresa.empresaId);
+          } catch (_) {
+            // Ignore — router will re-evaluate after session refresh.
+          }
+          if (!context.mounted) return;
+          // Navigate based on whether the empresa data is configured.
+          context.go(
+            _esPlaceholder(empresa)
+                ? PilarRoutes.onboarding
+                : PilarRoutes.dashboard,
+          );
+        }
+      });
+    });
 
     return ScaffoldPage(
       header: const PageHeader(title: Text('Seleccionar empresa')),
       content: PilarAsyncBuilder<List<EmpresaResumen>>(
         value: misEmpresasAsync,
         isEmpty: (empresas) => empresas.isEmpty,
-        emptyWidget: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                FluentIcons.company_directory,
-                size: 48,
-                color: FluentTheme.of(context).inactiveColor,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No tienes empresas asignadas.',
-                style: FluentTheme.of(context).typography.body,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Crea tu primera empresa para comenzar a usar PILAR ERP.',
-                style: FluentTheme.of(context).typography.caption,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(FluentIcons.add, size: 16),
-                    SizedBox(width: 8),
-                    Text('Crear empresa'),
-                  ],
-                ),
-                onPressed: () => context.go(PilarRoutes.onboarding),
-              ),
-            ],
-          ),
-        ),
+        emptyWidget: const Center(child: ProgressRing()),
         builder: (context, empresas) {
           return Padding(
             padding: const EdgeInsets.all(24),
@@ -95,9 +101,36 @@ class SelectEmpresaScreen extends ConsumerWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Letter avatar helper
+// ---------------------------------------------------------------------------
+
+class _LetterAvatar extends StatelessWidget {
+  final String nombre;
+  final FluentThemeData theme;
+
+  const _LetterAvatar({required this.nombre, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 48,
+      color: theme.accentColor.withValues(alpha: 0.15),
+      alignment: Alignment.center,
+      child: Text(
+        nombre.isNotEmpty ? nombre[0].toUpperCase() : '?',
+        style: theme.typography.subtitle,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 /// Individual empresa card.
 ///
-/// Shows company avatar (first letter), name, RUC and the user's role.
+/// Shows company logo (or letter avatar), name, RUC and the user's role.
 /// Pressing the card switches the active empresa and navigates to dashboard.
 class _EmpresaCard extends ConsumerWidget {
   final EmpresaResumen empresa;
@@ -123,21 +156,21 @@ class _EmpresaCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Company avatar — first letter on accent background
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: theme.accentColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  empresa.nombre.isNotEmpty
-                      ? empresa.nombre[0].toUpperCase()
-                      : '?',
-                  style: theme.typography.subtitle,
-                ),
+              // Company logo or letter avatar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: empresa.logoUrl != null
+                    ? Image.network(
+                        empresa.logoUrl!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _LetterAvatar(
+                          nombre: empresa.nombre,
+                          theme: theme,
+                        ),
+                      )
+                    : _LetterAvatar(nombre: empresa.nombre, theme: theme),
               ),
               const SizedBox(height: 12),
 

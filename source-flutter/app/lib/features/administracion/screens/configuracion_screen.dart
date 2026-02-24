@@ -4,26 +4,171 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/supabase_config.dart';
+import '../../../core/providers/empresa_provider.dart';
 import '../../../core/router/app_router.dart' show PilarRoutes, supabaseUrlProvider;
 
 /// Pantalla de configuración general del sistema.
 ///
-/// Incluye la sección "Servidor" para cambiar las credenciales Supabase
-/// en instalaciones que no usan --dart-define en tiempo de compilación.
-class ConfiguracionScreen extends ConsumerWidget {
+/// Incluye:
+/// - Sección "Servidor": cambiar credenciales Supabase.
+/// - Sección "Personalización": login_titulo, color_primario, color_secundario.
+class ConfiguracionScreen extends ConsumerStatefulWidget {
   const ConfiguracionScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ConfiguracionScreen> createState() =>
+      _ConfiguracionScreenState();
+}
+
+class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
+  final _loginTituloCtrl = TextEditingController();
+  final _colorPrimarioCtrl = TextEditingController();
+  final _colorSecundarioCtrl = TextEditingController();
+
+  bool _brandingInitialized = false;
+  bool _brandingSaving = false;
+
+  @override
+  void dispose() {
+    _loginTituloCtrl.dispose();
+    _colorPrimarioCtrl.dispose();
+    _colorSecundarioCtrl.dispose();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Branding save
+  // ---------------------------------------------------------------------------
+
+  Future<void> _saveBranding() async {
+    final data = <String, dynamic>{};
+    final titulo = _loginTituloCtrl.text.trim();
+    final primario = _colorPrimarioCtrl.text.trim();
+    final secundario = _colorSecundarioCtrl.text.trim();
+
+    if (titulo.isNotEmpty) data['login_titulo'] = titulo;
+    if (primario.isNotEmpty) data['color_primario'] = primario;
+    if (secundario.isNotEmpty) data['color_secundario'] = secundario;
+
+    if (data.isEmpty) return;
+
+    setState(() => _brandingSaving = true);
+    try {
+      final result = await Supabase.instance.client.rpc(
+        'admin_update_branding',
+        params: {'p_data': data},
+      );
+      if (result is Map && result['ok'] == true) {
+        ref.invalidate(empresaConfigProvider);
+        if (mounted) {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Personalización guardada'),
+              severity: InfoBarSeverity.success,
+              onClose: close,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Error al guardar'),
+              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              severity: InfoBarSeverity.error,
+              onClose: close,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _brandingSaving = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     final compiledIn = SupabaseConfigService.isCompiledIn;
     final currentUrl = ref.watch(supabaseUrlProvider);
+    final empresaAsync = ref.watch(empresaConfigProvider);
+
+    // Pre-fill branding controllers once
+    empresaAsync.whenData((empresa) {
+      if (!_brandingInitialized && empresa != null) {
+        _brandingInitialized = true;
+        _loginTituloCtrl.text = empresa.loginTitulo ?? '';
+        _colorPrimarioCtrl.text = empresa.colorPrimario ?? '';
+        _colorSecundarioCtrl.text = empresa.colorSecundario ?? '';
+      }
+    });
 
     return ScaffoldPage(
       header: const PageHeader(title: Text('Configuración')),
       content: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          // ---- Personalización (Branding) ----
+          _Section(
+            title: 'Personalización',
+            children: [
+              InfoLabel(
+                label: 'Título en pantalla de inicio de sesión',
+                child: TextBox(
+                  controller: _loginTituloCtrl,
+                  placeholder: 'Ej: Bienvenido a Mi Empresa',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: InfoLabel(
+                      label: 'Color primario (hex)',
+                      child: TextBox(
+                        controller: _colorPrimarioCtrl,
+                        placeholder: '#0078D4',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InfoLabel(
+                      label: 'Color secundario (hex)',
+                      child: TextBox(
+                        controller: _colorSecundarioCtrl,
+                        placeholder: '#005A9E',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _brandingSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: ProgressRing(strokeWidth: 2),
+                        )
+                      : FilledButton(
+                          onPressed: _saveBranding,
+                          child: const Text('Guardar personalización'),
+                        ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
           // ---- Servidor Supabase ----
           _Section(
             title: 'Servidor',
@@ -52,33 +197,6 @@ class ConfiguracionScreen extends ConsumerWidget {
                       ?.copyWith(color: theme.inactiveColor),
                 ),
               ],
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
-          // ---- Próximamente ----
-          _Section(
-            title: 'SRI / Facturación electrónica',
-            children: [
-              Text(
-                'Próximamente — configuración de ambientes SRI, '
-                'certificado digital y parámetros de facturación.',
-                style: theme.typography.body,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
-          _Section(
-            title: 'Notificaciones',
-            children: [
-              Text(
-                'Próximamente — configuración de canales de notificación '
-                '(email, WhatsApp, Telegram).',
-                style: theme.typography.body,
-              ),
             ],
           ),
         ],

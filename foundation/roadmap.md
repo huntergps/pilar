@@ -15,6 +15,7 @@
   - Catalogos geopoliticos: paises (249 ISO 3166-1); divisiones administrativas por pais van en modulos de extension de localizacion
   - Catalogos financieros: monedas (228 ISO 4217)
   - Seed data completo para arranque inmediato (catalogos pais-especificos van en modulos de extension)
+- [x] **Sistema de alertas de empresa** (`023_alertas_empresa.sql`): alertas persistentes por empresa generadas por módulos o jobs. A diferencia de `notificaciones_usuario` (efímeras, por usuario), las alertas permanecen activas hasta resolverse o ignorarse. Incluye: tabla `alertas_empresa` con deduplicación via `codigo_alerta`, Realtime habilitado, RLS por `roles_destino`, 5 RPCs (`crear_alerta` solo-backend, `resolver_alerta`, `ignorar_alerta`, `get_alertas_activas`, `get_count_alertas_activas`), 2 jobs pg_cron (expire horario + cleanup 90 días), badge en PilarHeader con color por severidad, `AlertasPanel` con acciones resolver/ignorar.
 - [ ] **Module Service Bus**: schema module_bus con funciones gateway (create_journal_entry, request_inventory_transfer, request_inventory_movement, check_stock_availability, request_invoice, request_quotation, send_notification, log_activity)
 - [ ] Modelo de datos PostgreSQL (migraciones modulares Supabase) + RLS policies
 - [ ] Supabase Storage (buckets con RLS por empresa_id)
@@ -94,7 +95,9 @@ Funcionalidades planificadas para iteraciones posteriores al lanzamiento inicial
 Cada gap incluye tablas/RPCs en pseudocodigo y descripcion breve del flujo.
 Los gaps especificos de cada modulo viven en la documentacion del modulo correspondiente.
 
-#### G-PLAT-01: Alertas Configurables (plataforma)
+#### G-PLAT-01: Alertas Configurables por Usuario (plataforma)
+
+> **Nota**: El sistema base de alertas de empresa (`alertas_empresa`) ya está implementado en `023_alertas_empresa.sql` y es generado por módulos/jobs del backend. Este gap cubre una capa adicional distinta: alertas **definidas por el usuario** basadas en umbrales/condiciones sobre métricas de negocio (ej: "avísame cuando el stock de X baje de 10 unidades").
 
 ```sql
 CREATE TABLE alertas_configuradas (
@@ -109,4 +112,4 @@ CREATE TABLE alertas_configuradas (
 );
 ```
 
-**Edge Function `check-custom-alerts`:** Cron cada hora, evalua condiciones activas, dispara notificacion por los canales configurados usando el sistema de notificaciones multi-canal existente.
+**Edge Function `check-custom-alerts`:** Cron cada hora, evalúa condiciones activas, dispara notificación por los canales configurados usando el sistema de notificaciones multi-canal existente. Cuando se supera un umbral puede también llamar a `crear_alerta()` para que aparezca en el panel de alertas de la empresa.

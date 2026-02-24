@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/notificaciones_provider.dart';
@@ -45,7 +46,19 @@ class NotificacionesDialog extends ConsumerWidget {
           separatorBuilder: (_, __) => const Divider(),
           itemBuilder: (context, i) {
             final n = items[i];
-            return _NotificacionTile(notificacion: n);
+            return _NotificacionTile(
+              notificacion: n,
+              onMarkRead: n.leida
+                  ? null
+                  : () async {
+                      await Supabase.instance.client.rpc(
+                        'marcar_notificacion_leida',
+                        params: {'p_notificacion_id': n.id},
+                      );
+                      ref.invalidate(notificacionesProvider);
+                      ref.invalidate(notificacionesBadgeProvider);
+                    },
+            );
           },
         ),
       ),
@@ -78,52 +91,66 @@ class NotificacionesDialog extends ConsumerWidget {
 class _NotificacionTile extends StatelessWidget {
   final NotificacionItem notificacion;
 
-  const _NotificacionTile({required this.notificacion});
+  /// Called when the user taps an unread tile to mark it as read. Null for
+  /// already-read notifications (tap has no effect).
+  final VoidCallback? onMarkRead;
+
+  const _NotificacionTile({required this.notificacion, this.onMarkRead});
 
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2, right: 10),
-            child: Icon(
-              notificacion.leida
-                  ? FluentIcons.ringer
-                  : FluentIcons.ringer_solid,
-              size: 16,
-              color: notificacion.leida
-                  ? theme.inactiveColor
-                  : theme.accentColor,
+    return HoverButton(
+      onPressed: onMarkRead,
+      builder: (_, states) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2, right: 10),
+              child: Icon(
+                notificacion.leida
+                    ? FluentIcons.ringer
+                    : FluentIcons.ringer_solid,
+                size: 16,
+                color: notificacion.leida
+                    ? theme.inactiveColor
+                    : theme.accentColor,
+              ),
             ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  notificacion.titulo,
-                  style: notificacion.leida
-                      ? theme.typography.body
-                      : theme.typography.bodyStrong,
-                ),
-                if (notificacion.mensaje != null) ...[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    notificacion.titulo,
+                    style: notificacion.leida
+                        ? theme.typography.body
+                        : theme.typography.bodyStrong,
+                  ),
+                  if (notificacion.cuerpo != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      notificacion.cuerpo!,
+                      style: theme.typography.caption,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                   const SizedBox(height: 2),
                   Text(
-                    notificacion.mensaje!,
-                    style: theme.typography.caption,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    DateFormat('dd/MM/yyyy HH:mm')
+                        .format(notificacion.creadaAt.toLocal()),
+                    style: theme.typography.caption
+                        ?.copyWith(color: theme.inactiveColor),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

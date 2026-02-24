@@ -16,9 +16,11 @@ class NotificacionItem {
     required this.id,
     required this.tipo,
     required this.titulo,
-    this.mensaje,
+    this.cuerpo,
     required this.leida,
-    required this.creadaEn,
+    required this.creadaAt,
+    this.icono,
+    this.accionUrl,
   });
 
   final String id;
@@ -27,18 +29,26 @@ class NotificacionItem {
   final String tipo;
 
   final String titulo;
-  final String? mensaje;
+  final String? cuerpo;
   final bool leida;
-  final DateTime creadaEn;
+  final DateTime creadaAt;
+
+  /// Nombre del icono sugerido por el backend (opcional).
+  final String? icono;
+
+  /// URL de acción asociada — deep-link para navegación directa (opcional).
+  final String? accionUrl;
 
   factory NotificacionItem.fromJson(Map<String, dynamic> json) {
     return NotificacionItem(
       id: json['id'] as String,
       tipo: json['tipo'] as String? ?? 'sistema',
       titulo: json['titulo'] as String,
-      mensaje: json['mensaje'] as String?,
+      cuerpo: json['cuerpo'] as String?,
       leida: json['leida'] as bool? ?? false,
-      creadaEn: DateTime.parse(json['creada_en'] as String),
+      creadaAt: DateTime.parse(json['created_at'] as String),
+      icono: json['icono'] as String?,
+      accionUrl: json['accion_url'] as String?,
     );
   }
 }
@@ -136,7 +146,7 @@ final notificacionesProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client.rpc(
     'get_notificaciones',
-    params: {'p_limit': 20, 'p_offset': 0},
+    params: {'p_limite': 20, 'p_offset': 0},
   );
   return (data as List)
       .map((e) => NotificacionItem.fromJson(e as Map<String, dynamic>))

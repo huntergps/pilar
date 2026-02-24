@@ -27,3 +27,30 @@ final adminUsuariosProvider =
       .map((e) => Map<String, dynamic>.from(e as Map))
       .toList();
 });
+
+// ---------------------------------------------------------------------------
+// Roles provider
+// ---------------------------------------------------------------------------
+
+/// Roles del sistema disponibles para asignar a miembros de la empresa.
+/// Excluye roles de plataforma (SUPER_ADMIN, SAAS_ADMIN).
+/// Datos estáticos — se cachean por sesión.
+final rolesProvider = FutureProvider<List<({String id, String codigo, String nombre})>>((ref) async {
+  ref.watch(authStateProvider);
+
+  final data = await Supabase.instance.client
+      .from('roles')
+      .select('id, codigo, nombre')
+      .filter('empresa_id', 'is', null)
+      .eq('activo', true)
+      .order('nombre');
+
+  return (data as List)
+      .map((e) => (
+            id: e['id'] as String,
+            codigo: e['codigo'] as String,
+            nombre: e['nombre'] as String,
+          ))
+      .where((r) => !['SUPER_ADMIN', 'SAAS_ADMIN'].contains(r.codigo))
+      .toList();
+});

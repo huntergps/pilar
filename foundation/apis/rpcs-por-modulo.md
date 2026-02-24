@@ -215,6 +215,70 @@ Las siguientes RPCs pertenecen a foundation y están disponibles para todos los 
 | `get_local_date(p_establecimiento_id)` | Fecha de hoy en zona horaria del establecimiento | `DATE` |
 | `convert_to_functional_currency(p_monto, p_moneda_id, p_fecha)` | Convierte monto a moneda funcional usando tasa de cambio | `DECIMAL` |
 
+### Alertas de empresa
+
+Alertas persistentes por empresa (`alertas_empresa`). A diferencia de las notificaciones por usuario, una alerta permanece activa hasta que alguien la resuelva o ignore. Ver detalles en `foundation/sistema-base.md § 8.6`.
+
+| RPC | Auth | Descripción | Retorna |
+|-----|------|-------------|---------|
+| `crear_alerta(p_empresa_id, p_origen_modulo, p_severidad, p_titulo, p_cuerpo?, p_datos?, p_codigo_alerta?, p_registro_id?, p_accion_url?, p_roles_destino?, p_expira_at?)` | SECURITY DEFINER — solo backend | Crea una alerta activa. Si `p_codigo_alerta` no es NULL y ya existe una alerta activa con ese código para la empresa, hace `ON CONFLICT DO UPDATE` (upsert/dedup) en lugar de crear un duplicado. | `UUID` (alerta_id) |
+| `resolver_alerta(p_alerta_id, p_nota?)` | Autenticado | Transiciona `estado → 'resuelta'`, registra `resuelta_por`, `resuelta_at` y `nota_resolucion` opcional. Solo si la alerta pertenece a la empresa del JWT y el usuario tiene visibilidad por `roles_destino`. | `BOOLEAN` |
+| `ignorar_alerta(p_alerta_id)` | Autenticado | Transiciona `estado → 'ignorada'`. Mismas restricciones de visibilidad que `resolver_alerta`. | `BOOLEAN` |
+| `get_alertas_activas(p_limite, p_offset)` | Autenticado | Lista alertas con `estado = 'activa'` visibles para el rol del usuario (filtra por `roles_destino`; NULL = todos). Ordenadas por severidad (`critical` primero) y `created_at DESC`. | `TABLE` |
+| `get_count_alertas_activas()` | Autenticado | Conteo de alertas activas visibles para el usuario. Usado por `alertasCountProvider` en el badge del header. | `INTEGER` |
+
+#### Severidades
+
+| Valor | Color en UI | Uso típico |
+|-------|-------------|------------|
+| `'info'` | Accent color | Avisos informativos |
+| `'warning'` | Ámbar `#F59E0B` | Situaciones que requieren atención pero no bloquean |
+| `'error'` | `Colors.errorPrimaryColor` | Errores que requieren corrección |
+| `'critical'` | `Colors.errorPrimaryColor` | Bloqueos críticos (ej: certificado SRI vencido) |
+
+#### Cómo llaman los módulos a `crear_alerta`
+
+`crear_alerta` tiene `SECURITY DEFINER` y **no está expuesta al cliente Flutter**. Solo puede ser invocada desde:
+- Otras RPCs / funciones PL/pgSQL (ej: trigger, job pg_cron)
+- Edge Functions con `supabaseAdmin` (service role key)
+
+```sql
+-- Desde un job pg_cron en facturacion_ec:
+SELECT crear_alerta(
+  p_empresa_id    := v_empresa_id,
+  p_origen_modulo := 'facturacion_ec',
+  p_codigo_alerta := 'SRI_CERT_EXPIRING',  -- clave de deduplicación
+  p_severidad     := 'critical',
+  p_titulo        := 'Certificado SRI vence en ' || v_dias || ' días',
+  p_datos         := jsonb_build_object('dias_restantes', v_dias),
+  p_roles_destino := ARRAY['ADMIN', 'CONTADOR']
+);
+```
+
+```typescript
+// Desde una Edge Function (Deno) con service role:
+await supabaseAdmin.rpc('crear_alerta', {
+  p_empresa_id:    empresaId,
+  p_origen_modulo: 'tesoreria',
+  p_codigo_alerta: 'CHEQUE_RECHAZADO_' + chequeId,
+  p_severidad:     'error',
+  p_titulo:        `Cheque #${numero} rechazado por el banco`,
+  p_datos:         { cheque_id: chequeId, monto },
+  p_roles_destino: ['ADMIN', 'TESORERO'],
+});
+```
+
+#### Ciclo de vida y pg_cron
+
+```
+crear_alerta()         → estado = 'activa'
+resolver_alerta()      → estado = 'resuelta'  (con nota opcional)
+ignorar_alerta()       → estado = 'ignorada'
+pg_cron (horario :00)  → pilar_expire_alertas:       marca 'ignorada' WHERE expira_at < NOW()
+pg_cron (03:30 diario) → pilar_cleanup_old_alertas:  DELETE WHERE estado IN ('resuelta','ignorada')
+                                                      AND updated_at < NOW() - INTERVAL '1 year'
+```
+
 ---
 
 ## Multi-tenancy
