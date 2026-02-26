@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -77,24 +81,61 @@ class AlertaItem {
 // Provider — lista de alertas activas
 // ---------------------------------------------------------------------------
 
+/// Convierte un [AlertaEmpresa] (Brick) a [AlertaItem] (UI).
+/// Los campos no mapeados (datos, registroId, rolesDestino, expiraAt)
+/// se inicializan con valores vacíos/nulos aceptables para la presentación.
+AlertaItem _alertaFromBrick(AlertaEmpresa a) => AlertaItem(
+      id: a.id,
+      origenModulo: a.origenModulo,
+      codigoAlerta: a.codigoAlerta,
+      registroId: null,
+      severidad: a.severidad,
+      titulo: a.titulo,
+      cuerpo: a.cuerpo,
+      datos: const {},
+      accionUrl: a.accionUrl,
+      rolesDestino: null,
+      expiraAt: null,
+      creadaAt: a.createdAt ?? DateTime.now(),
+    );
+
 /// Alertas activas visibles para el usuario actual.
 ///
 /// Se invalida al cambiar la sesión o la empresa activa.
 /// Usar [alertasCountProvider] para el badge del header.
+///
+/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
 final alertasActivasProvider = FutureProvider<List<AlertaItem>>((ref) async {
   ref.watch(authStateProvider);
 
   final empresaId = ref.watch(empresaActivaIdProvider);
   if (empresaId == null) return const [];
 
-  final client = ref.watch(supabaseClientProvider);
-  final data = await client.rpc(
-    'get_alertas_activas',
-    params: {'p_limite': 50, 'p_offset': 0},
-  );
-  return (data as List)
-      .map((e) => AlertaItem.fromJson(e as Map<String, dynamic>))
-      .toList();
+  // Web → RPC directa
+  if (kIsWeb) {
+    final client = ref.watch(supabaseClientProvider);
+    final data = await client.rpc(
+      'get_alertas_activas',
+      params: {'p_limite': 50, 'p_offset': 0},
+    );
+    return (data as List)
+        .map((e) => AlertaItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // Native: Brick offline-first
+  final repo = ref.read(repositoryProvider);
+  if (repo == null) return const [];
+
+  try {
+    final alertas = await repo.get<AlertaEmpresa>(
+      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+      query: Query.where('estado', 'activa'),
+    );
+    return alertas.map(_alertaFromBrick).toList();
+  } catch (_) {
+    return const [];
+  }
 });
 
 // ---------------------------------------------------------------------------

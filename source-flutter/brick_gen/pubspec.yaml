@@ -1,0 +1,21 @@
+name: brick_gen
+description: Brick offline-first models for PILAR ERP foundation
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  brick_offline_first_with_supabase: ^2.1.0
+  brick_supabase: ^2.1.1
+  brick_sqlite: ^4.1.0
+  brick_offline_first: ^4.0.0
+  sqflite: ^2.3.3
+  sqflite_common: ^2.5.0
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  brick_offline_first_with_supabase_build: ^2.1.0

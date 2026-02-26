@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first_with_supabase/brick_offline_first_with_supabase.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:system_theme/system_theme.dart';
 
@@ -26,24 +29,37 @@ Future<void> main() async {
     await SystemTheme.accentColor.load();
   }
 
-  // --- Supabase initialization ---
-  // Try to load credentials (compile-time --dart-define or saved SharedPreferences).
-  // When no credentials are found, the router redirects to /setup instead.
+  // --- Supabase + Brick offline-first initialization ---
+  // Siempre hay credenciales válidas: --dart-define > SharedPreferences > defaults.
   final config = await SupabaseConfigService.load();
-  final supabaseConfigured = config != null;
 
-  if (supabaseConfigured) {
-    await Supabase.initialize(url: config.url, anonKey: config.anonKey);
+  if (!kIsWeb) {
+    // Native: create the offline-aware HTTP client BEFORE Supabase.initialize()
+    // so every Supabase PostgREST call goes through the offline queue.
+    final (offlineClient, offlineQueue) =
+        OfflineFirstWithSupabaseRepository.clientQueue(
+      databaseFactory: databaseFactory,
+      ignorePaths: {'/auth/v1', '/storage/v1', '/functions/v1'},
+    );
+    await Supabase.initialize(
+      url: config.url,
+      anonKey: config.anonKey,
+      httpClient: offlineClient,
+    );
+    PilarRepository.configure(
+      supabaseClient: Supabase.instance.client,
+      offlineQueue: offlineQueue,
+    );
   } else {
-    // Initialize with empty strings; the /setup screen will re-initialize.
-    await Supabase.initialize(url: 'https://placeholder.supabase.co', anonKey: 'placeholder');
+    // Web: no offline queue (sqflite not available on web)
+    await Supabase.initialize(url: config.url, anonKey: config.anonKey);
   }
 
   runApp(
     ProviderScope(
       overrides: [
-        supabaseConfiguredProvider.overrideWith((ref) => supabaseConfigured),
-        supabaseUrlProvider.overrideWith((ref) => config?.url ?? ''),
+        supabaseConfiguredProvider.overrideWith((ref) => true),
+        supabaseUrlProvider.overrideWith((ref) => config.url),
       ],
       child: const PilarApp(),
     ),
@@ -59,19 +75,26 @@ class PilarApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(routerProvider);
-    final lightTheme = ref.watch(pilarThemeProvider);
-    final darkTheme = ref.watch(pilarDarkThemeProvider);
-    final themeMode = ref.watch(themeBrightnessProvider);
+    final router       = ref.watch(routerProvider);
+    final config       = ref.watch(appConfigProvider);
+    final empresaColor = ref.watch(empresaColorProvider);
 
     return FluentApp.router(
       title: 'PILAR ERP',
       // --- Routing ---
       routerConfig: router,
-      // --- Theming ---
-      theme: lightTheme,
-      darkTheme: darkTheme,
-      themeMode: themeMode,
+      // --- Theming — built inline so typography/spacing changes apply instantly ---
+      theme: PilarTheme.build(
+        brightness: Brightness.light,
+        config: config,
+        empresaColor: empresaColor,
+      ),
+      darkTheme: PilarTheme.build(
+        brightness: Brightness.dark,
+        config: config,
+        empresaColor: empresaColor,
+      ),
+      themeMode: config.themeMode,
       // --- Localization ---
       locale: const Locale('es'),
       supportedLocales: const [
@@ -79,7 +102,6 @@ class PilarApp extends ConsumerWidget {
         Locale('en'),
       ],
       localizationsDelegates: FluentLocalizations.localizationsDelegates,
-      // Disable the debug banner in all builds (ERP apps are always client-facing).
       debugShowCheckedModeBanner: false,
     );
   }

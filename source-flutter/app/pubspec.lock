@@ -105,8 +105,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  brick_gen:
+    dependency: "direct main"
+    description:
+      path: "../brick_gen"
+      relative: true
+    source: path
+    version: "0.1.0"
   brick_offline_first:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: brick_offline_first
       sha256: acafff734c8c193d5ff99df077cdfc7dba523067a662461e5e28facf42d42fb2

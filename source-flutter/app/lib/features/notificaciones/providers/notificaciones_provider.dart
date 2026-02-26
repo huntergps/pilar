@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/providers/repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -139,16 +143,58 @@ final notificacionesBadgeProvider = StreamProvider<int>((ref) async* {
 /// ```dart
 /// ref.invalidate(notificacionesProvider);
 /// ```
+///
+/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
 final notificacionesProvider =
     FutureProvider<List<NotificacionItem>>((ref) async {
   ref.watch(authStateProvider);
+  final empresaId = ref.watch(empresaActivaIdProvider);
 
-  final client = ref.watch(supabaseClientProvider);
-  final data = await client.rpc(
-    'get_notificaciones',
-    params: {'p_limite': 20, 'p_offset': 0},
-  );
-  return (data as List)
-      .map((e) => NotificacionItem.fromJson(e as Map<String, dynamic>))
-      .toList();
+  // Web → RPC directa
+  if (kIsWeb || empresaId == null) {
+    if (empresaId == null) return const [];
+    final client = ref.watch(supabaseClientProvider);
+    final data = await client.rpc(
+      'get_notificaciones',
+      params: {'p_limite': 20, 'p_offset': 0},
+    );
+    return (data as List)
+        .map((e) => NotificacionItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // Native: Brick offline-first
+  final repo = ref.read(repositoryProvider);
+  if (repo == null) return const [];
+
+  try {
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session == null) return const [];
+
+    final notifs = await repo.get<Notificacion>(
+      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+      query: Query(where: [
+        Where.exact('empresaId', empresaId),
+        Where.exact('usuarioId', session.user.id),
+      ]),
+    );
+
+    // Ordenar por fecha descendente, limitar a 20
+    final sorted = notifs.toList()
+      ..sort((a, b) => (b.createdAt ?? DateTime(0))
+          .compareTo(a.createdAt ?? DateTime(0)));
+
+    return sorted.take(20).map((n) => NotificacionItem(
+          id: n.id,
+          tipo: n.tipo,
+          titulo: n.titulo,
+          cuerpo: n.cuerpo,
+          leida: n.leida,
+          creadaAt: n.createdAt ?? DateTime.now(),
+          icono: n.icono,
+          accionUrl: n.accionUrl,
+        )).toList();
+  } catch (_) {
+    return const [];
+  }
 });

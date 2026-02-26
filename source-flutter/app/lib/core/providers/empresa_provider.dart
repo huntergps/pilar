@@ -1,6 +1,11 @@
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_provider.dart';
+import '../offline/connectivity_service.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -60,6 +65,7 @@ class EmpresaConfig {
     this.colorSecundario,
     this.loginTitulo,
     required this.monedaFuncional,
+    this.colorForzadoEn,
   });
 
   final String empresaId;
@@ -87,6 +93,12 @@ class EmpresaConfig {
   /// Codigo ISO de la moneda funcional, por defecto 'USD'.
   final String monedaFuncional;
 
+  /// Timestamp en que el admin forzó el color a todos los usuarios.
+  /// Null si nunca se ha forzado. Los clientes comparan este valor contra
+  /// su último "ack" local; si la empresa es más reciente, descartan el
+  /// override personal y vuelven al color de empresa.
+  final DateTime? colorForzadoEn;
+
   factory EmpresaConfig.fromJson(Map<String, dynamic> json) {
     return EmpresaConfig(
       empresaId: json['empresa_id'] as String,
@@ -105,6 +117,9 @@ class EmpresaConfig {
       colorSecundario: json['color_secundario'] as String?,
       loginTitulo: json['login_titulo'] as String?,
       monedaFuncional: json['moneda_funcional'] as String? ?? 'USD',
+      colorForzadoEn: json['color_forzado_en'] != null
+          ? DateTime.tryParse(json['color_forzado_en'] as String)
+          : null,
     );
   }
 }
@@ -141,6 +156,9 @@ final empresaActivaIdProvider = Provider<String?>((ref) {
 
 /// Configuracion completa de la empresa activa.
 /// Null cuando no hay empresa seleccionada.
+///
+/// Estrategia: RPC primaria (datos completos). Si offline, fallback a
+/// Brick SQLite (datos parciales: nombre, ruc, logo, colores).
 final empresaConfigProvider = FutureProvider<EmpresaConfig?>((ref) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
   if (empresaId == null) return null;
@@ -148,11 +166,49 @@ final empresaConfigProvider = FutureProvider<EmpresaConfig?>((ref) async {
   // Tambien se invalida al cambiar la sesion.
   ref.watch(authStateProvider);
 
-  final client = ref.watch(supabaseClientProvider);
-  final data = await client
-      .rpc('get_company_config', params: {'p_empresa_id': empresaId});
-  if (data == null) return null;
-  return EmpresaConfig.fromJson(data as Map<String, dynamic>);
+  // Web → RPC directa
+  if (kIsWeb) {
+    final client = ref.watch(supabaseClientProvider);
+    final data = await client
+        .rpc('get_company_config', params: {'p_empresa_id': empresaId});
+    if (data == null) return null;
+    return EmpresaConfig.fromJson(data as Map<String, dynamic>);
+  }
+
+  // Native: intenta RPC primero (datos completos)
+  try {
+    final client = ref.watch(supabaseClientProvider);
+    final data = await client
+        .rpc('get_company_config', params: {'p_empresa_id': empresaId});
+    if (data == null) return null;
+    return EmpresaConfig.fromJson(data as Map<String, dynamic>);
+  } catch (e) {
+    if (!isOfflineError(e)) rethrow;
+    ref.read(connectivityProvider.notifier).reportOffline();
+  }
+
+  // Offline fallback: datos básicos desde Brick SQLite
+  final repo = ref.read(repositoryProvider);
+  if (repo == null) return null;
+
+  final empresas = await repo.get<Empresa>(
+    policy: OfflineFirstGetPolicy.localOnly,
+    query: Query.where('id', empresaId),
+  );
+
+  if (empresas.isEmpty) return null;
+  final e = empresas.first;
+
+  return EmpresaConfig(
+    empresaId: e.id,
+    nombre: e.nombre,
+    nombreComercial: e.nombreComercial,
+    ruc: e.ruc,
+    logoUrl: e.logoUrl,
+    colorPrimario: e.colorPrimario,
+    colorSecundario: e.colorSecundario,
+    monedaFuncional: 'USD',
+  );
 });
 
 /// Funcion para cambiar la empresa activa del usuario.

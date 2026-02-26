@@ -1,7 +1,11 @@
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -89,18 +93,57 @@ class ModuloEstado {
 /// Se invalida automaticamente al:
 /// - Cambiar la sesion (authStateProvider).
 /// - Cambiar la empresa activa (empresaActivaIdProvider).
+///
+/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
 final modulosActivosProvider = FutureProvider<List<ModuloItem>>((ref) async {
   ref.watch(authStateProvider);
-  ref.watch(empresaActivaIdProvider);
+  final empresaId = ref.watch(empresaActivaIdProvider);
 
-  final client = ref.watch(supabaseClientProvider);
+  // Web o sin empresa → RPC directa
+  if (kIsWeb || empresaId == null) {
+    if (empresaId == null) return const <ModuloItem>[];
+    final client = ref.watch(supabaseClientProvider);
+    try {
+      final data = await client.rpc('get_modulos_activos');
+      return (data as List)
+          .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const <ModuloItem>[];
+    }
+  }
+
+  // Native: Brick offline-first — consulta modulos + modulos_empresa y combina.
+  final repo = ref.read(repositoryProvider);
+  if (repo == null) return const <ModuloItem>[];
+
   try {
-    final data = await client.rpc('get_modulos_activos');
-    return (data as List)
-        .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final modulos = await repo.get<Modulo>(
+      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+      query: Query.where('activo', true),
+    );
+    final modulosEmpresa = await repo.get<ModuloEmpresa>(
+      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+      query: Query.where('empresaId', empresaId),
+    );
+
+    final enabledIds = modulosEmpresa
+        .where((me) => me.habilitado)
+        .map((me) => me.moduloId)
+        .toSet();
+
+    return modulos
+        .where((m) => enabledIds.contains(m.id))
+        .map((m) => ModuloItem(
+              id: m.id,
+              nombre: m.nombre,
+              icono: m.icono ?? 'apps',
+              orden: m.orden ?? 99,
+              tipo: m.tipo,
+            ))
+        .toList()
+      ..sort((a, b) => a.orden.compareTo(b.orden));
   } catch (_) {
-    // RPC no existe aún o error de red: mostrar shell vacío sin módulos dinámicos.
     return const <ModuloItem>[];
   }
 });

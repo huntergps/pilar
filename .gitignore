@@ -31,6 +31,12 @@ lib/brick/
 lib/core/brick/adapters/
 lib/core/brick/db/
 
+# Excepción: brick_gen es un paquete de RUNTIME — sus archivos generados
+# deben estar versionados para que la app compile sin correr build_runner
+!source-flutter/brick_gen/lib/brick/brick.g.dart
+!source-flutter/brick_gen/lib/brick/db/schema.g.dart
+!source-flutter/brick_gen/lib/brick/adapters/*.g.dart
+
 # ─── Supabase ─────────────────────────────────────────────────────────────────
 # Entorno local de Supabase (levantado con `supabase start`)
 foundation/supabase/.branches/
