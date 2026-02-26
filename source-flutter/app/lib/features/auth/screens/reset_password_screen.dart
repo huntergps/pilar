@@ -30,49 +30,51 @@ class ResetPasswordScreen extends ConsumerWidget {
       });
     });
 
-    return ScaffoldPage(
-      header: PageHeader(
-        title: const Text('Restablecer contraseña'),
-        leading: IconButton(
-          icon: const Icon(FluentIcons.back),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go(PilarRoutes.login);
-            }
-          },
+    return SafeArea(
+      child: ScaffoldPage(
+        header: PageHeader(
+          title: const Text('Restablecer contraseña'),
+          leading: IconButton(
+            icon: const Icon(FluentIcons.back),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go(PilarRoutes.login);
+              }
+            },
+          ),
         ),
-      ),
-      content: Center(
-        child: SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Ingresa tu nueva contraseña',
-                    style: FluentTheme.of(context).typography.body,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  SupaResetPassword(
-                    onSuccess: (_) => context.go(PilarRoutes.login),
-                    localization: const SupaResetPasswordLocalization(
-                      enterPassword: 'Nueva contraseña',
-                      passwordLengthError:
-                          'La contraseña debe tener al menos 6 caracteres',
-                      updatePassword: 'Actualizar contraseña',
-                      passwordResetSent:
-                          '¡Contraseña actualizada! Inicia sesión.',
-                      unexpectedError:
-                          'Error inesperado. Intenta de nuevo.',
+        content: Center(
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Ingresa tu nueva contraseña',
+                      style: FluentTheme.of(context).typography.body,
+                      textAlign: TextAlign.center,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    SupaResetPassword(
+                      onSuccess: (_) => context.go(PilarRoutes.login),
+                      localization: const SupaResetPasswordLocalization(
+                        enterPassword: 'Nueva contraseña',
+                        passwordLengthError:
+                            'La contraseña debe tener al menos 6 caracteres',
+                        updatePassword: 'Actualizar contraseña',
+                        passwordResetSent:
+                            '¡Contraseña actualizada! Inicia sesión.',
+                        unexpectedError:
+                            'Error inesperado. Intenta de nuevo.',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

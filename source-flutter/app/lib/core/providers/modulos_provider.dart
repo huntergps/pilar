@@ -118,14 +118,18 @@ final modulosActivosProvider = FutureProvider<List<ModuloItem>>((ref) async {
   if (repo == null) return const <ModuloItem>[];
 
   try {
-    final modulos = await repo.get<Modulo>(
-      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
-      query: Query.where('activo', true),
-    );
-    final modulosEmpresa = await repo.get<ModuloEmpresa>(
-      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
-      query: Query.where('empresaId', empresaId),
-    );
+    final results = await Future.wait<dynamic>([
+      repo.get<Modulo>(
+        policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+        query: Query.where('activo', true),
+      ),
+      repo.get<ModuloEmpresa>(
+        policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+        query: Query.where('empresaId', empresaId),
+      ),
+    ]);
+    final modulos       = results[0] as List<Modulo>;
+    final modulosEmpresa = results[1] as List<ModuloEmpresa>;
 
     final enabledIds = modulosEmpresa
         .where((me) => me.habilitado)

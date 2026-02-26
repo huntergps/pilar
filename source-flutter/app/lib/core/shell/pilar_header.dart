@@ -5,11 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../providers/alertas_provider.dart';
+import '../providers/perfil_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
 import '../../features/alertas/widgets/alertas_panel.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
 import '../../features/notificaciones/widgets/notificaciones_dialog.dart';
+import '../../features/perfil/screens/perfil_screen.dart';
 
 /// The right-hand side of the [TitleBar] inside [PilarShell].
 ///
@@ -66,6 +69,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     final usuario = ref.watch(usuarioActualProvider);
+    final perfil = ref.watch(perfilUsuarioProvider).valueOrNull;
     final badgeCount = ref.watch(notificacionesBadgeProvider).valueOrNull ?? 0;
     final alertasCount = ref.watch(alertasCountProvider).valueOrNull ?? 0;
     final alertas = ref.watch(alertasActivasProvider).valueOrNull ?? [];
@@ -146,6 +150,29 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
           ),
         ),
 
+        // ---- Theme toggle ----
+        Tooltip(
+          message: FluentTheme.of(context).brightness == Brightness.dark
+              ? 'Cambiar a tema claro'
+              : 'Cambiar a tema oscuro',
+          child: IconButton(
+            icon: Icon(
+              FluentTheme.of(context).brightness == Brightness.dark
+                  ? FluentIcons.sunny
+                  : FluentIcons.clear_night,
+              size: 20,
+            ),
+            onPressed: () {
+              final current = ref.read(appConfigProvider).themeMode;
+              ref.read(appConfigProvider.notifier).setThemeMode(
+                    current == ThemeMode.dark
+                        ? ThemeMode.light
+                        : ThemeMode.dark,
+                  );
+            },
+          ),
+        ),
+
         // ---- User avatar + name ----
         if (usuario != null)
           Padding(
@@ -162,35 +189,15 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Avatar circle — first letter of email on accent bg.
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: theme.accentColor,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          usuario.email.isNotEmpty
-                              ? usuario.email[0].toUpperCase()
-                              : '?',
-                          style: theme.typography.caption?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Display name or email.
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 160),
-                        child: Text(
-                          usuario.nombre ?? usuario.email,
-                          style: theme.typography.caption,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                      // Avatar circle — foto de perfil o inicial.
+                      _HeaderAvatar(
+                        avatarUrl: perfil?.avatarUrl,
+                        initial: perfil?.initial ??
+                            (usuario.email.isNotEmpty
+                                ? usuario.email[0].toUpperCase()
+                                : '?'),
+                        size: 28,
+                        theme: theme,
                       ),
                       const SizedBox(width: 4),
                       Icon(
@@ -265,6 +272,13 @@ class _UserMenuFlyout extends ConsumerWidget {
   Widget build(BuildContext flyoutCtx, WidgetRef ref) {
     final theme = FluentTheme.of(flyoutCtx);
     final usuario = ref.watch(usuarioActualProvider);
+    final perfil = ref.watch(perfilUsuarioProvider).valueOrNull;
+
+    final displayName = perfil?.displayName ?? usuario?.nombre ?? usuario?.email ?? '';
+    final initial = perfil?.initial ??
+        (usuario != null && usuario.email.isNotEmpty
+            ? usuario.email[0].toUpperCase()
+            : '?');
 
     Future<void> signOut() async {
       Navigator.of(flyoutCtx).maybePop();
@@ -275,6 +289,16 @@ class _UserMenuFlyout extends ConsumerWidget {
     void switchEmpresa() {
       Navigator.of(flyoutCtx).maybePop();
       if (context.mounted) context.go(PilarRoutes.selectEmpresa);
+    }
+
+    void goToPerfil() {
+      Navigator.of(flyoutCtx).maybePop();
+      if (context.mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (_) => const PerfilDialog(),
+        );
+      }
     }
 
     return FlyoutContent(
@@ -290,28 +314,20 @@ class _UserMenuFlyout extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: theme.accentColor,
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      (usuario?.email ?? '?')[0].toUpperCase(),
-                      style: theme.typography.bodyStrong
-                          ?.copyWith(color: Colors.white),
-                    ),
+                  _HeaderAvatar(
+                    avatarUrl: perfil?.avatarUrl,
+                    initial: initial,
+                    size: 36,
+                    theme: theme,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (usuario?.nombre != null)
+                        if (displayName.isNotEmpty)
                           Text(
-                            usuario!.nombre!,
+                            displayName,
                             style: theme.typography.bodyStrong,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -335,6 +351,26 @@ class _UserMenuFlyout extends ConsumerWidget {
               ),
             ),
             const Divider(),
+
+            // ---- Mi perfil ----
+            HoverButton(
+              onPressed: goToPerfil,
+              builder: (ctx, states) => Container(
+                color: states.isHovered
+                    ? theme.resources.subtleFillColorSecondary
+                    : null,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(FluentIcons.contact,
+                        size: 16, color: theme.inactiveColor),
+                    const SizedBox(width: 10),
+                    Text('Mi perfil', style: theme.typography.body),
+                  ],
+                ),
+              ),
+            ),
 
             // ---- Switch empresa ----
             HoverButton(
@@ -387,6 +423,67 @@ class _UserMenuFlyout extends ConsumerWidget {
             const SizedBox(height: 4),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Widget compartido: avatar con foto o inicial
+// ---------------------------------------------------------------------------
+
+class _HeaderAvatar extends StatelessWidget {
+  final String? avatarUrl;
+  final String initial;
+  final double size;
+  final FluentThemeData theme;
+
+  const _HeaderAvatar({
+    required this.avatarUrl,
+    required this.initial,
+    required this.size,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: theme.accentColor,
+        shape: BoxShape.circle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null
+          ? Image.network(
+              avatarUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _Initial(initial: initial, size: size, theme: theme),
+            )
+          : _Initial(initial: initial, size: size, theme: theme),
+    );
+  }
+}
+
+class _Initial extends StatelessWidget {
+  final String initial;
+  final double size;
+  final FluentThemeData theme;
+
+  const _Initial({
+    required this.initial,
+    required this.size,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        initial,
+        style: (size >= 32 ? theme.typography.bodyStrong : theme.typography.caption)
+            ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
       ),
     );
   }

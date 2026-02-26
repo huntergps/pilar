@@ -5,6 +5,7 @@ import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/providers/usuario_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Geographic catalog (Ecuador SRI — static)
@@ -62,6 +63,8 @@ const _ciudades = [
   (1801, 'Ambato', 18),
   (1901, 'Zamora', 19),
   (2001, 'Puerto Baquerizo Moreno', 20),
+  (2002, 'Puerto Ayora', 20),           // cantón Santa Cruz
+  (2003, 'Puerto Villamil', 20),        // cantón Isabela
   (2101, 'Nueva Loja (Lago Agrio)', 21),
   (2201, 'Puerto Francisco de Orellana', 22),
   (2301, 'Santo Domingo', 23),
@@ -90,7 +93,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
   // PilarTextField onSaved values
   String? _nombre;
   String? _nombreComercial;
-  String? _ruc;
   String? _direccion;
   String? _telefono;
   String? _email;
@@ -109,32 +111,88 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
   bool _logoUploading = false;
   String? _logoFileName;
 
+  // Branding
+  final _colorPrimCtrl = TextEditingController();
+  AccentColor? _selectedPrimario;
+  // Último color guardado exitosamente en BD. Controla si "Aplicar a todos" está activo.
+  String? _colorSavedInDb;
+
+  @override
+  void dispose() {
+    _colorPrimCtrl.dispose();
+    super.dispose();
+  }
+
   // ---------------------------------------------------------------------------
-  // Save handler
+  // Save handlers
   // ---------------------------------------------------------------------------
 
   Future<void> _handleSave() async {
     final data = <String, dynamic>{};
-    if (_nombre != null) data['nombre'] = _nombre;
+    if (_nombre != null)          data['nombre']          = _nombre;
     if (_nombreComercial != null) data['nombre_comercial'] = _nombreComercial;
-    if (_ruc != null) data['ruc'] = _ruc;
-    if (_direccion != null) data['direccion'] = _direccion;
-    if (_telefono != null) data['telefono'] = _telefono;
-    if (_email != null) data['email'] = _email;
-    if (_web != null) data['web'] = _web;
-    if (_tipoRuc != null) data['tipo_ruc'] = _tipoRuc;
-    if (_provinciaId != null) data['provincia_id'] = _provinciaId;
-    if (_ciudadId != null) data['ciudad_id'] = _ciudadId;
-    if (_logoUrl != null) data['logo_url'] = _logoUrl;
+    if (_direccion != null)       data['direccion']        = _direccion;
+    if (_telefono != null)        data['telefono']         = _telefono;
+    if (_email != null)           data['email']            = _email;
+    if (_web != null)             data['web']              = _web;
+    if (_tipoRuc != null)         data['tipo_ruc']         = _tipoRuc;
+    if (_provinciaId != null)     data['provincia_id']     = _provinciaId;
+    if (_ciudadId != null)        data['ciudad_id']        = _ciudadId;
+    if (_logoUrl != null)         data['logo_url']         = _logoUrl;
 
-    if (data.isEmpty) return;
+    final color = _colorPrimCtrl.text.trim();
 
-    final result = await Supabase.instance.client.rpc(
-      'admin_update_empresa',
-      params: {'p_data': data},
-    );
+    if (data.isEmpty && color.isEmpty) return;
 
-    if (result is Map && result['ok'] == true) {
+    bool ok = true;
+
+    // ── Datos principales ──────────────────────────────────────────────────
+    if (data.isNotEmpty) {
+      final result = await Supabase.instance.client.rpc(
+        'admin_update_empresa',
+        params: {'p_data': data},
+      );
+      if (result is! Map || result['ok'] != true) {
+        ok = false;
+        if (mounted) {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Error al guardar datos de empresa'),
+              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              severity: InfoBarSeverity.error,
+              onClose: close,
+            ),
+          );
+        }
+      }
+    }
+
+    // ── Color primario ─────────────────────────────────────────────────────
+    if (color.isNotEmpty) {
+      final result = await Supabase.instance.client.rpc(
+        'admin_update_branding',
+        params: {'p_data': {'color_primario': color}},
+      );
+      if (result is Map && result['ok'] == true) {
+        setState(() => _colorSavedInDb = color);
+      } else {
+        ok = false;
+        if (mounted) {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Error al guardar color'),
+              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              severity: InfoBarSeverity.error,
+              onClose: close,
+            ),
+          );
+        }
+      }
+    }
+
+    if (ok) {
       ref.invalidate(empresaConfigProvider);
       if (mounted) {
         displayInfoBar(
@@ -142,18 +200,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
           builder: (_, close) => InfoBar(
             title: const Text('Datos guardados correctamente'),
             severity: InfoBarSeverity.success,
-            onClose: close,
-          ),
-        );
-      }
-    } else {
-      if (mounted) {
-        displayInfoBar(
-          context,
-          builder: (_, close) => InfoBar(
-            title: const Text('Error al guardar'),
-            content: Text(result?['error']?.toString() ?? 'Error desconocido'),
-            severity: InfoBarSeverity.error,
             onClose: close,
           ),
         );
@@ -222,6 +268,8 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final puedeEditar =
+        ref.watch(hasPermissionProvider('administracion.empresa.editar'));
     final empresaAsync = ref.watch(empresaConfigProvider);
     final theme = FluentTheme.of(context);
 
@@ -241,6 +289,8 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
             _provinciaId = empresa.provinciaId;
             _ciudadId = empresa.ciudadId;
             _logoUrl = empresa.logoUrl;
+            _colorPrimCtrl.text = empresa.colorPrimario ?? '';
+            _colorSavedInDb = empresa.colorPrimario;
           }
 
           final ciudadesFiltradas = _provinciaId == null
@@ -250,163 +300,231 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   .toList()
                 ..sort((a, b) => a.$2.compareTo(b.$2));
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  PilarForm(
-                    onSave: _handleSave,
-                    padding: EdgeInsets.zero,
+          final formChildren = <Widget>[
+              // ---- Datos fiscales ----
+              PilarTextField(
+                name: 'nombre',
+                label: 'Nombre de empresa',
+                initialValue: empresa.nombre,
+                required: true,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _nombre = v,
+              ),
+              const SizedBox(height: 12),
+              PilarTextField(
+                name: 'nombre_comercial',
+                label: 'Nombre comercial',
+                initialValue: empresa.nombreComercial,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _nombreComercial = v,
+              ),
+              const SizedBox(height: 12),
+              PilarTextField(
+                name: 'ruc',
+                label: 'RUC / Cédula',
+                initialValue: empresa.ruc,
+                readOnly: true,
+                infoMessage: 'El RUC no puede modificarse una vez registrado.',
+              ),
+              const SizedBox(height: 12),
+
+              // ---- Tipo RUC ----
+              InfoLabel(
+                label: 'Tipo de contribuyente',
+                child: RadioGroup<String>(
+                  groupValue: _tipoRuc ?? '',
+                  onChanged: (v) {
+                    if (puedeEditar) {
+                      setState(() => _tipoRuc = v ?? _tipoRuc);
+                    }
+                  },
+                  child: const Row(
                     children: [
-                      // ---- Datos fiscales ----
-                      PilarTextField(
-                        name: 'nombre',
-                        label: 'Nombre de empresa',
-                        initialValue: empresa.nombre,
-                        required: true,
-                        onSaved: (v) => _nombre = v,
+                      RadioButton<String>(
+                        value: 'sociedad',
+                        content: Text('Sociedad'),
                       ),
-                      const SizedBox(height: 12),
-                      PilarTextField(
-                        name: 'nombre_comercial',
-                        label: 'Nombre comercial',
-                        initialValue: empresa.nombreComercial,
-                        onSaved: (v) => _nombreComercial = v,
-                      ),
-                      const SizedBox(height: 12),
-                      PilarTextField(
-                        name: 'ruc',
-                        label: 'RUC / Cédula',
-                        initialValue: empresa.ruc,
-                        onSaved: (v) => _ruc = v,
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ---- Tipo RUC ----
-                      InfoLabel(
-                        label: 'Tipo de contribuyente',
-                        child: RadioGroup<String>(
-                          groupValue: _tipoRuc ?? '',
-                          onChanged: (v) =>
-                              setState(() => _tipoRuc = v ?? _tipoRuc),
-                          child: Row(
-                            children: [
-                              RadioButton<String>(
-                                value: 'sociedad',
-                                content: const Text('Sociedad'),
-                              ),
-                              const SizedBox(width: 24),
-                              RadioButton<String>(
-                                value: 'persona_natural',
-                                content: const Text('Persona natural'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      PilarTextField(
-                        name: 'direccion',
-                        label: 'Dirección',
-                        initialValue: empresa.direccion,
-                        maxLines: 2,
-                        onSaved: (v) => _direccion = v,
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ---- Provincia + Ciudad ----
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: InfoLabel(
-                              label: 'Provincia',
-                              child: ComboBox<int>(
-                                value: _provinciaId,
-                                placeholder: const Text('Seleccione'),
-                                items: _provincias
-                                    .map((p) => ComboBoxItem<int>(
-                                          value: p.$1,
-                                          child: Text(p.$2),
-                                        ))
-                                    .toList(),
-                                onChanged: (value) => setState(() {
-                                  _provinciaId = value;
-                                  _ciudadId = null;
-                                }),
-                                isExpanded: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: InfoLabel(
-                              label: 'Ciudad',
-                              child: ComboBox<int>(
-                                value: _ciudadId,
-                                placeholder: Text(
-                                  _provinciaId == null
-                                      ? 'Seleccione provincia primero'
-                                      : 'Seleccione ciudad',
-                                ),
-                                items: ciudadesFiltradas
-                                    .map((c) => ComboBoxItem<int>(
-                                          value: c.$1,
-                                          child: Text(c.$2),
-                                        ))
-                                    .toList(),
-                                onChanged: ciudadesFiltradas.isEmpty
-                                    ? null
-                                    : (value) =>
-                                        setState(() => _ciudadId = value),
-                                isExpanded: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ---- Contacto ----
-                      PilarTextField(
-                        name: 'telefono',
-                        label: 'Teléfono',
-                        initialValue: empresa.telefono,
-                        keyboardType: TextInputType.phone,
-                        onSaved: (v) => _telefono = v,
-                      ),
-                      const SizedBox(height: 12),
-                      PilarTextField(
-                        name: 'email',
-                        label: 'Email',
-                        initialValue: empresa.email,
-                        keyboardType: TextInputType.emailAddress,
-                        onSaved: (v) => _email = v,
-                      ),
-                      const SizedBox(height: 12),
-                      PilarTextField(
-                        name: 'web',
-                        label: 'Sitio web',
-                        initialValue: empresa.web,
-                        keyboardType: TextInputType.url,
-                        onSaved: (v) => _web = v,
+                      SizedBox(width: 24),
+                      RadioButton<String>(
+                        value: 'persona_natural',
+                        content: Text('Persona natural'),
                       ),
                     ],
                   ),
+                ),
+              ),
+              const SizedBox(height: 12),
 
-                  // ---- Logo ----
-                  const SizedBox(height: 24),
-                  Text('Logo de empresa', style: theme.typography.bodyStrong),
-                  const SizedBox(height: 4),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  _buildLogoSection(theme, empresa.empresaId),
+              PilarTextField(
+                name: 'direccion',
+                label: 'Dirección',
+                initialValue: empresa.direccion,
+                maxLines: 2,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _direccion = v,
+              ),
+              const SizedBox(height: 12),
+
+              // ---- Provincia + Ciudad ----
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: InfoLabel(
+                      label: 'Provincia',
+                      child: ComboBox<int>(
+                        value: _provinciaId,
+                        placeholder: const Text('Seleccione'),
+                        items: _provincias
+                            .map((p) => ComboBoxItem<int>(
+                                  value: p.$1,
+                                  child: Text(p.$2),
+                                ))
+                            .toList(),
+                        onChanged: puedeEditar
+                            ? (value) => setState(() {
+                                  _provinciaId = value;
+                                  _ciudadId = null;
+                                })
+                            : null,
+                        isExpanded: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InfoLabel(
+                      label: 'Ciudad',
+                      child: ComboBox<int>(
+                        value: _ciudadId,
+                        placeholder: Text(
+                          _provinciaId == null
+                              ? 'Seleccione provincia primero'
+                              : 'Seleccione ciudad',
+                        ),
+                        items: ciudadesFiltradas
+                            .map((c) => ComboBoxItem<int>(
+                                  value: c.$1,
+                                  child: Text(c.$2),
+                                ))
+                            .toList(),
+                        onChanged: (!puedeEditar || ciudadesFiltradas.isEmpty)
+                            ? null
+                            : (value) =>
+                                setState(() => _ciudadId = value),
+                        isExpanded: true,
+                      ),
+                    ),
+                  ),
                 ],
               ),
+              const SizedBox(height: 12),
+
+              // ---- Contacto ----
+              PilarTextField(
+                name: 'telefono',
+                label: 'Teléfono',
+                initialValue: empresa.telefono,
+                keyboardType: TextInputType.phone,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _telefono = v,
+              ),
+              const SizedBox(height: 12),
+              PilarTextField(
+                name: 'email',
+                label: 'Email',
+                initialValue: (empresa.email?.isNotEmpty == true)
+                    ? empresa.email
+                    : Supabase.instance.client.auth.currentUser?.email,
+                keyboardType: TextInputType.emailAddress,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _email = v,
+              ),
+              const SizedBox(height: 12),
+              PilarTextField(
+                name: 'web',
+                label: 'Sitio web',
+                initialValue: empresa.web,
+                keyboardType: TextInputType.url,
+                readOnly: !puedeEditar,
+                onSaved: (v) => _web = v,
+              ),
+            ];
+
+          final Widget form = puedeEditar
+              ? PilarForm(
+                  onSave: _handleSave,
+                  padding: EdgeInsets.zero,
+                  children: formChildren,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const InfoBar(
+                      title: Text('Solo lectura'),
+                      content: Text(
+                          'Solo los administradores pueden editar los datos de la empresa.'),
+                      severity: InfoBarSeverity.info,
+                    ),
+                    const SizedBox(height: 16),
+                    ...formChildren,
+                  ],
+                );
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    // ---- Mobile (< 600 px): logo arriba, formulario abajo ----
+                    if (constraints.maxWidth < 600) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildLogoMobile(theme, empresa.empresaId, puedeEditar),
+                          const SizedBox(height: 24),
+                          form,
+                        ],
+                      );
+                    }
+
+                    // ---- Desktop / tablet (≥ 600 px): logo izquierda, form derecha ----
+                    return ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 160,
+                            child: _buildLogoDesktop(
+                                theme, empresa.empresaId, puedeEditar),
+                          ),
+                          const SizedBox(width: 28),
+                          Expanded(child: form),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
+                // ---- Sección de branding (solo admins) ----
+                if (puedeEditar) ...[
+                  const SizedBox(height: 32),
+                  _EmpresaBrandingSection(
+                    colorPrimCtrl:    _colorPrimCtrl,
+                    selectedPrimario: _selectedPrimario,
+                    savedColor:       _colorSavedInDb,
+                    onPrimarioChanged: (c) {
+                      setState(() => _selectedPrimario = c);
+                      _colorPrimCtrl.text = c != null
+                          ? '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}'
+                          : '';
+                    },
+                  ),
+                ],
+              ],
             ),
           );
         },
@@ -414,25 +532,25 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
     );
   }
 
-  Widget _buildLogoSection(FluentThemeData theme, String empresaId) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.resources.cardBackgroundFillColorDefault,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.resources.controlStrokeColorDefault),
-      ),
-      child: Row(
-        children: [
-          // Preview
-          Container(
-            width: 72,
-            height: 72,
+  // ---- Logo: columna vertical para desktop (≥ 600 px) ----------------------
+
+  Widget _buildLogoDesktop(
+      FluentThemeData theme, String empresaId, bool puedeEditar) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Logo de empresa', style: theme.typography.bodyStrong),
+        const SizedBox(height: 12),
+
+        // Square preview — fills the 160 px column width
+        AspectRatio(
+          aspectRatio: 1,
+          child: Container(
             decoration: BoxDecoration(
-              color: theme.resources.subtleFillColorSecondary,
+              color: theme.resources.cardBackgroundFillColorDefault,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: theme.resources.controlStrokeColorDefault),
+              border:
+                  Border.all(color: theme.resources.controlStrokeColorDefault),
             ),
             child: _logoUrl != null
                 ? ClipRRect(
@@ -442,66 +560,44 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Icon(
                         FluentIcons.image_pixel,
-                        size: 28,
+                        size: 40,
                         color: theme.resources.textFillColorTertiary,
                       ),
                     ),
                   )
                 : Icon(
                     FluentIcons.image_pixel,
-                    size: 28,
+                    size: 40,
                     color: theme.resources.textFillColorTertiary,
                   ),
           ),
-          const SizedBox(width: 16),
+        ),
+        const SizedBox(height: 8),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_logoFileName != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      _logoFileName!,
-                      style: theme.typography.caption,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                if (_logoUrl != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        Icon(FluentIcons.check_mark,
-                            size: 12, color: Colors.successPrimaryColor),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Logo cargado',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.successPrimaryColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                Text(
-                  'Formatos: PNG, JPG, WebP, SVG. Máx. 5 MB.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.resources.textFillColorSecondary,
-                  ),
-                ),
-              ],
-            ),
+        if (_logoUrl != null) ...[
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(FluentIcons.check_mark,
+                  size: 11, color: Colors.successPrimaryColor),
+              SizedBox(width: 4),
+              Text(
+                'Logo cargado',
+                style:
+                    TextStyle(fontSize: 11, color: Colors.successPrimaryColor),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
+          const SizedBox(height: 8),
+        ],
 
+        if (puedeEditar)
           _logoUploading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: ProgressRing(strokeWidth: 2),
+              ? const Center(
+                  child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: ProgressRing(strokeWidth: 2)),
                 )
               : Button(
                   onPressed: () => _pickAndUploadLogo(empresaId),
@@ -514,7 +610,440 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                     ],
                   ),
                 ),
+        const SizedBox(height: 8),
+        Text(
+          'PNG, JPG, WebP, SVG\nMáx. 5 MB',
+          style: TextStyle(
+              fontSize: 11,
+              color: theme.resources.textFillColorSecondary),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  // ---- Logo: fila horizontal para móvil (< 600 px) -----------------------
+
+  Widget _buildLogoMobile(
+      FluentThemeData theme, String empresaId, bool puedeEditar) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Logo de empresa', style: theme.typography.bodyStrong),
+        const SizedBox(height: 4),
+        const Divider(),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.resources.cardBackgroundFillColorDefault,
+            borderRadius: BorderRadius.circular(8),
+            border:
+                Border.all(color: theme.resources.controlStrokeColorDefault),
+          ),
+          child: Row(
+            children: [
+              // Square preview 72 × 72
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: theme.resources.subtleFillColorSecondary,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: theme.resources.controlStrokeColorDefault),
+                ),
+                child: _logoUrl != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: Image.network(
+                          _logoUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            FluentIcons.image_pixel,
+                            size: 28,
+                            color: theme.resources.textFillColorTertiary,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        FluentIcons.image_pixel,
+                        size: 28,
+                        color: theme.resources.textFillColorTertiary,
+                      ),
+              ),
+              const SizedBox(width: 16),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_logoFileName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          _logoFileName!,
+                          style: theme.typography.caption,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    if (_logoUrl != null)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Icon(FluentIcons.check_mark,
+                                size: 12,
+                                color: Colors.successPrimaryColor),
+                            SizedBox(width: 4),
+                            Text(
+                              'Logo cargado',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.successPrimaryColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Text(
+                      'PNG, JPG, WebP, SVG. Máx. 5 MB.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.resources.textFillColorSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              if (puedeEditar)
+                _logoUploading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: ProgressRing(strokeWidth: 2),
+                      )
+                    : Button(
+                        onPressed: () => _pickAndUploadLogo(empresaId),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(FluentIcons.upload, size: 14),
+                            const SizedBox(width: 6),
+                            Text(_logoUrl == null ? 'Seleccionar' : 'Cambiar'),
+                          ],
+                        ),
+                      ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sección de branding de empresa
+// ---------------------------------------------------------------------------
+
+class _EmpresaBrandingSection extends StatefulWidget {
+  final TextEditingController colorPrimCtrl;
+  final AccentColor? selectedPrimario;
+  final void Function(AccentColor?) onPrimarioChanged;
+  /// Último color confirmado en BD. "Aplicar a todos" solo está activo cuando
+  /// el texto del controller coincide exactamente con este valor (ya guardado).
+  final String? savedColor;
+
+  const _EmpresaBrandingSection({
+    required this.colorPrimCtrl,
+    required this.selectedPrimario,
+    required this.onPrimarioChanged,
+    required this.savedColor,
+  });
+
+  @override
+  State<_EmpresaBrandingSection> createState() => _EmpresaBrandingSectionState();
+}
+
+class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
+  bool _forcing = false;
+
+  Future<void> _forceToAll() async {
+    final color = widget.colorPrimCtrl.text.trim();
+    if (color.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => ContentDialog(
+        title: const Text('Aplicar color a todos'),
+        content: const Text(
+          'Esto descartará los colores personalizados de todos los usuarios '
+          'de esta empresa en su próxima actualización de la app. '
+          '¿Deseas continuar?',
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Aplicar a todos'),
+          ),
         ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _forcing = true);
+    try {
+      final result = await Supabase.instance.client.rpc(
+        'admin_force_empresa_color',
+        params: {'p_color': color},
+      );
+      if (mounted) {
+        if (result is Map && result['ok'] == true) {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Color aplicado a todos los usuarios'),
+              content: const Text(
+                'Los usuarios verán el nuevo color en la próxima vez que abran la app.',
+              ),
+              severity: InfoBarSeverity.success,
+              onClose: close,
+            ),
+          );
+        } else {
+          displayInfoBar(
+            context,
+            builder: (_, close) => InfoBar(
+              title: const Text('Error al aplicar'),
+              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              severity: InfoBarSeverity.error,
+              onClose: close,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _forcing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+
+    // "Aplicar a todos" solo activo si el color actual ya fue guardado en BD.
+    final colorActual = widget.colorPrimCtrl.text.trim();
+    final colorIsSaved = widget.savedColor != null &&
+        widget.savedColor!.isNotEmpty &&
+        widget.savedColor == colorActual;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Personalización', style: theme.typography.bodyStrong),
+        const SizedBox(height: 4),
+        const Divider(),
+        const SizedBox(height: 4),
+        Text(
+          'Color de acento predeterminado para todos los usuarios de esta empresa. '
+          'Cada usuario puede sobreescribir este color desde Configuración.',
+          style: theme.typography.caption?.copyWith(color: theme.inactiveColor),
+        ),
+        const SizedBox(height: 16),
+
+        InfoLabel(
+          label: 'Color de acento de la empresa',
+          child: _BrandingColorPicker(
+            controller: widget.colorPrimCtrl,
+            selected: widget.selectedPrimario,
+            onSwatchSelected: widget.onPrimarioChanged,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Guardar se hace desde el botón principal del formulario.
+        // "Aplicar a todos" solo disponible cuando el color ya está guardado en BD.
+        _forcing
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: ProgressRing(strokeWidth: 2),
+              )
+            : Tooltip(
+                message: colorIsSaved
+                    ? 'Descarta el color personalizado de todos los usuarios '
+                        'y les aplica el color de empresa en su próxima sesión.'
+                    : 'Guarda los datos de la empresa primero para activar esta opción.',
+                child: FilledButton(
+                  onPressed: colorIsSaved ? _forceToAll : null,
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(FluentIcons.sync, size: 14),
+                      SizedBox(width: 6),
+                      Text('Aplicar a todos'),
+                    ],
+                  ),
+                ),
+              ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Color picker para branding
+// ---------------------------------------------------------------------------
+
+class _BrandingColorPicker extends StatelessWidget {
+  final TextEditingController controller;
+  final AccentColor? selected;
+  final void Function(AccentColor?) onSwatchSelected;
+
+  const _BrandingColorPicker({
+    required this.controller,
+    required this.selected,
+    required this.onSwatchSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ColorSwatchRow(
+          selected: selected,
+          onSelected: onSwatchSelected,
+          includeNoneOption: true,
+          noneLabel: 'Sin color',
+        ),
+        const SizedBox(height: 8),
+        TextBox(
+          controller: controller,
+          placeholder: '#0078D4',
+          prefix: const Padding(
+            padding: EdgeInsets.only(left: 8),
+            child: Icon(FluentIcons.color, size: 14),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorSwatchRow extends StatelessWidget {
+  final AccentColor? selected;
+  final void Function(AccentColor?) onSelected;
+  final bool includeNoneOption;
+  final String noneLabel;
+
+  const _ColorSwatchRow({
+    required this.selected,
+    required this.onSelected,
+    this.includeNoneOption = false,
+    this.noneLabel = 'Ninguno',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final bodyColor = theme.typography.body?.color ?? Colors.white;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (includeNoneOption)
+          Tooltip(
+            message: noneLabel,
+            child: _SwatchCircle(
+              color: theme.micaBackgroundColor,
+              isSelected: selected == null,
+              checkColor: bodyColor,
+              border: BorderSide(color: theme.inactiveColor, width: 1.5),
+              onTap: () => onSelected(null),
+            ),
+          ),
+        ...Colors.accentColors.map((c) => Tooltip(
+          message: _colorName(c),
+          child: _SwatchCircle(
+            color: c,
+            isSelected: selected?.toARGB32() == c.toARGB32(),
+            onTap: () => onSelected(c),
+          ),
+        )),
+      ],
+    );
+  }
+
+  String _colorName(AccentColor c) {
+    const names = {
+      'yellow': 'Amarillo', 'orange': 'Naranja', 'red': 'Rojo',
+      'magenta': 'Magenta', 'purple': 'Morado', 'blue': 'Azul',
+      'teal': 'Verde azulado', 'green': 'Verde',
+    };
+    for (final entry in names.entries) {
+      if (c == _colorFor(entry.key)) return entry.value;
+    }
+    return 'Color';
+  }
+
+  AccentColor _colorFor(String name) => switch (name) {
+    'yellow'  => Colors.yellow,
+    'orange'  => Colors.orange,
+    'red'     => Colors.red,
+    'magenta' => Colors.magenta,
+    'purple'  => Colors.purple,
+    'blue'    => Colors.blue,
+    'teal'    => Colors.teal,
+    'green'   => Colors.green,
+    _         => Colors.blue,
+  };
+}
+
+class _SwatchCircle extends StatelessWidget {
+  final Color color;
+  final bool isSelected;
+  final Color checkColor;
+  final BorderSide? border;
+  final VoidCallback onTap;
+
+  const _SwatchCircle({
+    required this.color,
+    required this.isSelected,
+    this.checkColor = Colors.white,
+    this.border,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: isSelected
+              ? Border.all(color: checkColor, width: 2.5)
+              : border != null
+                  ? Border.fromBorderSide(border!)
+                  : null,
+          boxShadow: isSelected
+              ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 6, spreadRadius: 1)]
+              : null,
+        ),
+        child: isSelected
+            ? Icon(FluentIcons.check_mark, size: 16, color: checkColor)
+            : null,
       ),
     );
   }

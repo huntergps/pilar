@@ -128,9 +128,14 @@ final alertasActivasProvider = FutureProvider<List<AlertaItem>>((ref) async {
   if (repo == null) return const [];
 
   try {
+    // Filtra por empresaId además de estado para evitar leakear datos
+    // de otras empresas cacheadas en SQLite.
     final alertas = await repo.get<AlertaEmpresa>(
       policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
-      query: Query.where('estado', 'activa'),
+      query: Query(where: [
+        Where.exact('empresaId', empresaId),
+        const Where.exact('estado', 'activa'),
+      ]),
     );
     return alertas.map(_alertaFromBrick).toList();
   } catch (_) {

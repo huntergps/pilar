@@ -144,11 +144,6 @@ class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
     String? emailContacto,
     String? zonaHoraria,
   }) async {
-    // Verificar conectividad antes de intentar el RPC
-    if (!kIsWeb && !ref.read(connectivityProvider)) {
-      return 'Sin conexión. Reconéctate para guardar cambios.';
-    }
-
     final payload = <String, dynamic>{};
     if (nombreDisplay != null) payload['nombre_display'] = nombreDisplay;
     if (avatarUrl != null) payload['avatar_url'] = avatarUrl;

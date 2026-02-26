@@ -28,6 +28,22 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
   bool _obscureKey = true;
 
   @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  Future<void> _prefill() async {
+    final config = await SupabaseConfigService.load();
+    if (mounted) {
+      setState(() {
+        _urlController.text = config.url;
+        _keyController.text = config.anonKey;
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _urlController.dispose();
     _keyController.dispose();

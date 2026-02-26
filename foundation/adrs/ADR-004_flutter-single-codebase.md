@@ -203,9 +203,8 @@ if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
 
 ### Alternativas de sistema de diseño rechazadas
 
-**Material 3 + flex_color_scheme**
-- Material 3 es mobile-first; su NavigationDrawer/NavigationRail no tienen la riqueza del `NavigationPane` de fluent_ui (sin PaneItemExpander, sin sub-items anidados, sin autoSuggestBox integrado)
-- `flex_color_scheme` agrega complejidad de temas sin beneficio real para un ERP
+**Material 3**
+- Mobile-first; su NavigationDrawer/NavigationRail no tienen la riqueza del `NavigationPane` de fluent_ui (sin PaneItemExpander, sin sub-items anidados, sin autoSuggestBox integrado)
 - **Rechazado por**: shell de navegación insuficiente para la complejidad del ERP
 
 **shadcn_ui (nank1ro)**

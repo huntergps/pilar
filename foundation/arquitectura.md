@@ -986,42 +986,37 @@ PILAR se adapta a TODAS las plataformas con un solo codebase Flutter:
 ║  BREAKPOINTS (puntos de quiebre)                                ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  COMPACT  (< 600px)  → Telefono (portrait)                     ║
-║    - Sin sidebar, usa bottom navigation o hamburger menu        ║
+║    - NavigationPane modo minimal (hamburguesa → drawer)         ║
 ║    - Listas en vez de tablas (cards apiladas)                   ║
 ║    - Formularios de una columna                                 ║
-║    - FAB para acciones principales                              ║
 ║                                                                  ║
 ║  MEDIUM   (600-840px) → Tablet (portrait) / Telefono landscape  ║
-║    - Sidebar colapsado (solo iconos, expandible)                ║
-║      (ver nota: reemplazado por PilarShell sin sidebar, seccion 6.8)
+║    - NavigationPane modo compact (rail: solo iconos)            ║
 ║    - Tablas con columnas prioritarias (scroll horizontal)       ║
 ║    - Formularios de 2 columnas                                   ║
 ║                                                                  ║
 ║  EXPANDED (840-1200px) → Tablet landscape / Desktop pequeno     ║
-║    - Sidebar expandido fijo                                      ║
-║      (ver nota: reemplazado por PilarShell sin sidebar, seccion 6.8)
+║    - NavigationPane modo expanded (sidebar con texto + iconos)  ║
 ║    - SfDataGrid completo con todas las columnas                  ║
 ║    - Formularios de 2-3 columnas                                 ║
 ║    - Master-detail layout (lista + detalle lado a lado)          ║
 ║                                                                  ║
 ║  LARGE   (> 1200px) → Desktop / Web                              ║
-║    - Sidebar expandido + area de contenido amplia                ║
-║      (ver nota: reemplazado por PilarShell sin sidebar, seccion 6.8)
+║    - NavigationPane modo expanded (sidebar)                      ║
 ║    - Dashboard con multiples widgets/graficos                    ║
 ║    - Formularios de 3-4 columnas                                 ║
 ║    - Multiples paneles visibles simultaneamente                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 Implementacion:
-  - LayoutBuilder + MediaQuery para responsive
-  - AdaptiveScaffold (Material 3) para structure base
-  - Breakpoints como constantes globales
+  - NavigationView (fluent_ui) con PaneDisplayMode.auto: gestiona el sidebar
+    automaticamente segun el ancho de pantalla, sin codigo manual de breakpoints
+  - LayoutBuilder dentro de cada pantalla: elige SfDataGrid (>800px) vs ListView
+  - Breakpoints como constantes en pilar_breakpoints.dart
   - Componentes que se adaptan automaticamente:
-    • ResponsiveDataView: SfDataGrid en desktop, ListView de cards en mobile
+    • Content area: SfDataGrid en desktop, ListView de cards en mobile
     • ResponsiveForm: columnas segun ancho disponible
-    • ResponsiveSidebar: expandido/colapsado/oculto segun breakpoint
-      (ver nota: reemplazado por PilarShell sin sidebar, seccion 6.8)
-    • ResponsiveDialog: modal en desktop, pantalla completa en mobile
+    • ContentDialog: modal en desktop, pantalla completa en mobile
 
 Modulos touch-intensivos (pantallas de operacion directa con el cliente):
   - Touch-friendly: botones grandes, grids con imagenes
@@ -1029,470 +1024,180 @@ Modulos touch-intensivos (pantallas de operacion directa con el cliente):
   - Optimizados para tablet y desktop
 ```
 
-#### Evaluacion de fluent_ui vs Framework Propio (PilarShell)
+#### Decision: fluent_ui como sistema de UI de PILAR
 
 ```
-Se evaluo el paquete fluent_ui (https://pub.dev/packages/fluent_ui) que implementa
-Microsoft Fluent Design (WinUI3) en Flutter. Ofrece NavigationView responsive,
-acrilicos, tipografia adaptativa y layout de desktop profesional.
+DECISION ADOPTADA: usar fluent_ui como sistema de diseno principal de PILAR.
 
-VENTAJAS de fluent_ui:
-  + NavigationView con panel izquierdo que se adapta a 3 modos (open/compact/minimal)
-  + Look & feel profesional tipo aplicacion de escritorio
-  + Tipografia y spacing adaptativo integrado
-  + Soporte multi-plataforma (Windows, macOS, Linux, Web, iOS, Android)
-  + Acrylic/Mica effects para interfaces modernas
+fluent_ui implementa el Microsoft Fluent Design System (WinUI3) en Flutter.
+Proporciona NavigationView con sidebar adaptativo nativo, sin necesidad de un
+framework de navegacion propio.
 
-PROBLEMAS CRITICOS para PILAR:
-  ✗ INCOMPATIBLE con Syncfusion: fluent_ui REEMPLAZA Material, no lo complementa.
-    Conflictos de nombres: ThemeData, TextButton, Colors, Divider, Tooltip,
-    showDialog, Tab, Scrollbar, TextStyle (requiere import 'as' en TODO el codigo)
-  ✗ SfDataGrid, SfCalendar, SfCartesianChart, syncfusion_flutter_pdf dependen
-    de Material 3 ThemeData/ColorScheme → se romperian con fluent_ui ThemeData
-  ✗ flutter_form_builder depende de Material InputDecoration → incompatible
-  ✗ go_router + MaterialPage → conflicto con FluentPage de fluent_ui
-  ✗ Mantenimiento: paquete no oficial, mantenido por 1 persona (bdlukaa)
-  ✗ Toda la documentacion/ejemplos de Supabase y Brick asumen Material
+POR QUE fluent_ui:
+  + NavigationView con PaneDisplayMode.auto: maneja sidebar/rail/hamburguesa
+    automaticamente segun el ancho → cero codigo de breakpoints para navegacion
+  + PaneItemExpander: agrupa modulos con sub-items colapsables
+  + TitleBar: barra de titulo nativa en desktop (Windows/macOS/Linux)
+  + FluentThemeData: theming completo sin depender de Material ThemeData
+  + Soporte multi-plataforma: Windows, macOS, Linux, Web, iOS, Android
+  + Acrylic/Mica effects en desktop
+  + FluentIcons: ~5000 iconos del Fluent Design System
 
-DECISION: NO usar fluent_ui. Construir framework propio "PilarShell" sobre Material 3
-que ofrece las mismas capacidades sin conflictos de compatibilidad.
+INTEGRACION CON SYNCFUSION:
+  Los widgets Syncfusion (SfDataGrid, SfCalendar, SfCartesianChart, etc.) son
+  independientes de Material y funcionan con fluent_ui usando SfDataGridThemeData:
+    SfDataGridTheme(
+      data: SfDataGridThemeData(
+        headerColor: FluentTheme.of(context).accentColor.withValues(alpha: 0.2),
+      ),
+      child: SfDataGrid(...),
+    )
 
-Referencia: https://github.com/bdlukaa/fluent_ui/issues/150
+REGLA: FluentTheme.of(context) en todos los widgets — NUNCA Theme.of(context).
 ```
 
-#### PilarShell: Framework Responsive Propio sobre Material 3
+#### PilarShell: Layout con fluent_ui NavigationView
 
 ```
-PilarShell es el framework de UI responsive de PILAR ERP. Gestiona automaticamente:
-  - Menus/navegacion (sidebar, bottom nav, drawer)
-  - Rutas + titulos + breadcrumbs
-  - Header y footer informativos
-  - Escalado automatico de fuentes y componentes segun dispositivo
-  - Breakpoints con transiciones animadas
+PilarShell es el widget raiz de todas las pantallas autenticadas.
+Usa NavigationView de fluent_ui — NO un framework de navegacion propio.
 
 ═══════════════════════════════════════════════════════════════════════════
-ARQUITECTURA DEL FRAMEWORK
+ARQUITECTURA REAL
 ═══════════════════════════════════════════════════════════════════════════
 
-  PilarApp (MaterialApp + ThemeData responsive)
-    └── PilarShell (layout principal adaptativo)
-          ├── PilarHeader (barra superior con info contextual)
-          ├── PilarNavigation (sidebar/rail/drawer/bottom segun breakpoint)
-          ├── PilarContent (area de contenido con WorkspaceTabs)
-          └── PilarFooter (barra inferior con info de estado)
+  FluentApp.router (main.dart)
+    └── ShellRoute (go_router)
+          └── PilarShell (ConsumerStatefulWidget)
+                └── NavigationView (fluent_ui)
+                      ├── titleBar: TitleBar
+                      │     ├── title: DragToMoveArea (texto "PILAR ERP")
+                      │     ├── endHeader: PilarHeader (acciones derechas)
+                      │     └── captionControls: WindowCaption (solo desktop)
+                      ├── pane: NavigationPane (PaneDisplayMode.auto)
+                      │     ├── items: [Dashboard, PaneItemExpander(Admin), ...modulos]
+                      │     └── footerItems: [Salir]
+                      └── paneBodyBuilder: widget.child (contenido go_router)
+
+PaneDisplayMode.auto resuelve el layout de navegacion sin codigo manual:
+  - ≥ 1008px  → expanded (sidebar con texto + iconos)
+  - 641-1007px → compact  (rail: solo iconos, hover muestra nombre)
+  - ≤ 640px   → minimal  (hamburguesa → drawer)
 
 ═══════════════════════════════════════════════════════════════════════════
-PilarApp: MaterialApp con Tipografia y Componentes Auto-Escalados
+LAYOUTS POR BREAKPOINT
 ═══════════════════════════════════════════════════════════════════════════
 
-El punto de entrada configura Material 3 con escalado automatico:
-
-  class PilarApp extends StatelessWidget {
-    Widget build(context) {
-      return MaterialApp(
-        theme: _buildTheme(context, Brightness.light),
-        darkTheme: _buildTheme(context, Brightness.dark),
-        themeMode: ref.watch(themeProvider).mode,
-        builder: (context, child) {
-          // Escalar TODA la tipografia y componentes segun dispositivo
-          final scaleFactor = _getScaleFactor(context);
-          return MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(scaleFactor),
-            ),
-            child: child!,
-          );
-        },
-      );
-    }
-  }
-
-ESCALADO AUTOMATICO DE FUENTES Y COMPONENTES:
-
-  ┌─────────────────┬───────────────────┬───────────────────────────────┐
-  │ Breakpoint       │ Factor de Escala  │ Efecto                        │
-  ├─────────────────┼───────────────────┼───────────────────────────────┤
-  │ COMPACT (<600)   │ 0.85              │ Fuentes mas pequenas, botones │
-  │                   │                   │ mas compactos, padding 4-8px  │
-  ├─────────────────┼───────────────────┼───────────────────────────────┤
-  │ MEDIUM (600-840) │ 0.92              │ Fuentes ligeramente menores,  │
-  │                   │                   │ padding 8-12px                │
-  ├─────────────────┼───────────────────┼───────────────────────────────┤
-  │ EXPANDED (840+)  │ 1.00              │ Tamano base (14px body),      │
-  │                   │                   │ padding 12-16px               │
-  ├─────────────────┼───────────────────┼───────────────────────────────┤
-  │ LARGE (>1200)    │ 1.00              │ Mismo tamano base, mas espacio│
-  │                   │                   │ para multi-panel y dashboards │
-  └─────────────────┴───────────────────┴───────────────────────────────┘
-
-  Ademas del factor global, cada TextTheme se escala:
-    - displayLarge:  28 * factor  (titulos de pagina)
-    - headlineMedium: 22 * factor (titulos de seccion)
-    - titleLarge:    18 * factor  (titulos de card/panel)
-    - titleMedium:   16 * factor  (subtitulos)
-    - bodyLarge:     15 * factor  (texto principal)
-    - bodyMedium:    14 * factor  (texto normal - BASE)
-    - bodySmall:     12 * factor  (texto secundario)
-    - labelLarge:    14 * factor  (botones)
-    - labelSmall:    11 * factor  (badges, chips)
-
-COMPONENTES QUE SE ADAPTAN AUTOMATICAMENTE:
-  - Botones: tamano minimo 36px (COMPACT) → 40px (MEDIUM) → 48px (EXPANDED)
-  - IconButtons: 32px → 36px → 40px
-  - Inputs (TextField): altura 40px → 44px → 48px
-  - Cards: padding 8px → 12px → 16px
-  - DataGrid: row height 36px → 44px → 48px (configurable en preferencias)
-  - Dialog: ancho max(320, 50% pantalla) en desktop, fullscreen en mobile
-  - FAB: 48px → 56px (solo visible en COMPACT/MEDIUM)
-  - Chips/Badges: 24px → 28px → 32px
-
-IMPLEMENTACION:
-  // core/theme/responsive_sizes.dart
-  class PilarSizes {
-    final double buttonHeight;
-    final double inputHeight;
-    final double iconButtonSize;
-    final double cardPadding;
-    final double rowHeight;
-    final double chipHeight;
-    final EdgeInsets pagePadding;
-
-    factory PilarSizes.fromBreakpoint(PilarBreakpoint bp) {
-      switch (bp) {
-        case PilarBreakpoint.compact:
-          return PilarSizes(buttonHeight: 36, inputHeight: 40, ...);
-        case PilarBreakpoint.medium:
-          return PilarSizes(buttonHeight: 40, inputHeight: 44, ...);
-        case PilarBreakpoint.expanded:
-        case PilarBreakpoint.large:
-          return PilarSizes(buttonHeight: 48, inputHeight: 48, ...);
-      }
-    }
-  }
-
-  // Acceso via InheritedWidget o Riverpod:
-  final sizes = PilarSizes.of(context);
-  // o
-  final sizes = ref.watch(pilarSizesProvider);
-
-═══════════════════════════════════════════════════════════════════════════
-PilarShell: Layout Adaptativo Completo
-═══════════════════════════════════════════════════════════════════════════
-
-Detecta automaticamente el breakpoint y muestra el layout apropiado.
-SIN SIDEBAR: El espacio completo es para contenido (datos, grids, formularios).
-La navegacion esta en el Header (MenuBar + App Launcher estilo Odoo).
-
-LARGE (> 1200px) - Desktop/Web:
-┌──────────────────────────────────────────────────────────────────────────┐
-│ PilarHeader con ModuleMenuBar                                             │
-│ [⊞][Modulo A ▼][Modulo B ▼][Modulo C ▼][Config ▼]  [Emp ▼][🔔][🌙][👤]│
-├──────────────────────────────────────────────────────────────────────────┤
-│ PilarContent (100% ancho)                                                 │
-│ ┌──────────────────────────────────────────────────────────────────────┐ │
-│ │ [Tab 1 x] [Tab 2 x] [Tab 3 x] [+]                                   │ │
-│ ├──────────────────────────────────────────────────────────────────────┤ │
-│ │                                                                        │ │
-│ │  Contenido del tab activo (CrudScaffold, FormScaffold, Dashboard)     │ │
-│ │  Aprovecha TODO el ancho → grids mas anchos, formularios 2-3 cols     │ │
-│ │                                                                        │ │
-│ └──────────────────────────────────────────────────────────────────────┘ │
-├──────────────────────────────────────────────────────────────────────────┤
-│ PilarFooter                                                               │
-│ [v1.0.0] [Empresa: Comercial XYZ - RUC: 1790XXX001] [● Online] [🕐]    │
-└──────────────────────────────────────────────────────────────────────────┘
-
-EXPANDED (840-1200px) - Tablet Landscape / Desktop Pequeno:
-┌──────────────────────────────────────────────────────────────────────────┐
-│ PilarHeader con ModuleMenuBar (compacto)                                  │
-│ [⊞][Modulo A][Modulo B][Modulo C][Config]      [Emp ▼][🔔][🌙][👤]      │
-├──────────────────────────────────────────────────────────────────────────┤
-│ PilarContent (100% ancho)                                                 │
-│ ┌──────────────────────────────────────────────────────────────────────┐ │
-│ │ [Tab 1 x] [Tab 2 x] [+]                                              │ │
-│ ├──────────────────────────────────────────────────────────────────────┤ │
-│ │  Contenido                                                             │ │
-│ │                                                                        │ │
-│ └──────────────────────────────────────────────────────────────────────┘ │
-├──────────────────────────────────────────────────────────────────────────┤
-│ PilarFooter (compacto: version + estado conexion)                         │
-└──────────────────────────────────────────────────────────────────────────┘
-
-MEDIUM (600-840px) - Tablet Portrait:
-┌──────────────────────────────────────────────────────────────────────┐
-│ PilarHeader                                                           │
-│ [⊞][Ventas] [Pedidos][Facturacion][Clientes]       [🔔][👤]         │
-├──────────────────────────────────────────────────────────────────────┤
-│ PilarContent (sin tabs, pantalla completa)                            │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │  Breadcrumb: Modulo > Seccion > Registro                          │ │
-│ ├──────────────────────────────────────────────────────────────────┤ │
-│ │  Contenido (CrudScaffold o FormScaffold)                         │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-├──────────────────────────────────────────────────────────────────────┤
-│ PilarFooter (solo icono de estado)                                    │
-└──────────────────────────────────────────────────────────────────────┘
-  - MenuBar se convierte en tabs scrollables en el header
-  - Sub-items se muestran al tap (PopupMenu)
-
-COMPACT (< 600px) - Telefono:
-┌────────────────────────────────┐
-│ AppBar: [⊞] Facturas [🔔][👤] │
-├────────────────────────────────┤
-│                                │
-│  Contenido (lista cards o     │
-│  formulario fullscreen)        │
-│                                │
-├────────────────────────────────┤
-│ BottomNav: [🏠][📄][➕][📊][⋮]│
-└────────────────────────────────┘
-  ⊞ = Drawer con grid de modulos + menu del activo
-  BottomNav: items principales del modulo activo (max 5)
-  [⋮] Mas: lista completa de items del modulo
-  Sin tabs, sin footer. Breadcrumb en AppBar title
-
-═══════════════════════════════════════════════════════════════════════════
-PilarNavigation: Menus y Modulos Estilo Odoo
-═══════════════════════════════════════════════════════════════════════════
-
-Inspirado en Odoo: App Launcher (grid de modulos) + MenuBar por modulo activo.
-NO usa sidebar fijo (desperdicia espacio en pantallas con mucho dato tabular).
-
-CONCEPTO CENTRAL:
-  1. App Launcher: Grid de iconos de todos los modulos habilitados
-  2. Modulo Activo: Al seleccionar un modulo, su MenuBar aparece en el header
-  3. MenuBar: Items del modulo activo con dropdowns de sub-items
-  4. Cada modulo tiene opcionalmente un menu "Configuracion"
-
-LAYOUT DESKTOP (LARGE/EXPANDED):
-┌──────────────────────────────────────────────────────────────────────────┐
-│ [⊞] [SeccionA ▼] [SeccionB ▼] [SeccionC ▼] [Reportes ▼] [Config ▼]   │
-│                                                   [🔔3] [🌙] [👤 Juan]│
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│                    CONTENT AREA (100% ancho disponible)                   │
-│                    DataGrid / Formulario / Dashboard / Kanban            │
-│                                                                          │
-├──────────────────────────────────────────────────────────────────────────┤
-│ [Footer: Pilar v1.0 | Empresa | RUC | 🟢 Online | 15:30]               │
-└──────────────────────────────────────────────────────────────────────────┘
-
-  Al hacer click en [⊞] App Launcher:
-  ┌─────────────────────────────────────────┐
-  │  🔍 Buscar modulo...                     │
-  │                                          │
-  │  📊 Módulo A      📦 Módulo B            │
-  │  🛒 Módulo C      🏭 Módulo D            │
-  │  💳 Módulo E      📒 Módulo F            │
-  │  ...              ⚙️ Admin               │
-  │                                          │
-  │  Solo muestra modulos habilitados por    │
-  │  modulos_empresa + permisos del usuario  │
-  └─────────────────────────────────────────┘
-
-  Al hacer click en [Modulo A ▼]:
-  ┌──────────────────┐
-  │  Seccion 1        │
-  │  Seccion 2        │
-  │  Seccion 3        │
-  │  ─────────────    │
-  │  Reportes         │
-  └──────────────────┘
-
-LAYOUT TABLET (MEDIUM):
+EXPANDED/LARGE (≥ 1008px) - Desktop/Web:
 ┌──────────────────────────────────────────────────────────────────┐
-│ [⊞] [Modulo A] [Modulo B] [Modulo C] [Modulo D]  [🔔] [👤]    │
-├──────────────────────────────────────────────────────────────────┤
-│                    CONTENT AREA                                  │
-├──────────────────────────────────────────────────────────────────┤
-│ [Footer compacto]                                                │
-└──────────────────────────────────────────────────────────────────┘
-  - MenuBar se convierte en tabs scrollables
-  - Sub-items se muestran al tap (bottom sheet o dropdown)
+│ TitleBar: [PILAR ERP]        [🔔][Empresa][👤] [— □ ✕]         │
+├──────────────┬───────────────────────────────────────────────────┤
+│ NavigationPane│  Contenido go_router                             │
+│ expanded     │  (ScaffoldPage / CrudScaffold / FormScaffold)     │
+│              │                                                    │
+│ 🏠 Dashboard │                                                    │
+│ ⚙ Admin  ▸  │                                                    │
+│   Empresa    │                                                    │
+│   Usuarios   │                                                    │
+│   Modulos    │                                                    │
+│   Config     │                                                    │
+│ 📦 Ventas    │                                                    │
+│ 🧾 Facturas  │                                                    │
+│ ...          │                                                    │
+│──────────────│                                                    │
+│ 🚪 Salir     │                                                    │
+└──────────────┴───────────────────────────────────────────────────┘
 
-LAYOUT MOVIL (COMPACT):
-┌──────────────────────────────┐
-│ [⊞] [Titulo Pagina]  [🔔][👤]│
-├──────────────────────────────┤
-│                              │
-│      CONTENT AREA            │
-│                              │
-├──────────────────────────────┤
-│ [🏠] [📄] [➕] [📊] [⋮]    │ ← Bottom Navigation
-└──────────────────────────────┘
-  - ⊞ abre drawer con grid de modulos
-  - Bottom Nav: max 5 items del modulo activo
-  - [⋮] Mas: abre lista completa de items del modulo
+COMPACT (641-1007px) - Tablet:
+┌──────────────────────────────────────────────────────────────────┐
+│ TitleBar: [PILAR ERP]                          [🔔][👤] [— □ ✕]│
+├──────┬───────────────────────────────────────────────────────────┤
+│ Rail │  Contenido go_router                                      │
+│      │                                                            │
+│ 🏠   │                                                            │
+│ ⚙    │                                                            │
+│ 📦   │                                                            │
+│ 🧾   │                                                            │
+│ 🚪   │                                                            │
+└──────┴───────────────────────────────────────────────────────────┘
 
-MODELO DE DATOS DE MENU:
-
-  // Modelo jerarquico: PilarModule > PilarMenuGroup > PilarMenuItem
-  class PilarModule {
-    final String id;               // 'mi_modulo' → vinculado a tabla modulos
-    final String label;            // 'Mi Modulo'
-    final IconData icon;           // Icons.widgets
-    final String? permission;      // Permiso a nivel modulo
-    final List<PilarMenuGroup> menuGroups;  // Grupos de menu del modulo
-  }
-
-  class PilarMenuGroup {
-    final String label;            // 'Principal', 'Reportes', 'Configuracion'
-    final List<PilarMenuItem> items;
-  }
-
-  class PilarMenuItem {
-    final String id;               // 'mi_seccion'
-    final String label;            // 'Mi Seccion'
-    final String path;             // '/mi_modulo/mi_seccion'
-    final IconData? icon;          // Icono opcional (para bottom nav)
-    final String? permission;      // Permiso especifico
-    final int Function()? badge;   // Badge count (ej: pendientes)
-    final Widget Function()? builder; // Constructor de la pantalla
-  }
-
-EJEMPLO GENERICO - UN MODULO:
-
-  PilarModule(
-    id: 'mi_modulo', label: 'Mi Modulo', icon: Icons.extension,
-    menuGroups: [
-      PilarMenuGroup(label: 'Seccion A', items: [
-        PilarMenuItem(id: 'item_1', label: 'Item 1',
-          path: '/mi_modulo/item_1', permission: 'mi_modulo.item_1.ver'),
-        PilarMenuItem(id: 'item_2', label: 'Item 2',
-          path: '/mi_modulo/item_2', permission: 'mi_modulo.item_2.ver'),
-      ]),
-      PilarMenuGroup(label: 'Reportes', items: [
-        PilarMenuItem(id: 'reportes', label: 'Reportes',
-          path: '/mi_modulo/reportes'),
-      ]),
-      PilarMenuGroup(label: 'Configuracion', items: [
-        PilarMenuItem(id: 'config', label: 'Ajustes',
-          path: '/mi_modulo/config', permission: 'mi_modulo.config'),
-      ]),
-    ],
-  ),
-
-  // Cada modulo define su propia instancia de PilarModule en su propio directorio features/<modulo>/
-
-GENERACION AUTOMATICA:
-  - go_router ShellRoutes se generan desde pilarModules
-  - App Launcher grid se genera desde pilarModules (filtrado por modulos_empresa)
-  - MenuBar se genera desde menuGroups del modulo activo (filtrado por permisos)
-  - Bottom Nav se genera desde los primeros items de cada grupo (max 5)
-  - Breadcrumbs: Modulo > Grupo > Item
-  - Titulos de pagina se extraen de PilarMenuItem.label
-
-WIDGET AppLauncherGrid:
-  - GridView.builder con modulos habilitados
-  - Cada tile: icono + label + badge opcional (notificaciones pendientes)
-  - Filtrado por: modulos_empresa + permisos del usuario
-  - Busqueda por texto (filter)
-  - Se puede agregar a favoritos (se guardan en preferencias)
-  - Animacion: Overlay que sale desde el boton ⊞ (como Odoo)
-
-WIDGET ModuleMenuBar (solo desktop/tablet):
-  - Row de TextButton con PopupMenuButton por cada MenuGroup
-  - Separadores visuales entre grupos
-  - Badges en items con notificaciones
-  - Highlight del item activo (current route)
-  - En tablet: ScrollableRow con overflow indicator
+MINIMAL (≤ 640px) - Movil:
+┌──────────────────────────────────┐
+│ TitleBar: [☰] PILAR ERP  [🔔][👤]│
+├──────────────────────────────────┤
+│                                  │
+│  Contenido go_router             │
+│                                  │
+└──────────────────────────────────┘
+  ☰ abre NavigationPane como drawer desde la izquierda
 
 ═══════════════════════════════════════════════════════════════════════════
-PilarHeader: Barra Superior Adaptativa
+NavigationPane: items y estructura
 ═══════════════════════════════════════════════════════════════════════════
 
-Se integra con el MenuBar del modulo activo (estilo Odoo):
+La estructura del pane refleja los modulos activos de la empresa:
 
-  LARGE:    [⊞] [ModuleMenuBar...............] [Empresa ▼] [🔔 3] [🌙] [👤 Juan ▼]
-  EXPANDED: [⊞] [ModuleMenuBar...............] [Empresa ▼] [🔔]   [🌙] [👤]
-  MEDIUM:   [⊞] [Modulo] [Tab1] [Tab2] [Tab3]              [🔔]         [👤]
-  COMPACT:  [⊞] [Titulo Pagina]                             [🔔]         [👤]
+  items: [
+    PaneItem(icon: FluentIcons.home, title: Text('Dashboard')),
 
-Componentes:
-  - ⊞ App Launcher: abre grid de modulos (overlay en desktop, drawer en movil)
-  - ModuleMenuBar: menus del modulo activo con dropdowns (solo LARGE/EXPANDED)
-  - Empresa selector: dropdown, recarga datos y modulos al cambiar
-  - 🔔 Notificaciones: badge + panel lateral (EndDrawer)
-  - 🌙/☀ toggle tema (solo LARGE/EXPANDED, en MEDIUM/COMPACT va en drawer)
-  - 👤 menu usuario: perfil, preferencias, cambiar empresa, cerrar sesion
+    // Modulos de infraestructura agrupados con PaneItemExpander:
+    PaneItemExpander(
+      icon: FluentIcons.settings,
+      title: Text('Administración'),
+      items: [
+        PaneItem(icon: ..., title: Text('Empresa')),
+        PaneItem(icon: ..., title: Text('Usuarios')),
+        PaneItem(icon: ..., title: Text('Módulos')),
+        PaneItem(icon: ..., title: Text('Configuración')),
+      ],
+    ),
 
-═══════════════════════════════════════════════════════════════════════════
-PilarFooter: Barra Inferior Informativa
-═══════════════════════════════════════════════════════════════════════════
+    // Modulos core/extensiones habilitados (dinamicos desde modulos_empresa):
+    PaneItem(icon: FluentIcons.receipt, title: Text('Facturación')),
+    PaneItem(icon: FluentIcons.shop, title: Text('Ventas')),
+    // ...
+  ],
+  footerItems: [
+    PaneItemSeparator(),
+    PaneItemAction(icon: FluentIcons.sign_out, title: Text('Salir'), onTap: _signOut),
+  ],
 
-Barra inferior con informacion contextual (solo desktop/tablet):
-
-  LARGE:    [v1.0.0] [Comercial XYZ S.A. - RUC: 1790XXX001] [● Online | Sync OK] [15/02/2026 10:30]
-  EXPANDED: [v1.0.0] [Comercial XYZ] [● Online] [10:30]
-  MEDIUM:   [● Online]
-  COMPACT:  (sin footer - se usa la barra de estado del SO)
-
-Componentes:
-  - Version de la app
-  - Nombre/RUC de la empresa activa
-  - Indicador de conexion + estado sync
-  - Fecha/hora actual (actualizada cada minuto)
-  - Click en estado conexion: abre log de sincronizacion
+Indice efectivo: PaneItemExpander con body:null NO ocupa indice propio;
+sus children si. El calculo de selectedIndex mapea la ruta actual al indice.
 
 ═══════════════════════════════════════════════════════════════════════════
-Breadcrumbs Automaticos
+PilarHeader: Acciones del lado derecho en TitleBar
 ═══════════════════════════════════════════════════════════════════════════
 
-En MEDIUM/COMPACT donde no hay sidebar visible, se muestran breadcrumbs:
+PilarHeader se coloca en endHeader del TitleBar. Contiene (de izquierda a derecha):
+  - 🔔 Notificaciones: badge con count + abre NotificacionesDialog
+  - 🚨 Alertas: badge con count por severidad + abre AlertasPanel
+  - Empresa selector: nombre de empresa activa + cambio de empresa
+  - 👤 Menu usuario: perfil, preferencias, cerrar sesion
 
-  Modulo > Seccion > Registro
-
-  - Se generan automaticamente desde la jerarquia de PilarRoute
-  - Click en cualquier nivel navega a esa pantalla
-  - En LARGE/EXPANDED se muestran DENTRO del area de contenido (sobre el titulo)
-  - En MEDIUM/COMPACT se muestran debajo del AppBar
-```
-
-```
-ESTRUCTURA DE ARCHIVOS DEL FRAMEWORK PilarShell:
+═══════════════════════════════════════════════════════════════════════════
+ESTRUCTURA DE ARCHIVOS
+═══════════════════════════════════════════════════════════════════════════
 
 lib/core/
-  ├── shell/                          # Framework PilarShell
-  │   ├── pilar_app.dart              # MaterialApp con auto-scaling
-  │   ├── pilar_shell.dart            # Layout adaptativo (header+nav+content+footer)
-  │   ├── pilar_header.dart           # Barra superior adaptativa
-  │   ├── pilar_navigation.dart       # Sidebar/Rail/Drawer/BottomNav unificado
-  │   ├── pilar_footer.dart           # Barra inferior informativa
-  │   ├── pilar_route.dart            # Modelo de ruta con permisos y builders
-  │   ├── pilar_route_config.dart     # Definicion de todas las rutas del ERP
-  │   ├── pilar_breadcrumbs.dart      # Breadcrumbs automaticos
-  │   └── pilar_breakpoint.dart       # Enum + deteccion de breakpoint actual
-  ├── theme/                          # Sistema de temas
-  │   ├── app_theme.dart              # ThemeData builder (light + dark + seedColor)
-  │   ├── responsive_sizes.dart       # PilarSizes: tamanos por breakpoint
-  │   ├── color_schemes.dart          # Paletas predefinidas
-  │   ├── typography.dart             # TextTheme escalado por factor
-  │   └── spacing.dart                # EdgeInsets/padding por densidad
-  ├── widgets/                        # Widgets reutilizables (usan PilarSizes)
-  │   ├── workspace_tabs.dart
-  │   ├── crud_scaffold.dart
-  │   ├── form_scaffold.dart
-  │   ├── data_grid.dart
-  │   ├── search_bar.dart
-  │   ├── filter_panel.dart
-  │   ├── export_button.dart
-  │   ├── pagination_bar.dart
-  │   ├── status_badge.dart
-  │   ├── connection_indicator.dart
-  │   ├── empresa_selector.dart
-  │   ├── notification_bell.dart
-  │   ├── theme_toggle.dart
-  │   ├── form_fields.dart
-  │   ├── chat_widget.dart
-  │   └── pdf_viewer.dart
-  └── providers/
-      ├── theme_provider.dart         # Tema + preferencias visuales
-      ├── preferences_provider.dart   # shared_preferences
-      ├── connection_provider.dart    # Estado conexion
-      ├── tabs_provider.dart          # Tabs abiertos
-      ├── permissions_provider.dart   # Permisos usuario
-      ├── navigation_provider.dart    # Ruta activa + breadcrumbs
-      └── breakpoint_provider.dart    # Breakpoint actual reactivo
+  ├── shell/
+  │   ├── pilar_shell.dart      # NavigationView + WindowListener
+  │   └── pilar_header.dart     # Acciones derechas del TitleBar
+  ├── theme/
+  │   ├── pilar_theme.dart      # FluentThemeData (light + dark + accentColor)
+  │   ├── pilar_breakpoints.dart # Enum PilarBreakpoint + extension en BuildContext
+  │   └── pilar_spacing.dart    # Constantes de espaciado base 4px
+  ├── router/
+  │   └── app_router.dart       # GoRouter con ShellRoute → PilarShell
+  ├── providers/
+  │   ├── auth_provider.dart
+  │   ├── empresa_provider.dart
+  │   ├── usuario_provider.dart
+  │   ├── modulos_provider.dart
+  │   ├── theme_provider.dart
+  │   └── alertas_provider.dart
+  └── services/
+      └── window_service.dart   # Persistencia geometria ventana desktop
 ```
 
 #### go_router: Navegacion Declarativa Integrada con PilarShell
@@ -1500,7 +1205,7 @@ lib/core/
 ```
 go_router es el paquete oficial de navegacion declarativa de Flutter.
 Se integra con PilarShell usando ShellRoute para envolver todas las
-pantallas autenticadas dentro del layout principal (header+sidebar+tabs+footer).
+pantallas autenticadas dentro del NavigationView de fluent_ui.
 
 ESTRUCTURA DE RUTAS:
 
@@ -1597,7 +1302,7 @@ DEEP LINKS (requeridos para supabase_auth_ui):
 ```
 PILAR usa supabase_auth_ui para las pantallas de autenticacion,
 aprovechando los widgets pre-construidos que se adaptan al tema de la app
-(flex_color_scheme les aplica estilos automaticamente).
+(FluentThemeData les aplica estilos automaticamente).
 
 ═══════════════════════════════════════════════════════════════════
 LOGIN SCREEN (features/auth/screens/login_screen.dart)
@@ -1811,7 +1516,7 @@ ORDEN DE IMPLEMENTACION (Fase 1):
   │ CAPA 1: INFRAESTRUCTURA (semana 1-2)                                │
   │  ✦ Supabase config + Auth + RLS + Storage                          │
   │  ✦ brick_offline_first_with_supabase (Repository, modelos base)    │
-  │  ✦ flex_color_scheme + theme provider + shared_preferences         │
+  │  ✦ fluent_ui + FluentThemeData + theme provider + shared_preferences│
   │  ✦ go_router + deep links + supabase_auth_ui (login/signup/reset)  │
   ├─────────────────────────────────────────────────────────────────────┤
   │ CAPA 2: CAPA REACTIVA DE DATOS (semana 2-3)                        │
@@ -2264,9 +1969,9 @@ KEYBOARD SHORTCUTS (desktop/web):
 
 #### App Shell: Header, Sidebar y Layout Principal
 
-> **NOTA:** Este widget `AppShell` con sidebar ha sido **reemplazado** por `PilarShell` (ver seccion 6.8).
-> PILAR usa navegacion Odoo-style con App Launcher + ModuleMenuBar, SIN sidebar fijo.
-> Las referencias a sidebar en esta seccion se mantienen solo como referencia historica.
+> **NOTA:** Este widget `AppShell` es una descripcion de referencia historica.
+> El shell real es `PilarShell` (ver seccion 6.8) que usa `NavigationView` de fluent_ui
+> con `PaneDisplayMode.auto` — sidebar adaptativo nativo sin codigo custom.
 
 ```
 WIDGET: AppShell (core/widgets/app_shell.dart)
@@ -2401,31 +2106,14 @@ PREFERENCIAS DE APARIENCIA (preferences_screen.dart)
 │  │ ☀ Claro  │ │ 🌙 Oscuro│ │ 💻 Auto  │  (sigue al SO)    │
 │  └──────────┘ └──────────┘ └──────────┘                     │
 │                                                               │
-│  Esquema de Colores (flex_color_scheme)                        │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │ Esquemas recomendados:                                    │ │
-│  │ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ │ │
-│  │ │██████│ │██████│ │██████│ │██████│ │██████│ │██████│ │ │
-│  │ │Blue  │ │Indigo│ │Green │ │Money │ │Whale │ │Espres│ │ │
-│  │ │ M3   │ │ M3   │ │ M3   │ │      │ │      │ │  so  │ │ │
-│  │ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ │ │
-│  │ [Ver todos (66 esquemas)] [🎨 Color personalizado]      │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│  Estrategia de tonos (flex_seed_scheme):                       │
-│  [Material ▼] (Material, Soft, Vivid, Alto contraste)         │
-│  Preview: [████ primary ████ secondary ████ tertiary ████]    │
+│  Color de acento                                              │
+│  ○ Color del sistema (Windows/macOS)   ← default             │
+│  ○ Color de empresa: [████ #1E6FBF]                          │
+│  ○ Color personalizado: [🎨]                                  │
 │                                                               │
 │  Tipografia                                                    │
 │  Tamano de fuente base:  [ ◀ 14px ▶ ]  (rango: 12-18px)     │
-│  Fuente:  [Roboto ▼]  (Roboto, Inter, Noto Sans, monospace)  │
-│  Preview: "Texto de ejemplo con la fuente seleccionada"       │
-│                                                               │
-│  Espaciado                                                     │
-│  Densidad visual:  [Compacta ▼]  (Compacta, Normal, Comoda)  │
-│    - Compacta: padding reducido (4-8px), ideal para desktop   │
-│    - Normal: padding estandar (8-12px), balance general       │
-│    - Comoda: padding amplio (12-16px), ideal para touch       │
-│  Se aplica via VisualDensity de MaterialApp                    │
+│  Preview: "Texto de ejemplo"                                  │
 │                                                               │
 │  Tabla de Datos                                                │
 │  Filas por pagina:  [25 ▼]  (10, 25, 50, 100)               │
@@ -2433,10 +2121,6 @@ PREFERENCIAS DE APARIENCIA (preferences_screen.dart)
 │                                   Grande 56px)                │
 │  Mostrar lineas de grid:  [☑]                                 │
 │  Columnas fijas a la izquierda: [1 ▼] (0, 1, 2)             │
-│                                                               │
-│  Sidebar                                                       │
-│  Estado inicial:  [Expandido ▼]  (Expandido, Colapsado)      │
-│  Ancho expandido: [ ◀ 260px ▶ ]  (200-320px)                │
 │                                                               │
 │  Notificaciones                                                │
 │  ☑ Sonido al recibir notificaciones                           │
@@ -2450,108 +2134,50 @@ PREFERENCIAS DE APARIENCIA (preferences_screen.dart)
 PERSISTENCIA LOCAL:
   - Package: shared_preferences (web, mobile, desktop)
   - Clave prefijo: "pilar_prefs_"
-  - Almacena: tema, flex_scheme (o custom_seed_color), font_size, font_family,
-    visual_density, flex_tones, rows_per_page, row_height, show_grid_lines,
-    frozen_columns, sidebar_state, sidebar_width, sound_enabled, push_enabled
-    # NOTA: sidebar_state y sidebar_width ya no aplican con PilarShell (ver seccion 6.8)
-  - Se carga al inicio de la app (antes de MaterialApp)
+  - Almacena: theme_mode, empresa_color, font_size,
+    rows_per_page, row_height, show_grid_lines,
+    frozen_columns, sound_enabled, push_enabled
+  - Se carga al inicio de la app (antes de FluentApp)
   - Provider: preferencesProvider (Riverpod StateNotifier)
 
-PROVIDER DE TEMA (core/providers/theme_provider.dart):
-  Usa flex_color_scheme + flex_seed_scheme para temas Material 3 avanzados.
+PROVIDER DE TEMA (core/theme/pilar_theme.dart):
+  Usa FluentThemeData con AccentColor por empresa o color del sistema (system_theme).
 
-  final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeState>((ref) {
-    return ThemeNotifier(ref.read(preferencesProvider));
+  // Providers reales:
+  final themeBrightnessProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
+  final empresaColorProvider    = StateProvider<Color?>((ref) => null);
+
+  final pilarThemeProvider = Provider<FluentThemeData>((ref) {
+    final empresaColor = ref.watch(empresaColorProvider);
+    return PilarTheme.build(brightness: Brightness.light, empresaColor: empresaColor);
   });
 
-  ThemeState contiene:
-    - ThemeMode (light/dark/system)
-    - FlexScheme? scheme           # Esquema predefinido (66 opciones) o null=custom
-    - Color? customSeedColor       # Solo si scheme es null (color picker custom)
-    - FlexTones tones              # Estrategia de tonos (material, vivid, soft, etc.)
-    - double baseFontSize
-    - String fontFamily
-    - VisualDensity density
-    - int rowsPerPage
-    - double rowHeight
-    - bool showGridLines
-    - int frozenColumns
-    - SidebarConfig sidebarConfig  # NOTA: ya no aplica con PilarShell (ver seccion 6.8)
+  final pilarDarkThemeProvider = Provider<FluentThemeData>((ref) {
+    final empresaColor = ref.watch(empresaColorProvider);
+    return PilarTheme.build(brightness: Brightness.dark, empresaColor: empresaColor);
+  });
 
-  Se aplica en PilarApp (MaterialApp):
-    MaterialApp(
-      // flex_color_scheme genera ThemeData completo y consistente
-      theme: FlexThemeData.light(
-        scheme: state.scheme ?? FlexScheme.blueM3,
-        // Si custom seed color:
-        colors: state.customSeedColor != null
-          ? FlexSchemeColor.from(primary: state.customSeedColor!)
-          : null,
-        useMaterial3: true,
-        fontFamily: state.fontFamily,
-        textTheme: _buildScaledTextTheme(state.baseFontSize),
-        visualDensity: state.density,
-        // flex_seed_scheme: estrategia de tonos
-        tones: state.tones.tones(Brightness.light),
-        subThemesData: const FlexSubThemesData(
-          interactionEffects: true,
-          blendOnLevel: 10,
-          blendOnColors: true,
-          defaultRadius: 12.0,    // Border radius global
-          inputDecoratorRadius: 8.0,
-        ),
-      ),
-      darkTheme: FlexThemeData.dark(
-        scheme: state.scheme ?? FlexScheme.blueM3,
-        colors: state.customSeedColor != null
-          ? FlexSchemeColor.from(primary: state.customSeedColor!)
-          : null,
-        useMaterial3: true,
-        fontFamily: state.fontFamily,
-        textTheme: _buildScaledTextTheme(state.baseFontSize),
-        visualDensity: state.density,
-        tones: state.tones.tones(Brightness.dark),
-        subThemesData: const FlexSubThemesData(
-          interactionEffects: true,
-          blendOnLevel: 20,
-          blendOnColors: true,
-          defaultRadius: 12.0,
-          inputDecoratorRadius: 8.0,
-        ),
-      ),
-      themeMode: state.themeMode,
-    )
+  // PilarTheme.build():
+  static FluentThemeData build({required Brightness brightness, Color? empresaColor}) {
+    final accent = empresaColor != null
+        ? empresaColor.toAccentColor()
+        : SystemTheme.accentColor.accent.toAccentColor(); // color nativo del SO
 
-VENTAJAS DE flex_color_scheme sobre ColorScheme.fromSeed:
-  ✓ 66 esquemas predefinidos (FlexScheme enum) - profesionales y bien balanceados
-  ✓ Sub-temas automaticos para TODOS los widgets Material (botones, inputs, chips, etc.)
-  ✓ Control de chroma/saturacion via flex_seed_scheme (FlexTones)
-  ✓ Estrategias de tonos: material, soft, vivid, highContrast, candyPop, ultraContrast
-  ✓ Blending de colores en superficies (profundidad visual sin esfuerzo)
-  ✓ Border radius global configurable (un solo valor para todo)
-  ✓ 100% compatible con Material 3 + Syncfusion + flutter_form_builder
-  ✓ NO conflicta con ninguna dependencia (es un wrapper sobre ThemeData nativo)
+    return FluentThemeData(
+      brightness: brightness,
+      accentColor: accent,
+      visualDensity: VisualDensity.standard,
+      focusTheme: const FocusThemeData(glowFactor: 0.0),
+    );
+  }
 
-ESQUEMAS PREDEFINIDOS RECOMENDADOS PARA ERP:
-  - FlexScheme.blueM3        → Azul profesional (default)
-  - FlexScheme.indigoM3      → Indigo corporativo
-  - FlexScheme.greenM3       → Verde profesional
-  - FlexScheme.dellGenoa     → Azul-verde ejecutivo
-  - FlexScheme.money         → Verde financiero
-  - FlexScheme.blueWhale     → Azul oscuro elegante
-  - FlexScheme.espresso      → Marron calido
-  - FlexScheme.flutterDash   → Azul Flutter (familiar)
-
-  El usuario puede elegir cualquiera de los 66 o usar el color picker custom.
-
-FLEX_TONES (flex_seed_scheme) - Estrategias de tonos:
-  - FlexTones.material()     → Tono Material 3 estandar (default)
-  - FlexTones.soft()         → Menos saturacion, mas suave
-  - FlexTones.vivid()        → Mas saturacion, mas vibrante
-  - FlexTones.highContrast() → Alto contraste (accesibilidad)
-  - FlexTones.ultraContrast()→ Maximo contraste (vision reducida)
-  - FlexTones.candyPop()     → Colores brillantes (informal)
-  - FlexTones.jolly()        → Equilibrio vivido
+  // Se aplica en FluentApp (main.dart):
+  FluentApp.router(
+    theme: ref.watch(pilarThemeProvider),
+    darkTheme: ref.watch(pilarDarkThemeProvider),
+    themeMode: ref.watch(themeBrightnessProvider),
+    routerConfig: appRouter,
+  )
 ```
 
 #### Widget Base CrudScaffold - Especificacion Tecnica
@@ -2855,8 +2481,7 @@ Flutter fue elegido por las siguientes razones:
 | **mobile_scanner** | Escaneo codigos de barras/QR (camara) | BSD |
 | **flutter_secure_storage** | Almacenamiento seguro de tokens | BSD |
 | **shared_preferences** | Persistencia local de preferencias UI (tema, fuente, densidad) | BSD |
-| **flex_color_scheme** | Temas Material 3 avanzados: 66 esquemas, sub-temas, blending | BSD |
-| **flex_seed_scheme** | Generador ColorScheme con multiples seeds, chroma, tones (dep. de flex_color_scheme) | BSD |
+| **system_theme** | Lee el color de acento del SO (Windows/macOS) para AccentColor | MIT |
 | **intl** | Formato numeros/fechas Ecuador | BSD |
 
 **Nota sobre Syncfusion:** La licencia Community es gratuita para empresas con menos de $1M de ingreso anual y para desarrolladores individuales. Incluye soporte tecnico.

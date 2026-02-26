@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show Size;
+import 'package:flutter/widgets.dart' show Offset, Size;
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:fluent_ui/fluent_ui.dart' show Color;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:system_theme/system_theme.dart';
 import 'package:window_manager/window_manager.dart';
+
+import 'config_service.dart' show ConfigKeys;
 
 /// Manages desktop window initialization, sizing, and persistence.
 ///
@@ -25,8 +27,9 @@ class WindowService {
   ///
   /// - Loads the system accent color (for system_theme).
   /// - Initializes flutter_acrylic [Window].
-  /// - Restores the last saved window size and maximized state.
+  /// - Restores the last saved window size, position, and maximized state.
   /// - Hides the native title bar (custom [DragToMoveArea] will be used).
+  /// - Enables preventClose so [onWindowClose] can save state before exiting.
   /// - Applies a platform-appropriate translucency effect.
   ///
   /// No-op on non-desktop platforms.
@@ -47,8 +50,10 @@ class WindowService {
     await windowManager.ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();
-    final width = prefs.getDouble(_keyWidth) ?? 1280.0;
-    final height = prefs.getDouble(_keyHeight) ?? 800.0;
+    final savedWidth  = prefs.getDouble(_keyWidth);
+    final savedHeight = prefs.getDouble(_keyHeight);
+    final savedX      = prefs.getDouble(_keyX);
+    final savedY      = prefs.getDouble(_keyY);
     final isMaximized = prefs.getBool(_keyMaximized) ?? false;
 
     // Set title bar style before waitUntilReadyToShow for reliable application.
@@ -63,13 +68,20 @@ class WindowService {
 
     await windowManager.setMinimumSize(const Size(800, 600));
 
-    // Restore saved window geometry or fall back to defaults.
-    if (width >= 800 && height >= 600) {
-      await windowManager.setSize(Size(width, height));
+    // preventClose: true lets onWindowClose intercept the close event so we
+    // can persist window state before actually destroying the window.
+    await windowManager.setPreventClose(true);
+
+    // Restore saved geometry, or fall back to defaults centered on screen.
+    final width  = (savedWidth  != null && savedWidth  >= 800)  ? savedWidth  : 1280.0;
+    final height = (savedHeight != null && savedHeight >= 600) ? savedHeight : 800.0;
+    await windowManager.setSize(Size(width, height));
+
+    if (savedX != null && savedY != null) {
+      await windowManager.setPosition(Offset(savedX, savedY));
     } else {
-      await windowManager.setSize(const Size(1280, 800));
+      await windowManager.center();
     }
-    await windowManager.center();
 
     await windowManager.waitUntilReadyToShow(
       null,
@@ -82,14 +94,21 @@ class WindowService {
       },
     );
 
-    // Apply platform-specific translucency effect.
+    // Apply platform-specific translucency effect (reads persisted preference).
+    // The stored value is WindowEffect.name (e.g. 'acrylic', 'mica', 'sidebar', 'disabled').
+    final effectName = prefs.getString(ConfigKeys.windowEffect);
     if (Platform.isWindows) {
-      await Window.setEffect(
-        effect: WindowEffect.acrylic,
-        color: const Color(0xCC1C1C1C),
+      final windowEffect = WindowEffect.values.firstWhere(
+        (e) => e.name == effectName,
+        orElse: () => WindowEffect.acrylic,
       );
+      await Window.setEffect(effect: windowEffect, color: const Color(0xCC1C1C1C));
     } else if (Platform.isMacOS) {
-      await Window.setEffect(effect: WindowEffect.sidebar);
+      final windowEffect = WindowEffect.values.firstWhere(
+        (e) => e.name == effectName,
+        orElse: () => WindowEffect.sidebar,
+      );
+      await Window.setEffect(effect: windowEffect);
     }
     // Linux: no translucency effect (limited compositor support).
   }

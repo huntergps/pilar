@@ -41,15 +41,15 @@
 - [ ] **Posiciones fiscales**: mapeo de impuestos por tipo de contribuyente (exento, exportador, sector publico, regimenes especiales)
 
 **CAPA 3: Widgets Core (Semana 3-5)**
-- [ ] **PilarShell framework**: PilarApp + PilarShell + PilarHeader + PilarNavigation + PilarFooter
-- [ ] **PilarNavigation**: PilarRoute unificado, sidebar/rail/drawer/bottom auto-adaptativo, breadcrumbs
+- [x] **PilarShell framework**: FluentApp.router + PilarShell (NavigationView) + PilarHeader
+- [x] **Navegación adaptativa**: NavigationPane con PaneDisplayMode.auto (expanded/compact/minimal nativos de fluent_ui, sin widget custom)
 - [ ] **Auto-escalado responsive**: PilarSizes por breakpoint (fuentes, botones, inputs, cards, grid rows)
 - [ ] **WorkspaceTabs**: sistema de tabs dinamico (abrir/cerrar/persistir), keyboard shortcuts
 - [ ] **CrudScaffold<T>**: usa BrickDataProvider, search, filtros custom, grid/list, paginacion, export, permisos
 - [ ] **FormScaffold<T>**: usa brickItemProvider + Repository.upsert, secciones, validacion, deteccion cambios
 - [ ] **DataGrid + FilterPanel + SearchBar + PaginationBar + ExportButton**: widgets auxiliares
-- [ ] **Preferencias de usuario**: FlexScheme, FlexTones, fuente, densidad, persistencia (shared_preferences)
-- [ ] **Perfil de usuario**: datos personales, empresas vinculadas, cambiar contrasena, 2FA
+- [ ] **Preferencias de usuario**: modo tema (claro/oscuro/auto), color de acento, tamaño de fuente, densidad de filas, persistencia (shared_preferences)
+- [x] **Perfil de usuario**: datos personales ✅, zona horaria ✅ | pendiente: cambiar contraseña, 2FA
 - [ ] **PilarFooter**: version, empresa, estado conexion/sync, fecha/hora
 - [ ] Tests: CrudScaffold renderiza datos, FormScaffold guarda/valida, tabs abren/cierran, responsive
 

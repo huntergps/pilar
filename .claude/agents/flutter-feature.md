@@ -53,7 +53,7 @@ SfDataGridTheme(
 ### Reglas
 - NUNCA usar drift directamente — usar brick_offline_first_with_supabase
 - NUNCA manejar firma digital ni SOAP en Flutter (eso es Edge Functions)
-- NUNCA usar dio, flutter_bloc, GetX, hive, MaterialApp, flex_color_scheme
+- NUNCA usar dio, flutter_bloc, GetX, hive, MaterialApp
 - SIEMPRE incluir empresa_id en queries (multi-tenancy)
 - SIEMPRE usar intl para formato de números y fechas (locale es_EC)
 - SIEMPRE validar campos tributarios con regex del SRI antes de enviar

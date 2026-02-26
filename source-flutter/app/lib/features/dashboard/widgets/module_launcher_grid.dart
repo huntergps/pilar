@@ -1,6 +1,26 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/modulos_provider.dart';
+import '../../../core/providers/usuario_provider.dart';
+import '../../../core/router/app_router.dart';
+
+// ---------------------------------------------------------------------------
+// Route resolver (file-private)
+// ---------------------------------------------------------------------------
+
+/// Maps a module ID to its go_router route.
+///
+/// Returns null for modules without a dedicated route yet. Those tiles are
+/// filtered out of the launcher in [ModuleLauncherGrid].
+/// Extend this map whenever a new module screen is added.
+String? _routeForModulo(String id) {
+  const routes = <String, String>{
+    'administracion': PilarRoutes.adminEmpresa,
+  };
+  return routes[id];
+}
 
 /// Responsive Wrap grid of module tiles for the Dashboard App Launcher.
 ///
@@ -11,13 +31,16 @@ import '../../../core/providers/modulos_provider.dart';
 /// - <= 600 px → 2 columns
 ///
 /// Each tile is a [_ModuleTile] that displays the module icon and name.
-class ModuleLauncherGrid extends StatelessWidget {
+class ModuleLauncherGrid extends ConsumerWidget {
   final List<ModuloItem> modulos;
 
   const ModuleLauncherGrid({super.key, required this.modulos});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tieneAdmin =
+        ref.watch(hasPermissionProvider('administracion.empresa.ver'));
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: LayoutBuilder(
@@ -29,10 +52,21 @@ class ModuleLauncherGrid extends StatelessWidget {
           final itemSize =
               ((width - 48 - (cols - 1) * 16) / cols).clamp(100.0, 200.0);
 
+          // Only render tiles that have a known route AND that the user
+          // has permission to access.
+          final navigable = modulos
+              .where((m) => _routeForModulo(m.id) != null)
+              .where((m) => m.id != 'administracion' || tieneAdmin)
+              .toList();
+
+          if (navigable.isEmpty) {
+            return const Center(child: Text('No hay módulos disponibles'));
+          }
+
           return Wrap(
             spacing: 16,
             runSpacing: 16,
-            children: modulos
+            children: navigable
                 .map((m) => _ModuleTile(modulo: m, size: itemSize))
                 .toList(),
           );
@@ -63,9 +97,7 @@ class _ModuleTile extends StatelessWidget {
       child: Card(
         padding: EdgeInsets.zero,
         child: HoverButton(
-          onPressed: () {
-            // Future: context.go('/${modulo.id}');
-          },
+          onPressed: () => context.go(_routeForModulo(modulo.id)!),
           builder: (ctx, states) => AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             decoration: BoxDecoration(

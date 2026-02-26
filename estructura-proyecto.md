@@ -27,20 +27,13 @@ pilar/
 │   │   │   ├── adapters/            # Generado: adaptadores SQLite + Supabase
 │   │   │   └── db/                  # Generado: schema + migrations SQLite
 │   │   ├── shell/                    # Framework PilarShell (layout adaptativo)
-│   │   │   ├── pilar_app.dart        # MaterialApp con auto-scaling + flex_color_scheme
-│   │   │   ├── pilar_shell.dart      # Layout adaptativo (header+nav+content+footer)
-│   │   │   ├── pilar_header.dart     # Barra superior adaptativa
-│   │   │   ├── pilar_navigation.dart # Sidebar/Rail/Drawer/BottomNav unificado
-│   │   │   ├── pilar_footer.dart     # Barra inferior informativa
-│   │   │   ├── pilar_route.dart      # Modelo de ruta con permisos y builders
-│   │   │   ├── pilar_route_config.dart # Definicion de todas las rutas
-│   │   │   ├── pilar_breadcrumbs.dart  # Breadcrumbs automaticos
-│   │   │   └── pilar_breakpoint.dart   # Enum + deteccion breakpoint
+│   │   │   ├── pilar_shell.dart      # NavigationView + WindowListener
+│   │   │   └── pilar_header.dart     # Acciones derechas del TitleBar
 │   │   ├── providers/                # Riverpod providers globales
 │   │   │   ├── auth_provider.dart
 │   │   │   ├── empresa_provider.dart
 │   │   │   ├── repository_provider.dart  # Provee Brick Repository
-│   │   │   ├── theme_provider.dart       # Tema + flex_color_scheme + densidad
+│   │   │   ├── theme_provider.dart       # Re-export pilarThemeProvider/pilarDarkThemeProvider
 │   │   │   ├── preferences_provider.dart # Persistencia local (shared_preferences)
 │   │   │   ├── connection_provider.dart  # Monitor estado de conexion
 │   │   │   ├── tabs_provider.dart        # Estado de tabs abiertos
@@ -58,12 +51,10 @@ pilar/
 │   │   │   ├── notification_service.dart # Notificaciones in-app + email + WhatsApp
 │   │   │   ├── push_service.dart     # FCM push nativo iOS/Android (App Salon/Cliente)
 │   │   │   └── salon_branding_service.dart # White-label: carga logo/colores del salon
-│   │   ├── theme/                    # Sistema de temas (usa flex_color_scheme)
-│   │   │   ├── app_theme.dart        # FlexThemeData builder (light + dark)
-│   │   │   ├── responsive_sizes.dart # PilarSizes: tamanos por breakpoint
-│   │   │   ├── color_schemes.dart    # FlexScheme paletas + custom schemes
-│   │   │   ├── typography.dart       # TextTheme escalado por factor
-│   │   │   └── spacing.dart          # EdgeInsets/padding por densidad
+│   │   ├── theme/                    # Sistema de temas (FluentThemeData)
+│   │   │   ├── pilar_theme.dart      # FluentThemeData + providers (AccentColor del SO/empresa)
+│   │   │   ├── pilar_breakpoints.dart # PilarBreakpoints + DeviceSize enum
+│   │   │   └── pilar_spacing.dart    # Constantes de espaciado base 4px
 │   │   └── widgets/                  # Widgets reutilizables
 │   │       ├── workspace_tabs.dart   # Sistema de tabs dinamico
 │   │       ├── crud_scaffold.dart    # Widget base para listados CRUD

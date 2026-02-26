@@ -391,8 +391,6 @@ flutter test integration_test/
 | `flutter_bloc` | Se usa Riverpod 2.x; no mezclar patrones de estado |
 | `provider` | Reemplazado completamente por Riverpod |
 | `drift` | Reemplazado por Brick ORM (maneja SQLite + sync) |
-| `flex_color_scheme` | Reemplazado por fluent_ui (FluentThemeData); incompatible con FluentApp |
-| `flex_seed_scheme` | Dependencia de flex_color_scheme; eliminado con él |
 | `hive` | Reemplazado por SQLite via Brick; no usar dos almacenamientos locales |
 | `get` / `getx` | No usar GetX; incompatible con arquitectura Riverpod |
 | `dio` | Supabase Flutter ya incluye http; no agregar cliente HTTP extra |

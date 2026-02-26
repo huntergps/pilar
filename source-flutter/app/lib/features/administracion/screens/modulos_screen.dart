@@ -146,7 +146,7 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
         context: context,
         builder: (_) => ContentDialog(
           title: Text('Desactivar ${widget.modulo.nombre}'),
-          content: Text(
+          content: const Text(
             'Al desactivar este módulo perderás acceso a sus funciones. '
             '¿Deseas continuar?',
           ),
@@ -156,7 +156,7 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
               onPressed: () => Navigator.pop(context, false),
             ),
             FilledButton(
-              style: ButtonStyle(
+              style: const ButtonStyle(
                 backgroundColor: WidgetStatePropertyAll(
                   Colors.errorPrimaryColor,
                 ),

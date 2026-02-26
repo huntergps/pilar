@@ -46,6 +46,7 @@ abstract final class PilarRoutes {
   static const String adminUsuarios = '/admin/usuarios';
   static const String adminModulos = '/admin/modulos';
   static const String adminConfiguracion = '/admin/configuracion';
+  static const String configuracion = '/configuracion';
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         }
       }
 
+      // 5. Sin permiso de administración → bloquear rutas /admin/*.
+      if (isLoggedIn && loc.startsWith('/admin')) {
+        final permisos =
+            session.user.appMetadata['permisos'] as List<dynamic>? ?? [];
+        if (!permisos.contains('administracion.empresa.ver')) {
+          return PilarRoutes.dashboard;
+        }
+      }
+
       return null;
     },
     routes: [
@@ -163,6 +173,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: PilarRoutes.adminConfiguracion,
+            redirect: (_, __) => PilarRoutes.configuracion,
+          ),
+          GoRoute(
+            path: PilarRoutes.configuracion,
             builder: (_, __) => const ConfiguracionScreen(),
           ),
         ],

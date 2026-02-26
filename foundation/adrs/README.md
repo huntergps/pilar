@@ -36,7 +36,7 @@ Todas las tablas usan `private.get_empresa_id()` — funcion `STABLE` que cachea
 
 ### ADR-004 — Flutter Single Codebase + fluent_ui
 
-Un solo codebase Dart para Web, iOS, Android, Windows, macOS y Linux. Sistema de diseño: **fluent_ui** (Fluent Design System de Windows 11) — `NavigationView` + `TabView` + `MenuBar` + `FluentThemeData`. `PaneDisplayMode.auto` adapta la navegación a todos los tamaños de pantalla sin código adicional. Para listas de datos: `SfDataGrid` en pantallas >800px, `ListView` con cards en <800px via `LayoutBuilder`; NUNCA `GridView` en pantallas <600px. Integración Syncfusion via `SfDataGridTheme` con colores del `FluentTheme`. Paquetes desktop complementarios: `window_manager`, `flutter_acrylic`, `system_theme`. 3 flavors: `erp`, `negocio`, `cliente`. Material 3 + flex_color_scheme descartados por shell de navegación insuficiente para la complejidad del ERP.
+Un solo codebase Dart para Web, iOS, Android, Windows, macOS y Linux. Sistema de diseño: **fluent_ui** (Fluent Design System de Windows 11) — `NavigationView` + `TabView` + `MenuBar` + `FluentThemeData`. `PaneDisplayMode.auto` adapta la navegación a todos los tamaños de pantalla sin código adicional. Para listas de datos: `SfDataGrid` en pantallas >800px, `ListView` con cards en <800px via `LayoutBuilder`; NUNCA `GridView` en pantallas <600px. Integración Syncfusion via `SfDataGridTheme` con colores del `FluentTheme`. Paquetes desktop complementarios: `window_manager`, `flutter_acrylic`, `system_theme`. 3 flavors: `erp`, `negocio`, `cliente`. Material 3 descartado por shell de navegación insuficiente para la complejidad del ERP.
 
 ### ADR-005 — Supabase vs Firebase
 

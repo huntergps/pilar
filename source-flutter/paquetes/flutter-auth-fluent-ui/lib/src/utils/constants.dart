@@ -26,13 +26,16 @@ extension ShowInfoBar on BuildContext {
     displayInfoBar(
       this,
       duration: _kInfoDuration,
-      alignment: Alignment.bottomCenter,
-      builder: (context, close) => PilarNotification(
-        title: 'Información',
-        message: message,
-        severity: InfoBarSeverity.info,
-        close: close,
-        actionLabel: actionLabel,
+      alignment: Alignment.topCenter,
+      builder: (context, close) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.viewPaddingOf(context).top),
+        child: PilarNotification(
+          title: 'Información',
+          message: message,
+          severity: InfoBarSeverity.info,
+          close: close,
+          actionLabel: actionLabel,
+        ),
       ),
     );
   }
@@ -41,15 +44,18 @@ extension ShowInfoBar on BuildContext {
     displayInfoBar(
       this,
       duration: _kErrorDuration,
-      alignment: Alignment.bottomCenter,
-      builder: (context, close) => PilarNotification(
-        title: 'Error',
-        message: PilarErrorRegistry.translate(message),
-        originalMessage: message,
-        severity: InfoBarSeverity.error,
-        close: close,
-        actionLabel: actionLabel,
-        showCopy: true,
+      alignment: Alignment.topCenter,
+      builder: (context, close) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.viewPaddingOf(context).top),
+        child: PilarNotification(
+          title: 'Error',
+          message: PilarErrorRegistry.translate(message),
+          originalMessage: message,
+          severity: InfoBarSeverity.error,
+          close: close,
+          actionLabel: actionLabel,
+          showCopy: true,
+        ),
       ),
     );
   }
@@ -58,13 +64,16 @@ extension ShowInfoBar on BuildContext {
     displayInfoBar(
       this,
       duration: _kInfoDuration,
-      alignment: Alignment.bottomCenter,
-      builder: (context, close) => PilarNotification(
-        title: 'Completado',
-        message: message,
-        severity: InfoBarSeverity.success,
-        close: close,
-        actionLabel: actionLabel,
+      alignment: Alignment.topCenter,
+      builder: (context, close) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.viewPaddingOf(context).top),
+        child: PilarNotification(
+          title: 'Completado',
+          message: message,
+          severity: InfoBarSeverity.success,
+          close: close,
+          actionLabel: actionLabel,
+        ),
       ),
     );
   }
@@ -73,15 +82,18 @@ extension ShowInfoBar on BuildContext {
     displayInfoBar(
       this,
       duration: _kErrorDuration,
-      alignment: Alignment.bottomCenter,
-      builder: (context, close) => PilarNotification(
-        title: 'Advertencia',
-        message: PilarErrorRegistry.translate(message),
-        originalMessage: message,
-        severity: InfoBarSeverity.warning,
-        close: close,
-        actionLabel: actionLabel,
-        showCopy: true,
+      alignment: Alignment.topCenter,
+      builder: (context, close) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.viewPaddingOf(context).top),
+        child: PilarNotification(
+          title: 'Advertencia',
+          message: PilarErrorRegistry.translate(message),
+          originalMessage: message,
+          severity: InfoBarSeverity.warning,
+          close: close,
+          actionLabel: actionLabel,
+          showCopy: true,
+        ),
       ),
     );
   }

@@ -42,7 +42,7 @@ La plataforma opera con un único codebase Flutter que compila para Web, iOS, An
 |------|-----------|---------|
 | **Frontend** | Flutter 3.x (Dart) | Un codebase para 6 plataformas |
 | **Estado** | Riverpod 2.x | Providers globales (core/) y locales (features/) |
-| **UI** | Material 3 + Syncfusion | DataGrid, PDF, Charts + flex_color_scheme |
+| **UI** | fluent_ui + Syncfusion | FluentThemeData, NavigationView, DataGrid, PDF, Charts |
 | **Datos / Offline** | brick_offline_first_with_supabase | SQLite local ↔ PostgreSQL remoto |
 | **Backend** | Supabase | PostgreSQL 15+, Auth JWT, Storage, Realtime, pgvector |
 | **Edge Functions** | Deno / TypeScript | Firma XAdES-BES, SOAP SRI, XML/PDF, IA |
@@ -85,7 +85,7 @@ lib/
 │   ├── shell/          # PilarShell: layout adaptativo, breakpoints, navegacion
 │   ├── providers/      # Providers Riverpod globales (auth, empresa, permisos, tema, tabs)
 │   ├── services/       # SriService, PdfService, PaymentService, AiService
-│   ├── theme/          # flex_color_scheme, tipografia, espaciado responsive
+│   ├── theme/          # FluentThemeData, AccentColor, breakpoints, espaciado
 │   └── widgets/        # CrudScaffold<T>, FormScaffold<T>, DataGrid, WorkspaceTabs
 └── features/           # Un directorio por modulo (screens/, providers/, widgets/)
 ```
@@ -129,7 +129,7 @@ Antes de implementar cualquier feature, consulta el agente correspondiente en `.
 | `supabase-backend.md` | Migraciones SQL, RLS, Storage, funciones |
 | `api-developer.md` | Edge Functions Deno/TypeScript, RPCs |
 | `sri-integration.md` | Cumplimiento SRI, XML, firma electronica, SOAP |
-| `ui-designer.md` | UI/UX Material 3, accesibilidad, responsive |
+| `ui-designer.md` | fluent_ui, Syncfusion, accesibilidad, responsive |
 | `quality-check.md` | Tests, RLS, multi-tenancy, validaciones |
 | `ai-integration.md` | pgvector, embeddings, chat NLP |
 

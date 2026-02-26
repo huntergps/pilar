@@ -279,6 +279,23 @@ pg_cron (03:30 diario) → pilar_cleanup_old_alertas:  DELETE WHERE estado IN ('
                                                       AND updated_at < NOW() - INTERVAL '1 year'
 ```
 
+### Perfil de usuario por empresa
+
+Cada usuario tiene un perfil independiente por empresa en `usuarios_empresa`. El perfil combina datos del override por empresa con el fallback de `auth.users.raw_user_meta_data`.
+
+| RPC | Auth | Descripción | Retorna |
+|-----|------|-------------|---------|
+| `get_mi_perfil()` | Autenticado (STABLE) | Retorna perfil fusionado: `nombre_display` (override empresa) → `nombre_global` (user_metadata) → email. Incluye: `zona_horaria`, `avatar_url`, `telefono`, `email_contacto`, `email_login` (read-only). | `JSONB` |
+| `update_mi_perfil(p_data JSONB)` | Autenticado | Actualiza campos de `usuarios_empresa` para el usuario JWT en su empresa activa. Campos: `nombre_display`, `avatar_url`, `telefono`, `email_contacto`, `zona_horaria`. Retorna `{ok: true}` o `{ok: false, error: '...'}`. | `JSONB` |
+| `admin_get_perfil_usuario(p_usuario_id UUID)` | `administracion.usuarios.ver` | Admin lee el perfil completo de cualquier usuario de su empresa. Mismos campos que `get_mi_perfil()`. | `JSONB` |
+| `admin_update_perfil_usuario(p_usuario_id UUID, p_data JSONB)` | `administracion.usuarios.gestionar` | Admin actualiza el perfil de un usuario de su empresa. Mismos campos que `update_mi_perfil()`. | `JSONB` |
+
+**Notas de implementación:**
+- Storage: avatar en `avatares/{usuario_id}/{empresa_id}/avatar.jpg` (bucket `avatares`, policy por empresa_id)
+- Trigger `copy_perfil_on_empresa_join`: al unirse a una nueva empresa, copia nombre_display/avatar_url/telefono/email_contacto/zona_horaria de la membresía más reciente con datos
+- `zona_horaria` default: `'America/Guayaquil'` (Ecuador UTC-5)
+- `admin_get_usuarios()` (migración `admin_perfil_usuario_rpcs`): actualizada para incluir `nombre_display` y `avatar_url` en el listado de usuarios
+
 ---
 
 ## Multi-tenancy

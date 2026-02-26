@@ -177,12 +177,19 @@ CREATE TABLE usuarios_empresa (
   -- Preferencias de UI por empresa
   preferencias    JSONB DEFAULT '{}',
   -- {
-  --   "tema": "FlexScheme.material",
+  --   "tema": "dark",
   --   "fuente": "Roboto",
   --   "densidad": "normal",
   --   "idioma": "es",
   --   "modulo_inicio": "dashboard"
   -- }
+
+  -- Perfil por empresa (override de auth.users.raw_user_meta_data global)
+  nombre_display  VARCHAR(100),   -- nombre visible en esta empresa (override del nombre global)
+  avatar_url      TEXT,           -- foto de perfil para esta empresa
+  telefono        VARCHAR(20),    -- teléfono de contacto en esta empresa
+  email_contacto  VARCHAR(255),   -- email alternativo en esta empresa
+  zona_horaria    VARCHAR(50) DEFAULT 'America/Guayaquil', -- zona horaria del usuario en esta empresa
 
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -216,6 +223,30 @@ CREATE POLICY "admin_gestionar" ON usuarios_empresa
 CREATE INDEX idx_usuarios_empresa_usuario ON usuarios_empresa(usuario_id);
 CREATE INDEX idx_usuarios_empresa_empresa ON usuarios_empresa(empresa_id);
 ```
+
+### Perfil de usuario por empresa
+
+Cada usuario tiene un **perfil independiente por empresa** almacenado en las columnas de `usuarios_empresa`. Esto permite que el mismo usuario use un nombre diferente en cada empresa donde es miembro.
+
+**Patrón de resolución de nombre (cascada):**
+```
+nombre_display (override empresa) → nombreGlobal (raw_user_meta_data) → email (login)
+```
+
+**Storage de avatares:** `avatares/{usuario_id}/{empresa_id}/avatar.jpg` (bucket `avatares`)
+
+**Trigger `copy_perfil_on_empresa_join`:** Al añadir un usuario a una nueva empresa, copia automáticamente `nombre_display`, `avatar_url`, `telefono`, `email_contacto` y `zona_horaria` de su membresía más reciente con datos.
+
+**RPCs de perfil:**
+| RPC | Descripción |
+|-----|-------------|
+| `get_mi_perfil()` | Perfil fusionado del usuario JWT en su empresa activa (STABLE) |
+| `update_mi_perfil(p_data JSONB)` | Actualiza campos del perfil propio |
+| `admin_get_perfil_usuario(p_usuario_id)` | Admin lee perfil de otro usuario |
+| `admin_update_perfil_usuario(p_usuario_id, p_data)` | Admin edita perfil de otro usuario |
+
+**Provider Flutter:** `lib/core/providers/perfil_provider.dart` → `perfilUsuarioProvider`
+Se invalida automáticamente en `pilar_shell.dart` al cambiar de empresa activa.
 
 ### Tabla: `roles`
 

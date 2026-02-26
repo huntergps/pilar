@@ -625,7 +625,7 @@ SfCalendar(
 
 #### Paleta de Colores por Estado
 
-Usando roles semanticos de Material 3 (se adaptan automaticamente a todos los 66 esquemas de FlexScheme):
+Usando tokens de color de fluent_ui (se adaptan al accentColor de la empresa):
 
 | Estado | Color Fondo | Color Borde | Icono |
 |--------|-------------|-------------|-------|
@@ -1170,12 +1170,11 @@ Future<SalonBranding> salonBranding(SalonBrandingRef ref) async {
 Widget build(BuildContext context, WidgetRef ref) {
   final branding = ref.watch(salonBrandingProvider);
   return branding.when(
-    data: (b) => MaterialApp.router(
+    data: (b) => FluentApp.router(
       title: b.nombreComercial,
-      theme: FlexThemeData.light(
-        colorScheme: SeedColorScheme.fromSeeds(
-          primaryKey: Color(int.parse(b.colorPrimario.replaceFirst('#', ''), radix: 16) + 0xFF000000),
-        ),
+      theme: FluentThemeData(
+        brightness: Brightness.light,
+        accentColor: Color(int.parse(b.colorPrimario.replaceFirst('#', ''), radix: 16) + 0xFF000000).toAccentColor(),
       ),
       routerConfig: clienteRouter,
     ),
