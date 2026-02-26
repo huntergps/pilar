@@ -21,6 +21,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -112,15 +113,24 @@ class UploadException implements Exception {
 ///   progressController: progressCtrl,
 ///   cancelToken: cancelToken,
 /// );
-///
-/// // Registrar en DB (llama a la RPC registrar_adjunto)
-/// await ref.read(adjuntosProvider.notifier).registrar(
-///   result: result,
-///   entidadTipo: 'factura',
-///   entidadId: facturaId,
-/// );
 /// ```
 abstract final class UploadService {
+  // ---------------------------------------------------------------------------
+  // HTTP client injectable (permite MockClient en tests)
+  // ---------------------------------------------------------------------------
+
+  static http.Client _client = http.Client();
+
+  /// Reemplaza el cliente HTTP por uno de test (MockClient).
+  /// Llamar en setUp() del test.
+  @visibleForTesting
+  static void useTestClient(http.Client client) => _client = client;
+
+  /// Restaura el cliente HTTP por defecto.
+  /// Llamar en tearDown() del test.
+  @visibleForTesting
+  static void resetClient() => _client = http.Client();
+
   // -------------------------------------------------------------------------
   // Selección de archivo
   // -------------------------------------------------------------------------
@@ -141,7 +151,7 @@ abstract final class UploadService {
   }
 
   // -------------------------------------------------------------------------
-  // Upload TUS (resumable)
+  // Upload TUS (resumable) — producción
   // -------------------------------------------------------------------------
 
   /// Sube [file] al bucket "adjuntos" usando el protocolo TUS.
@@ -151,8 +161,6 @@ abstract final class UploadService {
   ///
   /// **Resume automático:** si el upload fue interrumpido (en las últimas 24h),
   /// reanuda desde el último offset exitoso sin necesidad de intervención.
-  ///
-  /// **Cancelar:** llama `cancelToken.cancel()` desde cualquier isolate/callback.
   ///
   /// Lanza [UploadException] si falla irrecuperablemente.
   static Future<UploadResult> uploadResumable({
@@ -166,18 +174,72 @@ abstract final class UploadService {
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) throw const UploadException('Sin sesión activa');
 
+    final config = await SupabaseConfigService.load();
+
+    return _uploadCore(
+      file: file,
+      empresaId: empresaId,
+      entidadTipo: entidadTipo,
+      entidadId: entidadId,
+      token: session.accessToken,
+      supabaseUrl: config.url,
+      progressController: progressController,
+      cancelToken: cancelToken,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Upload TUS — punto de entrada para tests (sin Supabase.instance)
+  // -------------------------------------------------------------------------
+
+  /// Igual que [uploadResumable] pero recibe token y URL directamente.
+  /// Permite testear sin inicializar Supabase.
+  @visibleForTesting
+  static Future<UploadResult> uploadResumableRaw({
+    required PlatformFile file,
+    required String empresaId,
+    required String entidadTipo,
+    required String entidadId,
+    required String token,
+    required String supabaseUrl,
+    StreamController<UploadProgress>? progressController,
+    UploadCancelToken? cancelToken,
+  }) =>
+      _uploadCore(
+        file: file,
+        empresaId: empresaId,
+        entidadTipo: entidadTipo,
+        entidadId: entidadId,
+        token: token,
+        supabaseUrl: supabaseUrl,
+        progressController: progressController,
+        cancelToken: cancelToken,
+      );
+
+  // -------------------------------------------------------------------------
+  // Core — lógica compartida
+  // -------------------------------------------------------------------------
+
+  static Future<UploadResult> _uploadCore({
+    required PlatformFile file,
+    required String empresaId,
+    required String entidadTipo,
+    required String entidadId,
+    required String token,
+    required String supabaseUrl,
+    StreamController<UploadProgress>? progressController,
+    UploadCancelToken? cancelToken,
+  }) async {
     final bytes = file.bytes;
     if (bytes == null || bytes.isEmpty) {
       throw const UploadException('Archivo vacío o no se pudo leer');
     }
 
-    final mimeType    = _guessMime(file.name);
+    final mimeType    = guessMime(file.name);
     final ts          = DateTime.now().millisecondsSinceEpoch;
-    final safeName    = _sanitizeName(file.name);
+    final safeName    = sanitizeName(file.name);
     final storagePath = '$empresaId/$entidadTipo/$entidadId/${ts}_$safeName';
-    final config      = await SupabaseConfigService.load();
-    final tusEndpoint = '${config.url}/storage/v1/upload/resumable';
-    final token       = session.accessToken;
+    final tusEndpoint = '$supabaseUrl/storage/v1/upload/resumable';
 
     // ----- Intentar reanudar -----
     final prefs    = await SharedPreferences.getInstance();
@@ -185,7 +247,7 @@ abstract final class UploadService {
     String? uploadUrl = prefs.getString(cacheKey);
 
     if (uploadUrl != null) {
-      final offset = await _tusHead(uploadUrl, token);
+      final offset = await tusHead(uploadUrl, token);
       if (offset == null) {
         // Expiró (>24h) → crear de nuevo
         uploadUrl = null;
@@ -200,12 +262,11 @@ abstract final class UploadService {
           nombreOriginal: file.name,
         );
       }
-      // else: offset < total → reanudará desde ese punto
     }
 
     // ----- Crear nuevo upload si no hay reanudable -----
     if (uploadUrl == null) {
-      uploadUrl = await _tusCreate(
+      uploadUrl = await tusCreate(
         endpoint: tusEndpoint,
         token: token,
         bucket: _kBucket,
@@ -216,9 +277,9 @@ abstract final class UploadService {
       await prefs.setString(cacheKey, uploadUrl);
     }
 
-    // ----- Subir chunks -----
-    final startOffset = await _tusHead(uploadUrl, token) ?? 0;
-    await _tusPatch(
+    // ----- Subir chunks (desde offset actual del servidor) -----
+    final startOffset = await tusHead(uploadUrl, token) ?? 0;
+    await tusPatch(
       uploadUrl: uploadUrl,
       token: token,
       bytes: bytes,
@@ -242,7 +303,6 @@ abstract final class UploadService {
   // -------------------------------------------------------------------------
 
   /// Genera una URL firmada temporal para acceder al archivo.
-  /// Retorna null si falla (e.g., archivo no existe todavía).
   static Future<String?> createSignedUrl(
     String storagePath, {
     int expiresInSeconds = 3600,
@@ -257,17 +317,17 @@ abstract final class UploadService {
   }
 
   /// Elimina el archivo físico del bucket Storage.
-  /// Llamar DESPUÉS de eliminar el registro en DB via `eliminar_adjunto`.
   static Future<void> deleteFromStorage(String storagePath) async {
     await Supabase.instance.client.storage.from(_kBucket).remove([storagePath]);
   }
 
   // -------------------------------------------------------------------------
-  // TUS internals
+  // TUS — métodos con @visibleForTesting para tests directos
   // -------------------------------------------------------------------------
 
   /// POST: crea el upload TUS y devuelve la Location URL.
-  static Future<String> _tusCreate({
+  @visibleForTesting
+  static Future<String> tusCreate({
     required String endpoint,
     required String token,
     required String bucket,
@@ -275,7 +335,7 @@ abstract final class UploadService {
     required String mimeType,
     required int totalBytes,
   }) async {
-    final metadata = _tusMetadata({
+    final metadata = buildTusMetadata({
       'filename'    : objectName.split('/').last,
       'bucketName'  : bucket,
       'objectName'  : objectName,
@@ -283,7 +343,7 @@ abstract final class UploadService {
       'cacheControl': '3600',
     });
 
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse(endpoint),
       headers: {
         'Authorization'  : 'Bearer $token',
@@ -310,7 +370,8 @@ abstract final class UploadService {
   }
 
   /// PATCH: sube los bytes en chunks de 6MB desde [startOffset].
-  static Future<void> _tusPatch({
+  @visibleForTesting
+  static Future<void> tusPatch({
     required String uploadUrl,
     required String token,
     required Uint8List bytes,
@@ -334,7 +395,7 @@ abstract final class UploadService {
       final end   = (offset + _kChunkSize).clamp(0, total);
       final chunk = bytes.sublist(offset, end);
 
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse(uploadUrl),
         headers: {
           'Authorization'  : 'Bearer $token',
@@ -360,9 +421,10 @@ abstract final class UploadService {
 
   /// HEAD: obtiene el offset actual del servidor para reanudar.
   /// Retorna null si el upload no existe o expiró (>24h).
-  static Future<int?> _tusHead(String uploadUrl, String token) async {
+  @visibleForTesting
+  static Future<int?> tusHead(String uploadUrl, String token) async {
     try {
-      final response = await http.head(
+      final response = await _client.head(
         Uri.parse(uploadUrl),
         headers: {
           'Authorization' : 'Bearer $token',
@@ -377,19 +439,24 @@ abstract final class UploadService {
   }
 
   // -------------------------------------------------------------------------
-  // Helpers
+  // Helpers — @visibleForTesting para tests unitarios puros
   // -------------------------------------------------------------------------
 
   /// Construye el header `upload-metadata` TUS.
   /// Formato: `key base64(value), key2 base64(value2), ...`
-  static String _tusMetadata(Map<String, String> fields) => fields.entries
+  @visibleForTesting
+  static String buildTusMetadata(Map<String, String> fields) => fields.entries
       .map((e) => '${e.key} ${base64.encode(utf8.encode(e.value))}')
       .join(',');
 
-  static String _sanitizeName(String name) =>
+  /// Sanitiza el nombre del archivo eliminando caracteres no seguros para Storage.
+  @visibleForTesting
+  static String sanitizeName(String name) =>
       name.replaceAll(RegExp(r'[^\w.\-]'), '_');
 
-  static String _guessMime(String fileName) {
+  /// Detecta el MIME type por extensión del archivo.
+  @visibleForTesting
+  static String guessMime(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     return _mimeMap[ext] ?? 'application/octet-stream';
   }
