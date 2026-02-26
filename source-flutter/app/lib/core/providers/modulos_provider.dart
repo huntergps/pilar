@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
+import '../offline/connectivity_service.dart';
 import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -12,10 +13,6 @@ import 'repository_provider.dart';
 // ---------------------------------------------------------------------------
 
 /// Item de modulo activo para la empresa actual.
-///
-/// [icono] es el nombre del icono como string (p.ej. "FluentIcons.home")
-/// para que el shell lo resuelva en tiempo de ejecucion sin depender de
-/// imports especificos del paquete fluent_ui aqui.
 class ModuloItem {
   const ModuloItem({
     required this.id,
@@ -27,15 +24,8 @@ class ModuloItem {
 
   final String id;
   final String nombre;
-
-  /// Nombre del icono como string (p.ej. "home", "people", "money").
-  /// El shell lo mapea a FluentIcons en tiempo de ejecucion.
   final String icono;
-
-  /// Orden de aparicion en el menu de navegacion.
   final int orden;
-
-  /// Categoria del modulo: 'infraestructura' | 'core' | 'auxiliar'.
   final String tipo;
 
   factory ModuloItem.fromJson(Map<String, dynamic> json) {
@@ -50,7 +40,6 @@ class ModuloItem {
 }
 
 /// Modulo con su estado de activacion para la empresa actual.
-/// Usado en la pantalla de administracion de modulos.
 class ModuloEstado {
   const ModuloEstado({
     required this.id,
@@ -65,11 +54,7 @@ class ModuloEstado {
   final String nombre;
   final String icono;
   final int orden;
-
-  /// Categoria: 'infraestructura' | 'core' | 'auxiliar'.
   final String tipo;
-
-  /// true si el modulo esta activo para esta empresa.
   final bool habilitado;
 
   factory ModuloEstado.fromJson(Map<String, dynamic> json) {
@@ -85,77 +70,110 @@ class ModuloEstado {
 }
 
 // ---------------------------------------------------------------------------
-// Provider
+// Helpers
+// ---------------------------------------------------------------------------
+
+List<ModuloItem> _buildModuloItems(
+  List<Modulo> modulos,
+  List<ModuloEmpresa> modulosEmpresa,
+) {
+  final enabledIds = modulosEmpresa
+      .where((me) => me.habilitado)
+      .map((me) => me.moduloId)
+      .toSet();
+
+  return modulos
+      .where((m) => enabledIds.contains(m.id))
+      .map((m) => ModuloItem(
+            id: m.id,
+            nombre: m.nombre,
+            icono: m.icono ?? 'apps',
+            orden: m.orden ?? 99,
+            tipo: m.tipo,
+          ))
+      .toList()
+    ..sort((a, b) => a.orden.compareTo(b.orden));
+}
+
+// ---------------------------------------------------------------------------
+// Provider — módulos activos
 // ---------------------------------------------------------------------------
 
 /// Lista de modulos activos para la empresa y usuario actuales.
 ///
-/// Se invalida automaticamente al:
-/// - Cambiar la sesion (authStateProvider).
-/// - Cambiar la empresa activa (empresaActivaIdProvider).
-///
-/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
-final modulosActivosProvider = FutureProvider<List<ModuloItem>>((ref) async {
+/// Patrón local-first + background sync:
+/// 1. Emite desde SQLite (Brick) inmediatamente.
+/// 2. Sincroniza en background desde Supabase.
+/// 3. Emite datos actualizados.
+final modulosActivosProvider = StreamProvider<List<ModuloItem>>((ref) async* {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
 
-  // Web o sin empresa → RPC directa
+  // Web o sin empresa: RPC directa
   if (kIsWeb || empresaId == null) {
-    if (empresaId == null) return const <ModuloItem>[];
+    if (empresaId == null) { yield const <ModuloItem>[]; return; }
     final client = ref.watch(supabaseClientProvider);
     try {
       final data = await client.rpc('get_modulos_activos');
-      return (data as List)
+      yield (data as List)
           .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (_) {
-      return const <ModuloItem>[];
+      yield const <ModuloItem>[];
     }
+    return;
   }
 
-  // Native: Brick offline-first — consulta modulos + modulos_empresa y combina.
   final repo = ref.read(repositoryProvider);
-  if (repo == null) return const <ModuloItem>[];
+  if (repo == null) { yield const <ModuloItem>[]; return; }
 
+  // 1. Local primero — datos de SQLite inmediatamente
   try {
     final results = await Future.wait<dynamic>([
       repo.get<Modulo>(
-        policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+        policy: OfflineFirstGetPolicy.localOnly,
         query: Query.where('activo', true),
       ),
       repo.get<ModuloEmpresa>(
-        policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
+        policy: OfflineFirstGetPolicy.localOnly,
         query: Query.where('empresaId', empresaId),
       ),
     ]);
-    final modulos       = results[0] as List<Modulo>;
-    final modulosEmpresa = results[1] as List<ModuloEmpresa>;
-
-    final enabledIds = modulosEmpresa
-        .where((me) => me.habilitado)
-        .map((me) => me.moduloId)
-        .toSet();
-
-    return modulos
-        .where((m) => enabledIds.contains(m.id))
-        .map((m) => ModuloItem(
-              id: m.id,
-              nombre: m.nombre,
-              icono: m.icono ?? 'apps',
-              orden: m.orden ?? 99,
-              tipo: m.tipo,
-            ))
-        .toList()
-      ..sort((a, b) => a.orden.compareTo(b.orden));
+    yield _buildModuloItems(
+      results[0] as List<Modulo>,
+      results[1] as List<ModuloEmpresa>,
+    );
   } catch (_) {
-    return const <ModuloItem>[];
+    yield const <ModuloItem>[];
+  }
+
+  // 2. Background sync — Brick trae datos frescos de Supabase y actualiza SQLite
+  try {
+    final results = await Future.wait<dynamic>([
+      repo.get<Modulo>(
+        policy: OfflineFirstGetPolicy.awaitRemote,
+        query: Query.where('activo', true),
+      ),
+      repo.get<ModuloEmpresa>(
+        policy: OfflineFirstGetPolicy.awaitRemote,
+        query: Query.where('empresaId', empresaId),
+      ),
+    ]);
+    yield _buildModuloItems(
+      results[0] as List<Modulo>,
+      results[1] as List<ModuloEmpresa>,
+    );
+    ref.read(connectivityProvider.notifier).reportOnline();
+  } catch (e) {
+    if (isOfflineError(e)) {
+      ref.read(connectivityProvider.notifier).reportOffline();
+    }
   }
 });
 
-/// Todos los modulos del sistema con estado de activacion para la empresa actual.
-///
-/// Usado en la pantalla de administracion de modulos para mostrar
-/// y gestionar activaciones.
+/// Todos los modulos del sistema con estado de activacion.
+/// Usado en la pantalla de administracion de modulos.
+/// Solo-online: requiere conectividad para datos frescos.
 final todosModulosProvider = FutureProvider<List<ModuloEstado>>((ref) async {
   ref.watch(authStateProvider);
   ref.watch(empresaActivaIdProvider);

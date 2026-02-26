@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
+import '../offline/connectivity_service.dart';
 import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -15,9 +16,6 @@ import 'repository_provider.dart';
 // ---------------------------------------------------------------------------
 
 /// Alerta persistente de empresa.
-///
-/// A diferencia de [NotificacionItem] (efímera, por usuario),
-/// una alerta permanece activa hasta que alguien la resuelva o ignore.
 class AlertaItem {
   const AlertaItem({
     required this.id,
@@ -36,17 +34,9 @@ class AlertaItem {
 
   final String id;
   final String origenModulo;
-
-  /// Clave semántica única, p.ej. 'SRI_CERT_EXPIRING'. Puede ser null para
-  /// alertas sin deduplicación.
   final String? codigoAlerta;
-
-  /// ID del registro relacionado (soft ref, sin FK).
   final String? registroId;
-
-  /// 'info' | 'warning' | 'error' | 'critical'
   final String severidad;
-
   final String titulo;
   final String? cuerpo;
   final Map<String, dynamic> datos;
@@ -78,12 +68,9 @@ class AlertaItem {
 }
 
 // ---------------------------------------------------------------------------
-// Provider — lista de alertas activas
+// Helper
 // ---------------------------------------------------------------------------
 
-/// Convierte un [AlertaEmpresa] (Brick) a [AlertaItem] (UI).
-/// Los campos no mapeados (datos, registroId, rolesDestino, expiraAt)
-/// se inicializan con valores vacíos/nulos aceptables para la presentación.
 AlertaItem _alertaFromBrick(AlertaEmpresa a) => AlertaItem(
       id: a.id,
       origenModulo: a.origenModulo,
@@ -99,47 +86,70 @@ AlertaItem _alertaFromBrick(AlertaEmpresa a) => AlertaItem(
       creadaAt: a.createdAt ?? DateTime.now(),
     );
 
+// ---------------------------------------------------------------------------
+// Provider — lista de alertas activas (local-first + background sync)
+// ---------------------------------------------------------------------------
+
 /// Alertas activas visibles para el usuario actual.
 ///
-/// Se invalida al cambiar la sesión o la empresa activa.
-/// Usar [alertasCountProvider] para el badge del header.
-///
-/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
-final alertasActivasProvider = FutureProvider<List<AlertaItem>>((ref) async {
+/// Patrón local-first + background sync:
+/// 1. Emite alertas de SQLite (Brick) inmediatamente.
+/// 2. Sincroniza en background desde Supabase.
+/// 3. Emite datos actualizados.
+final alertasActivasProvider = StreamProvider<List<AlertaItem>>((ref) async* {
   ref.watch(authStateProvider);
-
   final empresaId = ref.watch(empresaActivaIdProvider);
-  if (empresaId == null) return const [];
+  if (empresaId == null) { yield const []; return; }
 
-  // Web → RPC directa
+  // Web: RPC directa
   if (kIsWeb) {
     final client = ref.watch(supabaseClientProvider);
-    final data = await client.rpc(
-      'get_alertas_activas',
-      params: {'p_limite': 50, 'p_offset': 0},
-    );
-    return (data as List)
-        .map((e) => AlertaItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    try {
+      final data = await client.rpc(
+        'get_alertas_activas',
+        params: {'p_limite': 50, 'p_offset': 0},
+      );
+      yield (data as List)
+          .map((e) => AlertaItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      yield const <AlertaItem>[];
+    }
+    return;
   }
 
-  // Native: Brick offline-first
+  // Native: local-first + background sync
   final repo = ref.read(repositoryProvider);
-  if (repo == null) return const [];
+  if (repo == null) { yield const []; return; }
 
+  final query = Query(where: [
+    Where.exact('empresaId', empresaId),
+    const Where.exact('estado', 'activa'),
+  ]);
+
+  // 1. Local primero
   try {
-    // Filtra por empresaId además de estado para evitar leakear datos
-    // de otras empresas cacheadas en SQLite.
-    final alertas = await repo.get<AlertaEmpresa>(
-      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
-      query: Query(where: [
-        Where.exact('empresaId', empresaId),
-        const Where.exact('estado', 'activa'),
-      ]),
+    final local = await repo.get<AlertaEmpresa>(
+      policy: OfflineFirstGetPolicy.localOnly,
+      query: query,
     );
-    return alertas.map(_alertaFromBrick).toList();
+    yield local.map(_alertaFromBrick).toList();
   } catch (_) {
-    return const [];
+    yield const <AlertaItem>[];
+  }
+
+  // 2. Background sync
+  try {
+    final fresh = await repo.get<AlertaEmpresa>(
+      policy: OfflineFirstGetPolicy.awaitRemote,
+      query: query,
+    );
+    yield fresh.map(_alertaFromBrick).toList();
+    ref.read(connectivityProvider.notifier).reportOnline();
+  } catch (e) {
+    if (isOfflineError(e)) {
+      ref.read(connectivityProvider.notifier).reportOffline();
+    }
   }
 });
 
@@ -147,9 +157,7 @@ final alertasActivasProvider = FutureProvider<List<AlertaItem>>((ref) async {
 // Provider — conteo en tiempo real (badge del header)
 // ---------------------------------------------------------------------------
 
-/// Número de alertas activas visibles para el usuario.
-///
-/// Estrategia híbrida:
+/// Número de alertas activas. Estrategia híbrida:
 /// 1. Fetch inicial via RPC.
 /// 2. Realtime INSERT/UPDATE en alertas_empresa → re-fetch.
 /// 3. Refresh periódico cada 60 s como fallback.
@@ -176,7 +184,6 @@ final alertasCountProvider = StreamProvider<int>((ref) async* {
 
   await fetchCount();
 
-  // Realtime: INSERT y UPDATE en alertas_empresa de la empresa activa
   final channel = client
       .channel('alertas_count_$empresaId')
       .onPostgresChanges(

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/repository_provider.dart';
+import '../../../core/offline/connectivity_service.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -28,19 +29,12 @@ class NotificacionItem {
   });
 
   final String id;
-
-  /// Categoria de la notificacion, p.ej. "sri", "venta", "sistema".
   final String tipo;
-
   final String titulo;
   final String? cuerpo;
   final bool leida;
   final DateTime creadaAt;
-
-  /// Nombre del icono sugerido por el backend (opcional).
   final String? icono;
-
-  /// URL de acción asociada — deep-link para navegación directa (opcional).
   final String? accionUrl;
 
   factory NotificacionItem.fromJson(Map<String, dynamic> json) {
@@ -61,17 +55,10 @@ class NotificacionItem {
 // Badge provider (conteo de no leidas)
 // ---------------------------------------------------------------------------
 
-/// Numero de notificaciones no leidas del usuario.
-///
-/// Estrategia hibrida:
-/// 1. Fetch inicial via RPC al suscribirse.
-/// 2. Subscription de Supabase Realtime para INSERT en `notificaciones_usuario`
-///    — en cada evento INSERT se refetch el conteo real para evitar
-///    double-counting en caso de mensajes duplicados.
-/// 3. Refresh periodico cada 30 s como fallback cuando el canal Realtime
-///    no esta disponible (ej. conexion inestable).
-///
-/// Nota: el canal se cancela automaticamente al disposar el provider (ref.onDispose).
+/// Numero de notificaciones no leidas. Estrategia híbrida:
+/// 1. Fetch inicial via RPC.
+/// 2. Realtime INSERT en notificaciones_usuario → re-fetch.
+/// 3. Refresh periódico cada 30 s como fallback.
 final notificacionesBadgeProvider = StreamProvider<int>((ref) async* {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
@@ -82,27 +69,19 @@ final notificacionesBadgeProvider = StreamProvider<int>((ref) async* {
   }
 
   final client = ref.watch(supabaseClientProvider);
-
-  // ---- Controlador que alimenta el stream de conteos ----
   final controller = StreamController<int>();
 
-  // Funcion reutilizable para obtener el conteo actual.
   Future<void> fetchCount() async {
     try {
-      final result =
-          await client.rpc('get_count_notificaciones_no_leidas');
+      final result = await client.rpc('get_count_notificaciones_no_leidas');
       if (!controller.isClosed) {
         controller.add((result as int?) ?? 0);
       }
-    } catch (_) {
-      // En caso de error de red no se emite nada; el valor anterior persiste.
-    }
+    } catch (_) {}
   }
 
-  // ---- Fetch inicial ----
   await fetchCount();
 
-  // ---- Realtime: INSERT en notificaciones_usuario ----
   final channel = client
       .channel('notificaciones_badge_$empresaId')
       .onPostgresChanges(
@@ -118,12 +97,10 @@ final notificacionesBadgeProvider = StreamProvider<int>((ref) async* {
       )
       .subscribe();
 
-  // ---- Refresh periodico cada 30 s como fallback ----
   final timer = Timer.periodic(const Duration(seconds: 30), (_) {
     if (!controller.isClosed) fetchCount();
   });
 
-  // ---- Limpieza al disponer el provider ----
   ref.onDispose(() {
     timer.cancel();
     channel.unsubscribe();
@@ -134,67 +111,94 @@ final notificacionesBadgeProvider = StreamProvider<int>((ref) async* {
 });
 
 // ---------------------------------------------------------------------------
-// Lista de notificaciones
+// Lista de notificaciones (local-first + background sync)
 // ---------------------------------------------------------------------------
 
-/// Ultimas 20 notificaciones del usuario (leidas y no leidas).
+/// Últimas 20 notificaciones del usuario.
 ///
-/// Invalide este provider manualmente tras marcar una notificacion como leida:
+/// Patrón local-first + background sync:
+/// 1. Emite desde SQLite (Brick) inmediatamente.
+/// 2. Sincroniza en background desde Supabase.
+/// 3. Emite datos actualizados.
+///
+/// Invalidar manualmente tras marcar notificación como leída:
 /// ```dart
 /// ref.invalidate(notificacionesProvider);
 /// ```
-///
-/// Implementación offline-first vía Brick (native) con fallback a RPC (web).
-final notificacionesProvider =
-    FutureProvider<List<NotificacionItem>>((ref) async {
+final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) async* {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
 
-  // Web → RPC directa
+  // Web: RPC directa
   if (kIsWeb || empresaId == null) {
-    if (empresaId == null) return const [];
+    if (empresaId == null) { yield const []; return; }
     final client = ref.watch(supabaseClientProvider);
-    final data = await client.rpc(
-      'get_notificaciones',
-      params: {'p_limite': 20, 'p_offset': 0},
-    );
-    return (data as List)
-        .map((e) => NotificacionItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    try {
+      final data = await client.rpc(
+        'get_notificaciones',
+        params: {'p_limite': 20, 'p_offset': 0},
+      );
+      yield (data as List)
+          .map((e) => NotificacionItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      yield const <NotificacionItem>[];
+    }
+    return;
   }
 
-  // Native: Brick offline-first
+  // Native: local-first + background sync
   final repo = ref.read(repositoryProvider);
-  if (repo == null) return const [];
+  if (repo == null) { yield const []; return; }
 
-  try {
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) return const [];
+  final session = Supabase.instance.client.auth.currentSession;
+  if (session == null) { yield const []; return; }
 
-    final notifs = await repo.get<Notificacion>(
-      policy: OfflineFirstGetPolicy.awaitRemoteWhenNoneExist,
-      query: Query(where: [
-        Where.exact('empresaId', empresaId),
-        Where.exact('usuarioId', session.user.id),
-      ]),
-    );
+  final query = Query(where: [
+    Where.exact('empresaId', empresaId),
+    Where.exact('usuarioId', session.user.id),
+  ]);
 
-    // Ordenar por fecha descendente, limitar a 20
+  NotificacionItem _fromBrick(Notificacion n) => NotificacionItem(
+        id: n.id,
+        tipo: n.tipo,
+        titulo: n.titulo,
+        cuerpo: n.cuerpo,
+        leida: n.leida,
+        creadaAt: n.createdAt ?? DateTime.now(),
+        icono: n.icono,
+        accionUrl: n.accionUrl,
+      );
+
+  List<NotificacionItem> _sortAndLimit(List<Notificacion> notifs) {
     final sorted = notifs.toList()
-      ..sort((a, b) => (b.createdAt ?? DateTime(0))
-          .compareTo(a.createdAt ?? DateTime(0)));
+      ..sort((a, b) =>
+          (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+    return sorted.take(20).map(_fromBrick).toList();
+  }
 
-    return sorted.take(20).map((n) => NotificacionItem(
-          id: n.id,
-          tipo: n.tipo,
-          titulo: n.titulo,
-          cuerpo: n.cuerpo,
-          leida: n.leida,
-          creadaAt: n.createdAt ?? DateTime.now(),
-          icono: n.icono,
-          accionUrl: n.accionUrl,
-        )).toList();
+  // 1. Local primero
+  try {
+    final local = await repo.get<Notificacion>(
+      policy: OfflineFirstGetPolicy.localOnly,
+      query: query,
+    );
+    yield _sortAndLimit(local);
   } catch (_) {
-    return const [];
+    yield const <NotificacionItem>[];
+  }
+
+  // 2. Background sync
+  try {
+    final fresh = await repo.get<Notificacion>(
+      policy: OfflineFirstGetPolicy.awaitRemote,
+      query: query,
+    );
+    yield _sortAndLimit(fresh);
+    ref.read(connectivityProvider.notifier).reportOnline();
+  } catch (e) {
+    if (isOfflineError(e)) {
+      ref.read(connectivityProvider.notifier).reportOffline();
+    }
   }
 });

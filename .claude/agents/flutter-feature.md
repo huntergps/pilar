@@ -50,6 +50,57 @@ SfDataGridTheme(
 )
 ```
 
+### Patrón Offline-First OBLIGATORIO — Local-First + Background Sync
+
+**El orden siempre es:**
+1. **SQLite local primero** → mostrar inmediatamente (aunque sea stale)
+2. **Background sync Supabase** → actualiza SQLite con datos frescos
+3. **UI reactiva automática** → re-emite cuando el stream emite nuevo valor
+
+```dart
+// SIEMPRE StreamProvider con este patrón para providers Brick:
+final xxxProvider = StreamProvider<List<X>>((ref) async* {
+  final repo = ref.read(repositoryProvider);
+  if (kIsWeb || repo == null) { /* RPC directa + yield */ return; }
+
+  // 1. Local primero → display inmediato
+  try {
+    final local = await repo.get<T>(policy: OfflineFirstGetPolicy.localOnly, query: q);
+    yield _map(local);
+  } catch (_) { yield const []; }
+
+  // 2. Background sync → Brick actualiza SQLite → yield resultado fresco
+  try {
+    final fresh = await repo.get<T>(policy: OfflineFirstGetPolicy.requireRemote, query: q);
+    yield _map(fresh);
+    ref.read(connectivityProvider.notifier).reportOnline();
+  } catch (e) {
+    if (isOfflineError(e)) ref.read(connectivityProvider.notifier).reportOffline();
+  }
+});
+```
+
+**NO usar** `awaitRemoteWhenNoneExist` (no hace background sync si hay cache).
+**NO usar** `FutureProvider` para datos Brick (snapshot, no reactivo).
+**NO poner** RPC primero y Brick como fallback (backwards).
+
+### GRANT Requerido para Brick (CRÍTICO)
+Brick hace SELECT directo via PostgREST. **Toda tabla nueva** que use Brick necesita:
+```sql
+GRANT SELECT ON TABLE <tabla> TO authenticated;
+```
+Sin este GRANT → `PostgrestException(code: 42501, permission denied for table X)`.
+
+### Operaciones Admin (solo-online)
+Las ops con consecuencias de tenant (`invite_user`, `admin_*`, `set_empresa_activa`) son **solo-online**.
+Si no hay red → mostrar `InfoBar("Requiere conexión")` y retornar sin hacer nada.
+```dart
+if (!ref.read(connectivityProvider)) {
+  // mostrar InfoBar de error
+  return;
+}
+```
+
 ### Reglas
 - NUNCA usar drift directamente — usar brick_offline_first_with_supabase
 - NUNCA manejar firma digital ni SOAP en Flutter (eso es Edge Functions)

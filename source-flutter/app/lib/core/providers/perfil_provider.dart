@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:brick_gen/brick_gen.dart';
 import 'package:brick_offline_first/brick_offline_first.dart';
 import 'package:flutter/foundation.dart';
@@ -85,58 +87,87 @@ class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) return null;
 
-    // Web: siempre RPC
+    // Web: RPC directa, sin cache local
     if (kIsWeb) {
       final data = await Supabase.instance.client.rpc('get_mi_perfil');
       if (data == null || (data as Map).isEmpty) return null;
       return PerfilUsuario.fromJson(Map<String, dynamic>.from(data));
     }
 
-    // Native: intenta RPC primero (datos ricos: emailLogin, nombreGlobal).
-    // Si falla por falta de red, cae en SQLite via Brick.
-    try {
-      final data = await Supabase.instance.client.rpc('get_mi_perfil');
-      if (data != null && (data as Map).isNotEmpty) {
-        return PerfilUsuario.fromJson(Map<String, dynamic>.from(data));
-      }
-    } catch (e) {
-      if (!isOfflineError(e)) rethrow;
-      ref.read(connectivityProvider.notifier).reportOffline();
-    }
+    // Native: local-first + background refresh
+    final local = await _getLocal(session);
 
-    // Offline fallback: leer UsuarioEmpresaPerfil de SQLite
+    // Background sync desde RPC (tiene datos que Brick no tiene: emailLogin, nombreGlobal)
+    unawaited(_refreshFromRpc());
+
+    return local;
+  }
+
+  Future<PerfilUsuario?> _getLocal(Session session) async {
     final repo = ref.read(repositoryProvider);
     if (repo == null) return null;
 
     final empresaId = session.user.appMetadata['empresa_id'] as String?;
     if (empresaId == null) return null;
 
-    final results = await repo.get<UsuarioEmpresaPerfil>(
-      policy: OfflineFirstGetPolicy.localOnly,
-      query: Query(where: [
-        Where.exact('usuarioId', session.user.id),
-        Where.exact('empresaId', empresaId),
-      ]),
-    );
+    try {
+      final results = await repo.get<UsuarioEmpresaPerfil>(
+        policy: OfflineFirstGetPolicy.localOnly,
+        query: Query(where: [
+          Where.exact('usuarioId', session.user.id),
+          Where.exact('empresaId', empresaId),
+        ]),
+      );
+      if (results.isEmpty) return null;
+      final p = results.first;
+      return PerfilUsuario(
+        usuarioId: p.usuarioId,
+        empresaId: p.empresaId,
+        nombreDisplay: p.nombreDisplay,
+        avatarUrl: p.avatarUrl,
+        telefono: p.telefono,
+        emailContacto: p.emailContacto,
+        emailLogin: session.user.email ?? '',
+        nombreGlobal: null,
+        zonaHoraria: p.zonaHoraria ?? 'America/Guayaquil',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 
-    if (results.isEmpty) return null;
-    final p = results.first;
-
-    return PerfilUsuario(
-      usuarioId: p.usuarioId,
-      empresaId: p.empresaId,
-      nombreDisplay: p.nombreDisplay,
-      avatarUrl: p.avatarUrl,
-      telefono: p.telefono,
-      emailContacto: p.emailContacto,
-      emailLogin: session.user.email ?? '',
-      nombreGlobal: null,
-      zonaHoraria: p.zonaHoraria ?? 'America/Guayaquil',
-    );
+  Future<void> _refreshFromRpc() async {
+    try {
+      final data = await Supabase.instance.client.rpc('get_mi_perfil');
+      if (data != null && (data as Map).isNotEmpty) {
+        state = AsyncData(
+          PerfilUsuario.fromJson(Map<String, dynamic>.from(data)),
+        );
+      }
+      ref.read(connectivityProvider.notifier).reportOnline();
+      // Sincronizar Brick en background para futuras lecturas offline
+      final session = Supabase.instance.client.auth.currentSession;
+      final empresaId = session?.user.appMetadata['empresa_id'] as String?;
+      if (empresaId != null) {
+        final repo = ref.read(repositoryProvider);
+        unawaited(repo?.get<UsuarioEmpresaPerfil>(
+          policy: OfflineFirstGetPolicy.awaitRemote,
+          query: Query(where: [
+            Where.exact('usuarioId', session!.user.id),
+            Where.exact('empresaId', empresaId),
+          ]),
+        ));
+      }
+    } catch (e) {
+      if (isOfflineError(e)) {
+        ref.read(connectivityProvider.notifier).reportOffline();
+      }
+    }
   }
 
   /// Persiste cambios de perfil y actualiza el estado local.
   /// Retorna null si tuvo éxito, o el mensaje de error si falló.
+  /// Requiere conectividad — operación solo-online.
   Future<String?> saveChanges({
     String? nombreDisplay,
     String? avatarUrl,
@@ -144,6 +175,10 @@ class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
     String? emailContacto,
     String? zonaHoraria,
   }) async {
+    if (!kIsWeb && !ref.read(connectivityProvider)) {
+      return 'Sin conexión. Reconéctate para guardar cambios.';
+    }
+
     final payload = <String, dynamic>{};
     if (nombreDisplay != null) payload['nombre_display'] = nombreDisplay;
     if (avatarUrl != null) payload['avatar_url'] = avatarUrl;

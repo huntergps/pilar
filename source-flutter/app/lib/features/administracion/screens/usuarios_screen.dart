@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 
+import '../../../core/offline/connectivity_service.dart';
 import '../../../core/providers/perfil_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../providers/admin_providers.dart';
@@ -212,6 +213,10 @@ class _DesktopGridState extends ConsumerState<_DesktopGrid> {
   }
 
   Future<void> _handleToggle(String userId, bool value) async {
+    if (!ref.read(connectivityProvider)) {
+      _showError('Requiere conexión a internet');
+      return;
+    }
     _source.startToggling(userId);
     try {
       final result = await Supabase.instance.client.rpc(
@@ -829,6 +834,10 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
   }
 
   Future<void> _savePerfil() async {
+    if (!ref.read(connectivityProvider)) {
+      setState(() => _perfilMsg = 'Requiere conexión a internet');
+      return;
+    }
     setState(() {
       _savingPerfil = true;
       _perfilMsg = null;
@@ -891,6 +900,10 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
   }
 
   Future<void> _saveRoles() async {
+    if (!ref.read(connectivityProvider)) {
+      setState(() => _rolesMsg = 'Requiere conexión a internet');
+      return;
+    }
     setState(() {
       _savingRoles = true;
       _rolesMsg = null;
@@ -922,6 +935,13 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
   }
 
   Future<void> _savePassword() async {
+    if (!ref.read(connectivityProvider)) {
+      setState(() {
+        _passwordMsg = 'Requiere conexión a internet';
+        _passwordSuccess = false;
+      });
+      return;
+    }
     if (_password.length < 6) {
       setState(() {
         _passwordMsg = 'Mínimo 6 caracteres.';
@@ -998,6 +1018,19 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
     );
 
     if (confirm != true || !mounted) return;
+
+    if (!ref.read(connectivityProvider)) {
+      if (mounted) {
+        displayInfoBar(context,
+            builder: (_, close) => InfoBar(
+                  title: const Text('Sin conexión'),
+                  content: const Text('Requiere conexión a internet'),
+                  severity: InfoBarSeverity.error,
+                  onClose: close,
+                ));
+      }
+      return;
+    }
 
     setState(() => _removingFromEmpresa = true);
     try {
@@ -2099,6 +2132,18 @@ class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
 
   Future<void> _toggle(bool v) async {
     if (_toggling) return;
+    if (!ref.read(connectivityProvider)) {
+      if (mounted) {
+        displayInfoBar(context,
+            builder: (_, close) => InfoBar(
+                  title: const Text('Sin conexión'),
+                  content: const Text('Requiere conexión a internet'),
+                  severity: InfoBarSeverity.error,
+                  onClose: close,
+                ));
+      }
+      return;
+    }
     setState(() => _toggling = true);
     try {
       final result = await Supabase.instance.client.rpc(
@@ -2286,6 +2331,10 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
   }
 
   Future<void> _save() async {
+    if (!ref.read(connectivityProvider)) {
+      setState(() => _error = 'Requiere conexión a internet');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -2434,6 +2483,10 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
   String? _error;
 
   Future<void> _save() async {
+    if (!ref.read(connectivityProvider)) {
+      setState(() => _error = 'Requiere conexión a internet');
+      return;
+    }
     if (_password.length < 6) {
       setState(() => _error = 'Mínimo 6 caracteres.');
       return;
@@ -2564,6 +2617,14 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
   Future<void> _submit() async {
     final email = _emailController.text.trim();
     if (!_emailValido || _selectedRolId == null) return;
+
+    if (!ref.read(connectivityProvider)) {
+      setState(() {
+        _errorMessage = 'Requiere conexión a internet para enviar invitaciones';
+        _loading = false;
+      });
+      return;
+    }
 
     setState(() {
       _loading = true;
