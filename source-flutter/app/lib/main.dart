@@ -50,6 +50,8 @@ Future<void> main() async {
       supabaseClient: Supabase.instance.client,
       offlineQueue: offlineQueue,
     );
+    // initialize() crea las tablas SQLite (modelos + HttpJobs de la cola offline)
+    await PilarRepository.instance.initialize();
   } else {
     // Web: no offline queue (sqflite not available on web)
     await Supabase.initialize(url: config.url, anonKey: config.anonKey);
