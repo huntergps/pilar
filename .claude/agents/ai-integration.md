@@ -8,17 +8,62 @@ Diseñar e implementar las capacidades de IA en PILAR ERP usando pgvector de Sup
 
 ## Arquitectura IA
 
-### pgvector (Supabase)
+### Dos tiers de vectores — cuándo usar cada uno
+
+| Criterio | pgvector (PostgreSQL) | Vector Buckets (S3) |
+|----------|----------------------|---------------------|
+| Latencia | < 20 ms | > 50 ms |
+| Volumen | < 5 M vectores | hasta 50 M vectores |
+| Filtros | SQL complejo + RLS | metadata JSONB simple |
+| Multi-tenancy | empresa_id + RLS nativa | metadata.empresa_id (filtro en query) |
+| Caso PILAR | Chat en tiempo real, facturas activas | Archivos históricos, catálogos, corpus doc |
+| Estado | GA | Alpha (Pro+, regiones us/eu/ap) |
+
+**Regla**: usar pgvector para datos calientes (últimos 90 días, interacción directa del usuario). Vector Buckets para corpus grandes, archivos y búsqueda offline.
+
+### pgvector (Supabase) — tier caliente
 - Extensión `vector` habilitada en PostgreSQL
 - Tabla `embeddings` en módulo `ia` para búsqueda semántica sobre datos del ERP
 - Dimensiones: 1536 (OpenAI text-embedding-3-small) o 384 (all-MiniLM-L6-v2)
 - Migración: `modules/extensiones/ia/supabase/migrations/001_tables.sql`
 
-### Esquema de Datos IA
 ```sql
 -- RLS — patrón obligatorio (ADR-003)
 CREATE POLICY "tenant_isolation" ON embeddings
   USING (empresa_id = (SELECT private.get_empresa_id()));
+```
+
+### Vector Buckets (Supabase alpha) — tier frío/archivo
+
+Almacenamiento S3-backed con similarity search integrada. Sin RLS nativa → filtrar por `metadata.empresa_id` siempre.
+
+```sql
+-- INSERT — schemas3_vectors (S3-backed, NO pgvector)
+INSERT INTO s3_vectors.documents_openai (key, data, metadata)
+VALUES (
+  'empresa_123/factura_456',
+  '[0.1, 0.2, ...]'::embd,
+  '{"empresa_id": "123", "tipo": "factura", "periodo": "2026-01"}'
+);
+
+-- QUERY con filtro de empresa y similarity
+SELECT key, metadata->>'tipo', embd_distance(data) AS distance
+FROM s3_vectors.documents_openai
+WHERE metadata->>'empresa_id' = $empresa_id
+  AND data <==> $query_vector::embd
+ORDER BY embd_distance(data) ASC
+LIMIT 5;
+```
+
+SDK operations (server-side solamente, no desde Flutter):
+```typescript
+// En Edge Function ai-embed o ai-query
+const { data } = await supabase.storage.vectorBuckets
+  .createBucket('pilar-corpus')
+  .createIndex('documents-openai', { dimension: 1536, metric: 'cosine' });
+
+await vectorIndex.putVectors([{ key: 'doc-1', data: embedding, metadata: { empresa_id } }]);
+const results = await vectorIndex.queryVectors({ vector: queryEmbedding, topK: 5 });
 ```
 
 ### Edge Functions IA
@@ -80,3 +125,6 @@ SELECT match_documents(
 - Logs de todas las interacciones IA para auditoría
 - Rate limiting en endpoints IA para evitar abuso
 - Embeddings se generan de forma asíncrona vía `pilar_ai_queue` — NUNCA en la request del usuario
+- pgvector para datos calientes (< 5 M vectores, < 90 días); Vector Buckets para corpus históricos
+- Vector Buckets NO tienen RLS: filtrar SIEMPRE por `metadata.empresa_id` en el query
+- Vector Buckets son alpha (Pro+, regiones us-east-1/us-east-2/us-west-2/eu-central-1/ap-southeast-2)

@@ -41,6 +41,11 @@ class AdjuntosPanel extends ConsumerStatefulWidget {
   /// Título del panel. Por defecto "Adjuntos".
   final String? titulo;
 
+  /// Tags que se aplican automáticamente al subir un archivo.
+  /// Útil para que cada módulo pre-etiquete sus adjuntos.
+  /// Ejemplo: `['factura', '2026-01']`
+  final List<String> defaultTags;
+
   const AdjuntosPanel({
     super.key,
     required this.empresaId,
@@ -48,6 +53,7 @@ class AdjuntosPanel extends ConsumerStatefulWidget {
     required this.entidadId,
     this.allowedExtensions,
     this.titulo,
+    this.defaultTags = const [],
   });
 
   @override
@@ -133,6 +139,7 @@ class _AdjuntosPanelState extends ConsumerState<AdjuntosPanel> {
     await ref.read(adjuntosNotifierProvider(_key).notifier).upload(
           empresaId: widget.empresaId,
           allowedExtensions: widget.allowedExtensions,
+          defaultTags: widget.defaultTags,
           cancelToken: _cancelToken,
         );
 

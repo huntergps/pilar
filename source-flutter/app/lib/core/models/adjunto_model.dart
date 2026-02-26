@@ -19,6 +19,8 @@ class AdjuntoItem {
   final bool esPublico;
   final String? subidoPor;
   final DateTime createdAt;
+  final List<String> tags;  // etiquetas libres para clasificación
+  final int version;         // para versionado futuro
 
   const AdjuntoItem({
     required this.id,
@@ -35,6 +37,8 @@ class AdjuntoItem {
     required this.esPublico,
     this.subidoPor,
     required this.createdAt,
+    this.tags = const [],
+    this.version = 1,
   });
 
   factory AdjuntoItem.fromJson(Map<String, dynamic> json) => AdjuntoItem(
@@ -52,6 +56,11 @@ class AdjuntoItem {
         esPublico: (json['es_publico'] as bool?) ?? false,
         subidoPor: json['subido_por'] as String?,
         createdAt: DateTime.parse(json['created_at'] as String),
+        tags: (json['tags'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            const [],
+        version: (json['version'] as num?)?.toInt() ?? 1,
       );
 
   // ---------------------------------------------------------------------------

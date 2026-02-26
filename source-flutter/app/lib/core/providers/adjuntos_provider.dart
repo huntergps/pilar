@@ -50,6 +50,38 @@ final adjuntosCountProvider = FutureProvider.family<int, (String, String)>(
 );
 
 // ---------------------------------------------------------------------------
+// Parámetros para gestor documental admin
+// ---------------------------------------------------------------------------
+
+/// Filtros para [todosAdjuntosProvider].
+typedef TodosAdjuntosParams = ({
+  String? entidadTipo,
+  String? tag,
+  String? search,
+});
+
+/// Todos los adjuntos de la empresa con filtros opcionales.
+///
+/// Uso: `ref.watch(todosAdjuntosProvider((entidadTipo: 'factura', tag: null, search: null)))`
+final todosAdjuntosProvider =
+    FutureProvider.family<List<AdjuntoItem>, TodosAdjuntosParams>(
+  (ref, params) async {
+    final rows = await Supabase.instance.client
+        .rpc('get_todos_adjuntos', params: {
+          if (params.entidadTipo != null) 'p_entidad_tipo': params.entidadTipo,
+          if (params.tag != null) 'p_tag': params.tag,
+          if (params.search != null && params.search!.isNotEmpty)
+            'p_search': params.search,
+        })
+        .select();
+
+    return (rows as List<dynamic>)
+        .map((r) => AdjuntoItem.fromJson(r as Map<String, dynamic>))
+        .toList();
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Notifier de operaciones (upload + eliminar + renombrar)
 // ---------------------------------------------------------------------------
 
@@ -115,9 +147,13 @@ class AdjuntosNotifier
 
   /// Abre el picker, sube el archivo con TUS y registra en DB.
   /// Actualiza el estado con progreso en tiempo real.
+  ///
+  /// [defaultTags] — etiquetas que se aplican automáticamente al archivo
+  /// (ej: módulo que lo origina: ['factura', '2026-01']).
   Future<void> upload({
     required String empresaId,
     List<String>? allowedExtensions,
+    List<String> defaultTags = const [],
     UploadCancelToken? cancelToken,
   }) async {
     final file = await UploadService.pickFile(
@@ -163,6 +199,7 @@ class AdjuntosNotifier
         'p_mime_type'       : result.mimeType,
         'p_tamanio_bytes'   : result.tamanioBytes,
         'p_storage_path'    : result.storagePath,
+        if (defaultTags.isNotEmpty) 'p_tags': defaultTags,
       });
 
       final updated = await _fetchItems();

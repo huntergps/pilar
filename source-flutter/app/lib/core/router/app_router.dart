@@ -15,6 +15,7 @@ import '../../features/administracion/screens/empresa_screen.dart';
 import '../../features/administracion/screens/usuarios_screen.dart';
 import '../../features/administracion/screens/modulos_screen.dart';
 import '../../features/administracion/screens/configuracion_screen.dart';
+import '../../features/administracion/screens/archivos_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -45,6 +46,7 @@ abstract final class PilarRoutes {
   static const String adminEmpresa = '/admin/empresa';
   static const String adminUsuarios = '/admin/usuarios';
   static const String adminModulos = '/admin/modulos';
+  static const String adminArchivos = '/admin/archivos';
   static const String adminConfiguracion = '/admin/configuracion';
   static const String configuracion = '/configuracion';
 }
@@ -170,6 +172,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: PilarRoutes.adminModulos,
             builder: (_, __) => const ModulosScreen(),
+          ),
+          GoRoute(
+            path: PilarRoutes.adminArchivos,
+            builder: (_, __) => const ArchivosScreen(),
           ),
           GoRoute(
             path: PilarRoutes.adminConfiguracion,

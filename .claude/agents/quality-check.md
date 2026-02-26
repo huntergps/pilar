@@ -65,9 +65,15 @@ Verificar calidad del código, ejecutar tests, revisar seguridad y validar cumpl
 - [ ] `get_advisors` ejecutado después de migraciones DDL
 - [ ] Migraciones en `modules/<tipo>/<mod>/supabase/migrations/` — NUNCA en `supabase/` directamente
 - [ ] Módulos auxiliares usan Module Service Bus — NUNCA INSERT directo en tablas core
+- [ ] `FORCE ROW LEVEL SECURITY` en tablas nuevas con datos sensibles
+- [ ] Índice en columna `empresa_id` (y FK columns) de toda tabla nueva
+- [ ] RLS USING clauses usan `(SELECT auth.uid())` con paréntesis — NUNCA `auth.uid()` sin SELECT
+- [ ] Partial index `WHERE activo = true` / `WHERE deleted_at IS NULL` en tablas con soft-delete
+- [ ] FK columns tienen índice explícito (PostgreSQL no auto-indexa FKs)
 
 ## Reglas
 - NUNCA aprobar código sin tests para lógica tributaria
 - SIEMPRE verificar seguridad después de cambios en backend
 - SIEMPRE ejecutar advisors de Supabase después de migraciones
 - SIEMPRE verificar que el patrón RLS usa `private.get_empresa_id()` (no `auth.jwt()` inline)
+- SIEMPRE verificar FK indexes con query de detección antes de aprobar migraciones nuevas

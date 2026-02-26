@@ -24,12 +24,12 @@ import 'pilar_header.dart';
 /// - Dashboard as a fixed item at index 0.
 /// - Administración as a [PaneItemExpander] — only visible when the user has
 ///   at least the [administracion.empresa.ver] permission.
-///   When visible, its three children occupy indices 1–3:
-///     1 → Empresa, 2 → Usuarios, 3 → Módulos.
+///   When visible, its four children occupy indices 1–4:
+///     1 → Empresa, 2 → Usuarios, 3 → Módulos, 4 → Archivos.
 ///   When hidden, dynamic modules start at index 1.
-/// - Dynamic module items start at index 4 (admin visible) or 1 (admin hidden).
+/// - Dynamic module items start at index 5 (admin visible) or 1 (admin hidden).
 /// - Configuración footer item (visible to ALL users, always in footerItems).
-///   For admin users: index = 4 + dynamicModulosCount.
+///   For admin users: index = 5 + dynamicModulosCount.
 ///   For non-admin users: index = 1 + dynamicModulosCount.
 /// - Window geometry persistence via [WindowService.saveState].
 class PilarShell extends ConsumerStatefulWidget {
@@ -150,9 +150,9 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
   ///
   /// When [tieneAdmin] is true:
   ///   0 → Dashboard
-  ///   1 → Empresa, 2 → Usuarios, 3 → Módulos (expander children)
-  ///   4..3+N → Dynamic modules
-  ///   4+N → Configuración (footer PaneItem)
+  ///   1 → Empresa, 2 → Usuarios, 3 → Módulos, 4 → Archivos (expander children)
+  ///   5..4+N → Dynamic modules
+  ///   5+N → Configuración (footer PaneItem)
   ///
   /// When [tieneAdmin] is false (Administración hidden):
   ///   0 → Dashboard
@@ -166,11 +166,12 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
       if (location.startsWith('/admin/empresa')) return 1;
       if (location.startsWith('/admin/usuarios')) return 2;
       if (location.startsWith('/admin/modulos')) return 3;
+      if (location.startsWith('/admin/archivos')) return 4;
       if (location.startsWith('/admin')) return 1;
     }
 
     final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
-    int idx = tieneAdmin ? 4 : 1;
+    int idx = tieneAdmin ? 5 : 1;
     for (final m in coreModulos) {
       if (location.startsWith('/${m.id}')) return idx;
       idx++;
@@ -279,12 +280,14 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
                   context.go(PilarRoutes.adminUsuarios);
                 case 3:
                   context.go(PilarRoutes.adminModulos);
+                case 4:
+                  context.go(PilarRoutes.adminArchivos);
                 default:
-                  final modIdx = index - 4;
+                  final modIdx = index - 5;
                   if (modIdx >= 0 && modIdx < list.length) {
                     // Future: context.go('/${list[modIdx].id}');
                     context.go(PilarRoutes.dashboard);
-                  } else if (index == list.length + 4) {
+                  } else if (index == list.length + 5) {
                     context.go(PilarRoutes.configuracion);
                   }
               }
@@ -335,6 +338,11 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
                   PaneItem(
                     icon: const Icon(FluentIcons.tiles),
                     title: const Text('Módulos'),
+                    body: const SizedBox.shrink(),
+                  ),
+                  PaneItem(
+                    icon: const Icon(FluentIcons.attach),
+                    title: const Text('Archivos'),
                     body: const SizedBox.shrink(),
                   ),
                 ],
