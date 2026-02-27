@@ -33,7 +33,7 @@ const _tipoLabels = {
 const _tipoIcons = {
   'whatsapp': FluentIcons.chat,
   'email_api': FluentIcons.mail,
-  'email_smtp': FluentIcons.mail_all,
+  'email_smtp': FluentIcons.mail_options,
   'telegram': FluentIcons.send,
 };
 
@@ -382,7 +382,7 @@ class _CuentaCard extends StatelessWidget {
                   Tooltip(
                     message: 'Establecer como predeterminada',
                     child: IconButton(
-                      icon: const Icon(FluentIcons.ribbon_star, size: 16),
+                      icon: const Icon(FluentIcons.favorite_star, size: 16),
                       onPressed: onSetDefecto,
                     ),
                   ),
