@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   flutter_acrylic
   screen_retriever_windows
+  syncfusion_pdfviewer_windows
   system_theme
   url_launcher_windows
   window_manager

@@ -45,6 +45,7 @@ dependencies:
   # === Syncfusion ===
   syncfusion_flutter_core: ^32.2.5
   syncfusion_flutter_datagrid: ^32.2.5
+  syncfusion_flutter_pdfviewer: ^32.2.5
 
   # === Utilities ===
   decimal: ^2.3.3

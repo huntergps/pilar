@@ -49,6 +49,12 @@ class AdminPanelScreen extends ConsumerWidget {
       PilarRoutes.adminModulos,
     ),
     _AdminSection(
+      FluentIcons.chat,
+      'Comunicación',
+      'WhatsApp, Email y Telegram',
+      PilarRoutes.adminComunicacion,
+    ),
+    _AdminSection(
       FluentIcons.settings,
       'Configuración',
       'Servidor y parámetros generales',
