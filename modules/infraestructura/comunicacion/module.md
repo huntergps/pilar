@@ -1120,3 +1120,32 @@ Editor de plantillas con previsualización en tiempo real. Las variables `{{nomb
 | `WHATSAPP_PHONE_NUMBER_ID` | ID número WhatsApp Business |
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram |
 | `FCM_SERVICE_ACCOUNT_JSON` | JSON de Service Account de Firebase |
+
+---
+
+## Estado de Implementación (2026-02-26)
+
+### Edge Functions implementadas
+
+| Función | Archivo | Estado | Notas |
+|---------|---------|--------|-------|
+| `com-whatsapp-webhook` | `modules/infraestructura/comunicacion/supabase/functions/com-whatsapp-webhook/` | ✅ | verify_jwt: false; valida HMAC-SHA256 con app_secret de `com_cuentas` |
+| `com-wa-templates` | `modules/infraestructura/comunicacion/supabase/functions/com-wa-templates/` | ✅ | Sincroniza templates Meta → `com_wa_templates`; dispara envíos |
+| `com-telegram-webhook` | `modules/infraestructura/comunicacion/supabase/functions/com-telegram-webhook/` | ✅ | Procesa updates Telegram inbound |
+| `send-notification` | `modules/infraestructura/comunicacion/supabase/functions/send-notification/` | ✅ | Dispatcher central (multicanal) |
+
+### Shared helpers (`foundation/supabase/functions/_shared/`)
+
+| Helper | Descripción |
+|--------|-------------|
+| `email-api.ts` | Multi-provider: Resend, ElasticMail, SendGrid + SMTP fallback |
+| `whatsapp-api.ts` | Meta Cloud API: send, template, HMAC-SHA256 verify |
+| `telegram-api.ts` | Telegram Bot API: send message, send document |
+
+### Flutter — UI Admin implementada
+
+| Pantalla | Ruta | Archivo | Estado |
+|----------|------|---------|--------|
+| Cuentas de Comunicación | `/admin/comunicacion` | `lib/features/administracion/screens/cuentas_comunicacion_screen.dart` | ✅ |
+
+**`CuentasComunicacionScreen`**: CRUD sobre `com_cuentas`. Provider `comCuentasProvider` (`FutureProvider.autoDispose`) — lista cuentas agrupadas por tipo (WhatsApp / Email API / Email SMTP / Telegram). Accesible desde el panel de Administración → sección "Comunicación".
