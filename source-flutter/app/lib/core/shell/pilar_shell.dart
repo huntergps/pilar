@@ -30,9 +30,9 @@ import 'pilar_header.dart';
 ///   When visible, its four children occupy indices 2–5:
 ///     2 → Empresa, 3 → Usuarios, 4 → Módulos, 5 → Archivos.
 ///   When hidden, dynamic modules start at index 2.
-/// - Dynamic module items start at index 6 (admin visible) or 2 (admin hidden).
+/// - Dynamic module items start at index 7 (admin visible) or 2 (admin hidden).
 /// - Configuración footer item (visible to ALL users, always in footerItems).
-///   For admin users: index = 6 + dynamicModulosCount.
+///   For admin users: index = 7 + dynamicModulosCount.
 ///   For non-admin users: index = 2 + dynamicModulosCount.
 /// - Window geometry persistence via [WindowService.saveState].
 /// - [WidgetsBindingObserver] para invalidar providers al volver de background (iOS).
@@ -187,9 +187,9 @@ class _PilarShellState extends ConsumerState<PilarShell>
   /// When [tieneAdmin] is true:
   ///   0 → Dashboard
   ///   1 → Mensajes (Comunicación)
-  ///   2 → Empresa, 3 → Usuarios, 4 → Módulos, 5 → Archivos (expander children)
-  ///   6..5+N → Dynamic modules
-  ///   6+N → Configuración (footer PaneItem)
+  ///   2 → Empresa, 3 → Usuarios, 4 → Módulos, 5 → Archivos, 6 → Comunicación (expander children)
+  ///   7..6+N → Dynamic modules
+  ///   7+N → Configuración (footer PaneItem)
   ///
   /// When [tieneAdmin] is false (Administración hidden):
   ///   0 → Dashboard
@@ -206,11 +206,12 @@ class _PilarShellState extends ConsumerState<PilarShell>
       if (location.startsWith('/admin/usuarios')) return 3;
       if (location.startsWith('/admin/modulos')) return 4;
       if (location.startsWith('/admin/archivos')) return 5;
+      if (location.startsWith('/admin/comunicacion')) return 6;
       if (location.startsWith('/admin')) return 2;
     }
 
     final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
-    int idx = tieneAdmin ? 6 : 2;
+    int idx = tieneAdmin ? 7 : 2;
     for (final m in coreModulos) {
       if (location.startsWith('/${m.id}')) return idx;
       idx++;
@@ -323,12 +324,14 @@ class _PilarShellState extends ConsumerState<PilarShell>
                   context.go(PilarRoutes.adminModulos);
                 case 5:
                   context.go(PilarRoutes.adminArchivos);
+                case 6:
+                  context.go(PilarRoutes.adminComunicacion);
                 default:
-                  final modIdx = index - 6;
+                  final modIdx = index - 7;
                   if (modIdx >= 0 && modIdx < list.length) {
                     // Future: context.go('/${list[modIdx].id}');
                     context.go(PilarRoutes.dashboard);
-                  } else if (index == list.length + 6) {
+                  } else if (index == list.length + 7) {
                     context.go(PilarRoutes.configuracion);
                   }
               }
@@ -393,6 +396,11 @@ class _PilarShellState extends ConsumerState<PilarShell>
                   PaneItem(
                     icon: const Icon(FluentIcons.attach),
                     title: const Text('Archivos'),
+                    body: const SizedBox.shrink(),
+                  ),
+                  PaneItem(
+                    icon: const Icon(FluentIcons.mail),
+                    title: const Text('Comunicación'),
                     body: const SizedBox.shrink(),
                   ),
                 ],

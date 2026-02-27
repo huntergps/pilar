@@ -1,18 +1,20 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'conversaciones_tab.dart';
+import 'email_tab.dart';
 import 'historial_tab.dart';
 import 'chat_tab.dart';
 
 /// Pantalla principal del módulo de Comunicación.
 ///
-/// Presenta un [TabView] de fluent_ui con 3 pestañas:
-///   0 → Conversaciones (bandeja externa multicanal)
-///   1 → Historial (log de mensajes salientes)
-///   2 → Chat interno (entre usuarios ERP)
+/// Presenta un [TabView] de fluent_ui con 4 pestañas:
+///   0 → Conversaciones (bandeja externa multicanal WhatsApp/Telegram)
+///   1 → Email (interfaz estilo Gmail para email_api/email_smtp)
+///   2 → Historial (log de mensajes salientes)
+///   3 → Chat interno (entre usuarios ERP)
 ///
 /// El parámetro [tabIndex] permite navegar directamente a una pestaña
-/// desde el router (rutas /comunicacion/historial, /comunicacion/chat).
+/// desde el router (rutas /comunicacion/email, /comunicacion/historial, /comunicacion/chat).
 class ComunicacionScreen extends StatefulWidget {
   final int tabIndex;
 
@@ -28,14 +30,14 @@ class _ComunicacionScreenState extends State<ComunicacionScreen> {
   @override
   void initState() {
     super.initState();
-    _tabIndex = widget.tabIndex.clamp(0, 2);
+    _tabIndex = widget.tabIndex.clamp(0, 3);
   }
 
   @override
   void didUpdateWidget(ComunicacionScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.tabIndex != widget.tabIndex) {
-      setState(() => _tabIndex = widget.tabIndex.clamp(0, 2));
+      setState(() => _tabIndex = widget.tabIndex.clamp(0, 3));
     }
   }
 
@@ -50,6 +52,11 @@ class _ComunicacionScreenState extends State<ComunicacionScreen> {
           text: const Text('Conversaciones'),
           icon: const Icon(FluentIcons.chat),
           body: const ConversacionesTab(),
+        ),
+        Tab(
+          text: const Text('Email'),
+          icon: const Icon(FluentIcons.mail),
+          body: const EmailTab(),
         ),
         Tab(
           text: const Text('Historial'),

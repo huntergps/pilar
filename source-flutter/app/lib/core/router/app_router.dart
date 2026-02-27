@@ -53,6 +53,7 @@ abstract final class PilarRoutes {
   static const String adminConfiguracion = '/admin/configuracion';
   static const String configuracion = '/configuracion';
   static const String comunicacion = '/comunicacion';
+  static const String comunicacionEmail = '/comunicacion/email';
   static const String comunicacionHistorial = '/comunicacion/historial';
   static const String comunicacionChat = '/comunicacion/chat';
 }
@@ -169,12 +170,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const ComunicacionScreen(),
           ),
           GoRoute(
-            path: PilarRoutes.comunicacionHistorial,
+            path: PilarRoutes.comunicacionEmail,
             builder: (_, __) => const ComunicacionScreen(tabIndex: 1),
           ),
           GoRoute(
-            path: PilarRoutes.comunicacionChat,
+            path: PilarRoutes.comunicacionHistorial,
             builder: (_, __) => const ComunicacionScreen(tabIndex: 2),
+          ),
+          GoRoute(
+            path: PilarRoutes.comunicacionChat,
+            builder: (_, __) => const ComunicacionScreen(tabIndex: 3),
           ),
           GoRoute(
             path: PilarRoutes.admin,

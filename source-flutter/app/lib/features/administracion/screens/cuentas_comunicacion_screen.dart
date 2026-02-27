@@ -464,6 +464,10 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   bool _smtpTls = true;
   final _smtpUserCtrl = TextEditingController();
   final _smtpPassCtrl = TextEditingController();
+  // IMAP fields (para recibir correos)
+  final _imapHostCtrl = TextEditingController();
+  final _imapPortCtrl = TextEditingController(text: '993');
+  bool _imapSsl = true;
 
   // Telegram fields
   final _tgTokenCtrl = TextEditingController();
@@ -509,6 +513,9 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
         _fromEmailCtrl.text = cfg['from_email'] as String? ?? '';
         _smtpUserCtrl.text = cfg['username'] as String? ?? '';
         _smtpPassCtrl.text = cfg['password'] as String? ?? '';
+        _imapHostCtrl.text = cfg['imap_host'] as String? ?? '';
+        _imapPortCtrl.text = (cfg['imap_port'] ?? 993).toString();
+        _imapSsl = cfg['imap_ssl'] as bool? ?? true;
       case 'telegram':
         _tgTokenCtrl.text = cfg['bot_token'] as String? ?? '';
         _tgUsernameCtrl.text = cfg['bot_username'] as String? ?? '';
@@ -544,6 +551,9 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           'from_email': _fromEmailCtrl.text.trim(),
           'username': _smtpUserCtrl.text.trim(),
           'password': _smtpPassCtrl.text.trim(),
+          'imap_host': _imapHostCtrl.text.trim(),
+          'imap_port': int.tryParse(_imapPortCtrl.text) ?? 993,
+          'imap_ssl': _imapSsl,
         };
       case 'telegram':
         return {
@@ -607,6 +617,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
       _waPhoneNumberCtrl, _waTokenCtrl, _waAppSecretCtrl, _waVerifyTokenCtrl,
       _apiKeyCtrl, _fromNameCtrl, _fromEmailCtrl,
       _smtpHostCtrl, _smtpPortCtrl, _smtpUserCtrl, _smtpPassCtrl,
+      _imapHostCtrl, _imapPortCtrl,
       _tgTokenCtrl, _tgUsernameCtrl, _tgSecretCtrl,
     ]) {
       c.dispose();
@@ -757,35 +768,117 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     );
   }
 
+  // Presets de proveedores populares
+  static const _smtpPresets = {
+    'Gmail': {
+      'smtp_host': 'smtp.gmail.com', 'smtp_port': '587', 'smtp_tls': true,
+      'imap_host': 'imap.gmail.com', 'imap_port': '993', 'imap_ssl': true,
+    },
+    'Yahoo': {
+      'smtp_host': 'smtp.mail.yahoo.com', 'smtp_port': '587', 'smtp_tls': true,
+      'imap_host': 'imap.mail.yahoo.com', 'imap_port': '993', 'imap_ssl': true,
+    },
+    'Outlook': {
+      'smtp_host': 'smtp.office365.com', 'smtp_port': '587', 'smtp_tls': true,
+      'imap_host': 'outlook.office365.com', 'imap_port': '993', 'imap_ssl': true,
+    },
+  };
+
+  void _applySmtpPreset(String provider) {
+    final p = _smtpPresets[provider]!;
+    setState(() {
+      _smtpHostCtrl.text = p['smtp_host'] as String;
+      _smtpPortCtrl.text = p['smtp_port'] as String;
+      _smtpTls        = p['smtp_tls'] as bool;
+      _imapHostCtrl.text = p['imap_host'] as String;
+      _imapPortCtrl.text = p['imap_port'] as String;
+      _imapSsl        = p['imap_ssl'] as bool;
+    });
+  }
+
   Widget _buildEmailSmtpFields() {
+    final theme = FluentTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Presets ──────────────────────────────────────────────────────────
+        Text('Configuración rápida', style: theme.typography.caption
+            ?.copyWith(color: theme.inactiveColor)),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          children: _smtpPresets.keys.map((name) => Button(
+            child: Text(name),
+            onPressed: () => _applySmtpPreset(name),
+          )).toList(),
+        ),
+        const SizedBox(height: 16),
+
+        // ── SMTP ─────────────────────────────────────────────────────────────
+        Text('Servidor de envío (SMTP)', style: theme.typography.bodyStrong),
+        const SizedBox(height: 8),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               flex: 3,
               child: _field('Host SMTP', _smtpHostCtrl,
-                  placeholder: 'smtp.example.com'),
+                  placeholder: 'smtp.gmail.com'),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child:
-                  _field('Puerto', _smtpPortCtrl, placeholder: '587'),
+              child: _field('Puerto', _smtpPortCtrl, placeholder: '587'),
             ),
           ],
         ),
-        const SizedBox(height: 8),
         Checkbox(
-          content: const Text('Usar TLS'),
+          content: const Text('Usar TLS / STARTTLS'),
           checked: _smtpTls,
           onChanged: (v) => setState(() => _smtpTls = v ?? true),
         ),
+        const SizedBox(height: 12),
+        _field('Nombre del remitente', _fromNameCtrl,
+            placeholder: 'Tu Empresa'),
+        _field('Email remitente', _fromEmailCtrl,
+            placeholder: 'usuario@gmail.com'),
+        _field('Usuario SMTP', _smtpUserCtrl,
+            placeholder: 'usuario@gmail.com'),
+        _field('Contraseña / App Password', _smtpPassCtrl, obscure: true,
+            placeholder: 'Contraseña o App Password de 16 caracteres'),
+        const SizedBox(height: 16),
+
+        // ── IMAP ─────────────────────────────────────────────────────────────
+        Text('Servidor de recepción (IMAP)', style: theme.typography.bodyStrong),
         const SizedBox(height: 8),
-        _field('Nombre del remitente', _fromNameCtrl),
-        _field('Email remitente', _fromEmailCtrl),
-        _field('Usuario SMTP', _smtpUserCtrl),
-        _field('Contraseña SMTP', _smtpPassCtrl, obscure: true),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: _field('Host IMAP', _imapHostCtrl,
+                  placeholder: 'imap.gmail.com'),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _field('Puerto', _imapPortCtrl, placeholder: '993'),
+            ),
+          ],
+        ),
+        Checkbox(
+          content: const Text('SSL/TLS'),
+          checked: _imapSsl,
+          onChanged: (v) => setState(() => _imapSsl = v ?? true),
+        ),
+        const SizedBox(height: 4),
+        InfoBar(
+          title: const Text('App Password requerida'),
+          content: const Text(
+            'Gmail y Yahoo requieren una contraseña de aplicación (App Password), '
+            'no la contraseña normal de la cuenta. '
+            'Genérala en: Google Account → Seguridad → Contraseñas de aplicaciones.',
+          ),
+          severity: InfoBarSeverity.info,
+        ),
       ],
     );
   }
