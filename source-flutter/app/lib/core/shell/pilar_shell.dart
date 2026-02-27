@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../offline/connectivity_service.dart';
 import '../offline/offline_banner.dart';
 import '../providers/empresa_provider.dart';
 import '../providers/modulos_provider.dart';
@@ -15,6 +16,7 @@ import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
 import '../services/window_service.dart';
+import '../../features/notificaciones/providers/notificaciones_provider.dart';
 import 'pilar_header.dart';
 
 /// The main authenticated navigation shell for PILAR ERP.
@@ -22,16 +24,18 @@ import 'pilar_header.dart';
 /// Wraps the go_router [ShellRoute] child in a [NavigationView] with:
 /// - Adaptive pane (auto display mode: expanded → compact → minimal).
 /// - Dashboard as a fixed item at index 0.
+/// - **Mensajes** (Comunicación) at index 1 — always visible.
 /// - Administración as a [PaneItemExpander] — only visible when the user has
 ///   at least the [administracion.empresa.ver] permission.
-///   When visible, its four children occupy indices 1–4:
-///     1 → Empresa, 2 → Usuarios, 3 → Módulos, 4 → Archivos.
-///   When hidden, dynamic modules start at index 1.
-/// - Dynamic module items start at index 5 (admin visible) or 1 (admin hidden).
+///   When visible, its four children occupy indices 2–5:
+///     2 → Empresa, 3 → Usuarios, 4 → Módulos, 5 → Archivos.
+///   When hidden, dynamic modules start at index 2.
+/// - Dynamic module items start at index 6 (admin visible) or 2 (admin hidden).
 /// - Configuración footer item (visible to ALL users, always in footerItems).
-///   For admin users: index = 5 + dynamicModulosCount.
-///   For non-admin users: index = 1 + dynamicModulosCount.
+///   For admin users: index = 6 + dynamicModulosCount.
+///   For non-admin users: index = 2 + dynamicModulosCount.
 /// - Window geometry persistence via [WindowService.saveState].
+/// - [WidgetsBindingObserver] para invalidar providers al volver de background (iOS).
 class PilarShell extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -41,7 +45,8 @@ class PilarShell extends ConsumerStatefulWidget {
   ConsumerState<PilarShell> createState() => _PilarShellState();
 }
 
-class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
+class _PilarShellState extends ConsumerState<PilarShell>
+    with WindowListener, WidgetsBindingObserver {
   // ---- Window lifecycle ----------------------------------------------------
 
   bool get _isDesktop =>
@@ -93,6 +98,8 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
   void initState() {
     super.initState();
     if (_isDesktop) windowManager.addListener(this);
+    // Observar ciclo de vida para iOS: reconectar Realtime al volver de background.
+    WidgetsBinding.instance.addObserver(this);
     // Si el JWT no tiene permisos (token emitido antes del hook fix o antes de
     // que se asignara el rol), lo refrescamos automáticamente. El stream
     // onAuthStateChange emitirá el nuevo token y todos los providers
@@ -124,7 +131,36 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
   void dispose() {
     _colorChannel?.unsubscribe();
     if (_isDesktop) windowManager.removeListener(this);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Gestiona el ciclo de vida de la app — crítico para iOS donde el OS
+  /// pausa las conexiones WebSocket cuando la app va a background.
+  ///
+  /// Al volver a foreground ([AppLifecycleState.resumed]):
+  /// - Supabase Flutter reconecta el WebSocket automáticamente.
+  /// - Invalidamos providers con Realtime para re-fetch y recuperar
+  ///   cualquier evento perdido mientras estábamos en background.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App vuelve a foreground. Supabase reconecta WebSocket solo;
+        // invalidamos para que los providers re-fetch datos perdidos.
+        ref.read(connectivityProvider.notifier).reportOnline();
+        ref.invalidate(notificacionesBadgeProvider);
+        // comunicacionConversacionesProvider se invalidará aquí cuando
+        // el módulo de comunicación esté implementado (§10 del plan).
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        // App va a background. Los WebSockets se pausarán en iOS.
+        ref.read(connectivityProvider.notifier).reportOffline();
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        break;
+    }
   }
 
   @override
@@ -150,28 +186,31 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
   ///
   /// When [tieneAdmin] is true:
   ///   0 → Dashboard
-  ///   1 → Empresa, 2 → Usuarios, 3 → Módulos, 4 → Archivos (expander children)
-  ///   5..4+N → Dynamic modules
-  ///   5+N → Configuración (footer PaneItem)
+  ///   1 → Mensajes (Comunicación)
+  ///   2 → Empresa, 3 → Usuarios, 4 → Módulos, 5 → Archivos (expander children)
+  ///   6..5+N → Dynamic modules
+  ///   6+N → Configuración (footer PaneItem)
   ///
   /// When [tieneAdmin] is false (Administración hidden):
   ///   0 → Dashboard
-  ///   1..N → Dynamic modules
-  ///   1+N  → Configuración (footer PaneItem)
+  ///   1 → Mensajes (Comunicación)
+  ///   2..1+N → Dynamic modules
+  ///   2+N  → Configuración (footer PaneItem)
   int _indexForRoute(
       String location, List<ModuloItem> modulos, bool tieneAdmin) {
     if (location.startsWith('/dashboard')) return 0;
+    if (location.startsWith('/comunicacion')) return 1;
 
     if (tieneAdmin) {
-      if (location.startsWith('/admin/empresa')) return 1;
-      if (location.startsWith('/admin/usuarios')) return 2;
-      if (location.startsWith('/admin/modulos')) return 3;
-      if (location.startsWith('/admin/archivos')) return 4;
-      if (location.startsWith('/admin')) return 1;
+      if (location.startsWith('/admin/empresa')) return 2;
+      if (location.startsWith('/admin/usuarios')) return 3;
+      if (location.startsWith('/admin/modulos')) return 4;
+      if (location.startsWith('/admin/archivos')) return 5;
+      if (location.startsWith('/admin')) return 2;
     }
 
     final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
-    int idx = tieneAdmin ? 5 : 1;
+    int idx = tieneAdmin ? 6 : 2;
     for (final m in coreModulos) {
       if (location.startsWith('/${m.id}')) return idx;
       idx++;
@@ -275,19 +314,21 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
                 case 0:
                   context.go(PilarRoutes.dashboard);
                 case 1:
-                  context.go(PilarRoutes.adminEmpresa);
+                  context.go(PilarRoutes.comunicacion);
                 case 2:
-                  context.go(PilarRoutes.adminUsuarios);
+                  context.go(PilarRoutes.adminEmpresa);
                 case 3:
-                  context.go(PilarRoutes.adminModulos);
+                  context.go(PilarRoutes.adminUsuarios);
                 case 4:
+                  context.go(PilarRoutes.adminModulos);
+                case 5:
                   context.go(PilarRoutes.adminArchivos);
                 default:
-                  final modIdx = index - 5;
+                  final modIdx = index - 6;
                   if (modIdx >= 0 && modIdx < list.length) {
                     // Future: context.go('/${list[modIdx].id}');
                     context.go(PilarRoutes.dashboard);
-                  } else if (index == list.length + 5) {
+                  } else if (index == list.length + 6) {
                     context.go(PilarRoutes.configuracion);
                   }
               }
@@ -295,12 +336,14 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
               switch (index) {
                 case 0:
                   context.go(PilarRoutes.dashboard);
+                case 1:
+                  context.go(PilarRoutes.comunicacion);
                 default:
-                  final modIdx = index - 1;
+                  final modIdx = index - 2;
                   if (modIdx >= 0 && modIdx < list.length) {
                     // Future: context.go('/${list[modIdx].id}');
                     context.go(PilarRoutes.dashboard);
-                  } else if (index == list.length + 1) {
+                  } else if (index == list.length + 2) {
                     context.go(PilarRoutes.configuracion);
                   }
               }
@@ -311,6 +354,13 @@ class _PilarShellState extends ConsumerState<PilarShell> with WindowListener {
             PaneItem(
               icon: const Icon(FluentIcons.home),
               title: const Text('Dashboard'),
+              body: const SizedBox.shrink(),
+            ),
+
+            // ---- Mensajes / Comunicación (siempre visible — índice 1) ----
+            PaneItem(
+              icon: const Icon(FluentIcons.chat),
+              title: const Text('Mensajes'),
               body: const SizedBox.shrink(),
             ),
 

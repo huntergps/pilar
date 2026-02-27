@@ -17,6 +17,7 @@ import '../../features/administracion/screens/modulos_screen.dart';
 import '../../features/administracion/screens/configuracion_screen.dart';
 import '../../features/administracion/screens/archivos_screen.dart';
 import '../../features/administracion/screens/cuentas_comunicacion_screen.dart';
+import '../../features/comunicacion/screens/comunicacion_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -51,6 +52,9 @@ abstract final class PilarRoutes {
   static const String adminComunicacion = '/admin/comunicacion';
   static const String adminConfiguracion = '/admin/configuracion';
   static const String configuracion = '/configuracion';
+  static const String comunicacion = '/comunicacion';
+  static const String comunicacionHistorial = '/comunicacion/historial';
+  static const String comunicacionChat = '/comunicacion/chat';
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +162,19 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: PilarRoutes.dashboard,
             builder: (_, __) => const DashboardScreen(),
+          ),
+          // ---- Comunicación (Mensajes) ----
+          GoRoute(
+            path: PilarRoutes.comunicacion,
+            builder: (_, __) => const ComunicacionScreen(),
+          ),
+          GoRoute(
+            path: PilarRoutes.comunicacionHistorial,
+            builder: (_, __) => const ComunicacionScreen(tabIndex: 1),
+          ),
+          GoRoute(
+            path: PilarRoutes.comunicacionChat,
+            builder: (_, __) => const ComunicacionScreen(tabIndex: 2),
           ),
           GoRoute(
             path: PilarRoutes.admin,

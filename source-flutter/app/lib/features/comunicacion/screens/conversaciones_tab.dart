@@ -1,0 +1,628 @@
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/providers/empresa_provider.dart';
+import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
+import '../models/com_conversacion.dart';
+import '../models/com_mensaje.dart';
+import '../providers/conversaciones_provider.dart';
+import '../providers/mensajes_provider.dart';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Retorna el ícono y color según el canal de comunicación.
+({IconData icon, Color color}) _canalMeta(String canal) {
+  return switch (canal) {
+    'whatsapp' => (icon: FluentIcons.chat_bot, color: const Color(0xFF25D366)),
+    'telegram' => (icon: FluentIcons.send, color: const Color(0xFF0088CC)),
+    'email_api' || 'email_smtp' => (
+        icon: FluentIcons.mail,
+        color: const Color(0xFF0078D4)
+      ),
+    _ => (icon: FluentIcons.chat, color: const Color(0xFF666666)),
+  };
+}
+
+/// Formato relativo de timestamp (hace X min, ayer, etc.).
+String _relativo(DateTime? dt) {
+  if (dt == null) return '';
+  final diff = DateTime.now().difference(dt);
+  if (diff.inMinutes < 1) return 'ahora';
+  if (diff.inMinutes < 60) return 'hace ${diff.inMinutes}m';
+  if (diff.inHours < 24) return 'hace ${diff.inHours}h';
+  if (diff.inDays == 1) return 'ayer';
+  if (diff.inDays < 7) return 'hace ${diff.inDays}d';
+  return '${dt.day}/${dt.month}/${dt.year}';
+}
+
+// ---------------------------------------------------------------------------
+// ConversacionesTab
+// ---------------------------------------------------------------------------
+
+class ConversacionesTab extends ConsumerWidget {
+  const ConversacionesTab({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final convSeleccionada = ref.watch(convSeleccionadaProvider);
+    final isDesktop = context.isDesktop; // ≥ 900px
+
+    if (isDesktop) {
+      // Dos paneles lado a lado
+      return Row(
+        children: [
+          SizedBox(
+            width: 300,
+            child: _PanelLista(),
+          ),
+          const Divider(direction: Axis.vertical),
+          const Expanded(child: _PanelDetalle()),
+        ],
+      );
+    }
+
+    // Móvil/tablet: stack de páginas
+    if (convSeleccionada == null) {
+      return _PanelLista();
+    }
+    return _PanelDetalleMovil();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel Lista (izquierdo)
+// ---------------------------------------------------------------------------
+
+class _PanelLista extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conversaciones = ref.watch(conversacionesFiltradas);
+    final canal = ref.watch(convFiltroCanal);
+
+    return Column(
+      children: [
+        // ---- Filtros de canal ----
+        _FiltroCanal(canalActivo: canal),
+
+        // ---- Lista ----
+        Expanded(
+          child: conversaciones.when(
+            loading: () => const Center(child: ProgressRing()),
+            error: (e, _) => Center(
+              child: InfoBar(
+                title: const Text('Error cargando conversaciones'),
+                content: Text(e.toString()),
+                severity: InfoBarSeverity.error,
+              ),
+            ),
+            data: (lista) {
+              if (lista.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(FluentIcons.chat, size: 48),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Sin conversaciones',
+                        style: FluentTheme.of(context).typography.subtitle,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text('Los mensajes recibidos aparecerán aquí'),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                itemCount: lista.length,
+                itemBuilder: (ctx, i) => _ConvListTile(conv: lista[i]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Filtro Canal
+// ---------------------------------------------------------------------------
+
+class _FiltroCanal extends ConsumerWidget {
+  final String? canalActivo;
+
+  const _FiltroCanal({required this.canalActivo});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const canales = [
+      (label: 'Todos', value: null),
+      (label: 'WhatsApp', value: 'whatsapp'),
+      (label: 'Telegram', value: 'telegram'),
+      (label: 'Email', value: 'email_api'),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Wrap(
+        spacing: 6,
+        children: canales
+            .map(
+              (c) => Button(
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.all(
+                    canalActivo == c.value
+                        ? FluentTheme.of(context).accentColor
+                        : null,
+                  ),
+                ),
+                onPressed: () => ref
+                    .read(convFiltroCanal.notifier)
+                    .state = c.value,
+                child: Text(
+                  c.label,
+                  style: TextStyle(
+                    color: canalActivo == c.value ? Colors.white : null,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tile de conversación
+// ---------------------------------------------------------------------------
+
+class _ConvListTile extends ConsumerWidget {
+  final ComConversacion conv;
+
+  const _ConvListTile({required this.conv});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final seleccionada = ref.watch(convSeleccionadaProvider) == conv.id;
+    final meta = _canalMeta(conv.canal);
+    final theme = FluentTheme.of(context);
+
+    return ListTile.selectable(
+      selected: seleccionada,
+      onSelectionChange: (_) =>
+          ref.read(convSeleccionadaProvider.notifier).state = conv.id,
+      leading: CircleAvatar(
+        backgroundColor: meta.color.withValues(alpha: 0.15),
+        child: Icon(meta.icon, color: meta.color, size: 20),
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              conv.displayName,
+              style: theme.typography.body,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Indicador ventana WA
+          if (conv.canal == 'whatsapp')
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: conv.ventanaWaActiva ? Colors.green : Colors.grey,
+              ),
+            ),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (conv.ultimoMensajeEn != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    conv.canal == 'whatsapp'
+                        ? 'WhatsApp · ${conv.destinatarioRef}'
+                        : conv.destinatarioRef,
+                    style: theme.typography.caption,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  _relativo(conv.ultimoMensajeEn),
+                  style: theme.typography.caption?.copyWith(
+                    color: theme.inactiveColor,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel Detalle (derecho, desktop)
+// ---------------------------------------------------------------------------
+
+class _PanelDetalle extends ConsumerWidget {
+  const _PanelDetalle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conv = ref.watch(convSeleccionadaDetalleProvider);
+    if (conv == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(FluentIcons.chat, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              'Selecciona una conversación',
+              style: FluentTheme.of(context).typography.subtitle,
+            ),
+          ],
+        ),
+      );
+    }
+    return _ThreadView(conv: conv);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel Detalle Móvil (con botón back)
+// ---------------------------------------------------------------------------
+
+class _PanelDetalleMovil extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conv = ref.watch(convSeleccionadaDetalleProvider);
+    if (conv == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        // Botón volver
+        Padding(
+          padding: const EdgeInsets.only(left: 8, top: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(FluentIcons.back),
+                onPressed: () =>
+                    ref.read(convSeleccionadaProvider.notifier).state = null,
+              ),
+              Expanded(
+                child: Text(
+                  conv.displayName,
+                  style: FluentTheme.of(context).typography.subtitle,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: _ThreadView(conv: conv)),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ThreadView — header + mensajes + input
+// ---------------------------------------------------------------------------
+
+class _ThreadView extends ConsumerWidget {
+  final ComConversacion conv;
+
+  const _ThreadView({required this.conv});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mensajesAsync = ref.watch(mensajesProvider(conv.id));
+    final meta = _canalMeta(conv.canal);
+    final theme = FluentTheme.of(context);
+
+    return Column(
+      children: [
+        // ---- Header ----
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: theme.micaBackgroundColor,
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: meta.color.withValues(alpha: 0.15),
+                child: Icon(meta.icon, color: meta.color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(conv.displayName, style: theme.typography.bodyStrong),
+                    Text(
+                      conv.destinatarioRef,
+                      style: theme.typography.caption
+                          ?.copyWith(color: theme.inactiveColor),
+                    ),
+                  ],
+                ),
+              ),
+              // Botón refrescar
+              IconButton(
+                icon: const Icon(FluentIcons.refresh),
+                onPressed: () => ref.invalidate(mensajesProvider(conv.id)),
+              ),
+            ],
+          ),
+        ),
+
+        // ---- Banner ventana WA vencida ----
+        if (conv.canal == 'whatsapp' && !conv.ventanaWaActiva)
+          const InfoBar(
+            title: Text('Ventana de 24h vencida'),
+            content: Text(
+              'Solo puedes enviar plantillas de mensaje aprobadas por Meta.',
+            ),
+            severity: InfoBarSeverity.warning,
+            isIconVisible: true,
+          ),
+
+        // ---- Thread de mensajes ----
+        Expanded(
+          child: mensajesAsync.when(
+            loading: () => const Center(child: ProgressRing()),
+            error: (e, _) => Center(
+              child: InfoBar(
+                title: const Text('Error cargando mensajes'),
+                content: Text(e.toString()),
+                severity: InfoBarSeverity.error,
+              ),
+            ),
+            data: (mensajes) {
+              if (mensajes.isEmpty) {
+                return Center(
+                  child: Text(
+                    'Sin mensajes',
+                    style: theme.typography.body
+                        ?.copyWith(color: theme.inactiveColor),
+                  ),
+                );
+              }
+              return ListView.builder(
+                reverse: false,
+                padding: const EdgeInsets.all(12),
+                itemCount: mensajes.length,
+                itemBuilder: (ctx, i) => _MensajeBubble(msg: mensajes[i]),
+              );
+            },
+          ),
+        ),
+
+        // ---- Barra de composición ----
+        _ComposicionBar(conv: conv),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Burbuja de mensaje
+// ---------------------------------------------------------------------------
+
+class _MensajeBubble extends StatelessWidget {
+  final ComMensaje msg;
+
+  const _MensajeBubble({required this.msg});
+
+  @override
+  Widget build(BuildContext context) {
+    final esOutbound = msg.esOutbound;
+    final theme = FluentTheme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Align(
+        alignment:
+            esOutbound ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.65,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: esOutbound
+                ? theme.accentColor.withValues(alpha: 0.18)
+                : theme.cardColor,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(12),
+              topRight: const Radius.circular(12),
+              bottomLeft: Radius.circular(esOutbound ? 12 : 2),
+              bottomRight: Radius.circular(esOutbound ? 2 : 12),
+            ),
+            border: Border.all(
+              color: theme.resources.controlStrokeColorDefault,
+              width: 0.5,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: esOutbound
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              // Asunto (email)
+              if (msg.asunto != null && msg.asunto!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    msg.asunto!,
+                    style: theme.typography.bodyStrong,
+                  ),
+                ),
+              // Cuerpo
+              Text(msg.cuerpo ?? ''),
+              const SizedBox(height: 4),
+              // Footer: timestamp + estado
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _relativo(msg.enviadoEn ?? msg.creadoEn),
+                    style: theme.typography.caption
+                        ?.copyWith(color: theme.inactiveColor, fontSize: 10),
+                  ),
+                  if (esOutbound) ...[
+                    const SizedBox(width: 4),
+                    _EstadoIcon(estado: msg.estado, esFallido: msg.esFallido),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ícono de estado del mensaje outbound
+// ---------------------------------------------------------------------------
+
+class _EstadoIcon extends StatelessWidget {
+  final String estado;
+  final bool esFallido;
+
+  const _EstadoIcon({required this.estado, required this.esFallido});
+
+  @override
+  Widget build(BuildContext context) {
+    if (esFallido) {
+      return const Icon(FluentIcons.error_badge, size: 12, color: Colors.warningPrimaryColor);
+    }
+    return switch (estado) {
+      'leido' => const Icon(FluentIcons.read, size: 12, color: Color(0xFF0078D4)),
+      'entregado' => const Icon(FluentIcons.check_mark, size: 12),
+      'enviado' => const Icon(FluentIcons.send, size: 12),
+      _ => const SizedBox.shrink(),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Barra de composición
+// ---------------------------------------------------------------------------
+
+class _ComposicionBar extends ConsumerStatefulWidget {
+  final ComConversacion conv;
+
+  const _ComposicionBar({required this.conv});
+
+  @override
+  ConsumerState<_ComposicionBar> createState() => _ComposicionBarState();
+}
+
+class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
+  final _ctrl = TextEditingController();
+  bool _enviando = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _enviar() async {
+    final texto = _ctrl.text.trim();
+    if (texto.isEmpty || _enviando) return;
+
+    final conv = widget.conv;
+    final empresaId = ref.read(empresaActivaIdProvider);
+    if (empresaId == null) return;
+
+    setState(() => _enviando = true);
+    try {
+      await Supabase.instance.client.from('cola_notificaciones').insert({
+        'empresa_id': empresaId,
+        'cuenta_id': conv.cuentaId,
+        'conversacion_id': conv.id,
+        'canal': conv.canal,
+        'destinatario_ref': conv.destinatarioRef,
+        'cuerpo': texto,
+        'prioridad': 5,
+        'tipo_notif': 'DIRECTO',
+      });
+      _ctrl.clear();
+      ref.invalidate(mensajesProvider(conv.id));
+    } on Exception catch (e) {
+      if (mounted) {
+        await displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al enviar'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final puedeEscribirLibre =
+        widget.conv.ventanaWaActiva || widget.conv.canal != 'whatsapp';
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: FluentTheme.of(context).micaBackgroundColor,
+        border: Border(
+          top: BorderSide(
+            color: FluentTheme.of(context).resources.controlStrokeColorDefault,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: puedeEscribirLibre
+                ? TextBox(
+                    controller: _ctrl,
+                    placeholder: 'Escribe un mensaje...',
+                    maxLines: null,
+                    enabled: !_enviando,
+                    onSubmitted: (_) => _enviar(),
+                    textInputAction: TextInputAction.newline,
+                  )
+                : const Text(
+                    'Ventana vencida — solo plantillas disponibles',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+          ),
+          const SizedBox(width: 8),
+          if (_enviando)
+            const SizedBox(width: 36, height: 36, child: ProgressRing())
+          else
+            IconButton(
+              icon: const Icon(FluentIcons.send),
+              onPressed: puedeEscribirLibre ? _enviar : null,
+            ),
+        ],
+      ),
+    );
+  }
+}
