@@ -322,13 +322,22 @@ class _PilarShellState extends ConsumerState<PilarShell>
       ref.invalidate(perfilUsuarioProvider); // recarga el perfil de la nueva empresa
     });
     ref.listen<AsyncValue<EmpresaConfig?>>(empresaConfigProvider, (_, next) async {
+      // ── DIAGNÓSTICO ────────────────────────────────────────────────────────
+      debugPrint('[PILAR-COLOR] empresaConfigProvider emit: ${next.runtimeType}');
       final empresa = next.valueOrNull;
+      debugPrint('[PILAR-COLOR]   empresa         : ${empresa?.nombre}');
+      debugPrint('[PILAR-COLOR]   isFromRemote    : ${empresa?.isFromRemote}');
+      debugPrint('[PILAR-COLOR]   colorPrimario   : ${empresa?.colorPrimario}');
+      // ───────────────────────────────────────────────────────────────────────
       if (empresa == null) return;
 
       // El emit local (Brick/SQLite) usa empresas.color_primario que puede diferir
       // del color real en configuracion_empresa. Solo el emit remoto (Supabase RPC)
       // es autoritativo para el color de acento — evita el flash azul en cada inicio.
-      if (!empresa.isFromRemote) return;
+      if (!empresa.isFromRemote) {
+        debugPrint('[PILAR-COLOR]   SKIP: emit local (isFromRemote=false)');
+        return;
+      }
 
       // Si el admin forzó el color después del último ack de este dispositivo,
       // descartar el override personal del usuario.
@@ -338,19 +347,25 @@ class _PilarShellState extends ConsumerState<PilarShell>
       // Aplicar color de empresa como predeterminado si el usuario no tiene override.
       final userOverride = ref.read(appConfigProvider).accentColor;
       final colorHex = empresa.colorPrimario;
-      if (userOverride != null) return; // el usuario tiene su propio color para esta empresa
+      debugPrint('[PILAR-COLOR]   userOverride    : $userOverride');
+      debugPrint('[PILAR-COLOR]   colorHex        : $colorHex');
+      if (userOverride != null) {
+        debugPrint('[PILAR-COLOR]   SKIP: usuario tiene override personal');
+        return;
+      }
       if (colorHex == null) {
+        debugPrint('[PILAR-COLOR]   colorPrimario null → limpiar empresaColorProvider');
         ref.read(empresaColorProvider.notifier).state = null;
         unawaited(ref.read(appConfigProvider.notifier).cacheEmpresaColor(null));
         return;
       }
       final hex = colorHex.replaceFirst('#', '');
       final value = int.tryParse('FF$hex', radix: 16);
+      debugPrint('[PILAR-COLOR]   hex=$hex  value=$value');
       if (value != null) {
         final color = Color(value);
+        debugPrint('[PILAR-COLOR]   → empresaColorProvider = $color');
         ref.read(empresaColorProvider.notifier).state = color;
-        // Cachea el color en SharedPreferences para eliminar el flash azul
-        // en el próximo inicio: main.dart lo lee antes del primer frame.
         unawaited(ref.read(appConfigProvider.notifier).cacheEmpresaColor(color));
       }
     });

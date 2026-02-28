@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config_model.dart';
 
@@ -101,7 +102,16 @@ class ConfigService extends Notifier<AppConfigModel> {
 
   @override
   AppConfigModel build() {
-    // Load global persisted values asynchronously; UI starts with defaults instantly.
+    // Inicializar _empresaId desde la sesión JWT activa.
+    // ProviderScope se crea DESPUÉS de que Supabase está inicializado (main.dart),
+    // por lo que la sesión siempre está disponible aquí.
+    // switchEmpresa() se llama adicionalmente cuando el usuario cambia de empresa.
+    try {
+      _empresaId = Supabase.instance.client.auth.currentSession
+          ?.user.appMetadata['empresa_id'] as String?;
+    } catch (_) {
+      // Tests o arranque atípico sin Supabase inicializado.
+    }
     unawaited(_loadFromPrefs());
     return AppConfigModel.defaults;
   }
@@ -133,6 +143,11 @@ class ConfigService extends Notifier<AppConfigModel> {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await _getPrefs();
+
+    // Empresa ID — fuente primaria en arranques subsiguientes.
+    // El JWT (leído sincrónicamente en build()) ya habrá poblado _empresaId
+    // si la sesión está activa; este ?? lo cubre en caso contrario.
+    _empresaId ??= prefs.getString(ConfigKeys.lastEmpresaId);
 
     // ThemeMode
     final themeModeIdx = prefs.getInt(ConfigKeys.themeMode) ?? ThemeMode.system.index;
@@ -206,6 +221,14 @@ class ConfigService extends Notifier<AppConfigModel> {
   Future<void> switchEmpresa(String? empresaId) async {
     _empresaId = empresaId;
     final prefs = await _getPrefs();
+    // Persiste empresa_id para que el próximo inicio pueda leerlo antes de
+    // que Supabase esté disponible (elimina dependencia del JWT en arranques
+    // subsiguientes).
+    if (empresaId != null) {
+      await prefs.setString(ConfigKeys.lastEmpresaId, empresaId);
+    } else {
+      await prefs.remove(ConfigKeys.lastEmpresaId);
+    }
     final accentColor = _accentFromPrefs(prefs);
     state = state.copyWith(accentColor: accentColor);
   }
@@ -226,11 +249,22 @@ class ConfigService extends Notifier<AppConfigModel> {
   /// Realtime update del admin o cambio manual.
   Future<void> cacheEmpresaColor(Color? color) async {
     final key = _empresaColorKey;
-    if (key.isEmpty) return;
+    // ── DIAGNÓSTICO ──────────────────────────────────────────────────────────
+    debugPrint('[PILAR-CACHE] cacheEmpresaColor llamado');
+    debugPrint('[PILAR-CACHE]   _empresaId       : $_empresaId');
+    debugPrint('[PILAR-CACHE]   _empresaColorKey : $key');
+    debugPrint('[PILAR-CACHE]   color            : $color');
+    debugPrint('[PILAR-CACHE]   color.toARGB32() : ${color?.toARGB32()}');
+    // ─────────────────────────────────────────────────────────────────────────
+    if (key.isEmpty) {
+      debugPrint('[PILAR-CACHE]   SKIP: key vacía (_empresaId es null)');
+      return;
+    }
     final prefs = await _getPrefs();
     if (color == null) {
       await prefs.remove(key);
       await prefs.remove(ConfigKeys.lastEmpresaColor);
+      debugPrint('[PILAR-CACHE]   BORRADO: ${ConfigKeys.lastEmpresaColor}');
       // lastEmpresaId se mantiene: la empresa sigue activa, solo sin color.
     } else {
       await prefs.setInt(key, color.toARGB32());
@@ -238,6 +272,7 @@ class ConfigService extends Notifier<AppConfigModel> {
       if (_empresaId != null) {
         await prefs.setString(ConfigKeys.lastEmpresaId, _empresaId!);
       }
+      debugPrint('[PILAR-CACHE]   GUARDADO: ${ConfigKeys.lastEmpresaColor} = ${color.toARGB32()}');
     }
   }
 

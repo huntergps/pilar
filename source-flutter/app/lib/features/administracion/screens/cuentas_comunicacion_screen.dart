@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,6 +37,34 @@ final rolesEmpresaProvider =
 });
 
 // ---------------------------------------------------------------------------
+// Helpers globales
+// ---------------------------------------------------------------------------
+
+/// Genera un secret aleatorio de 32 bytes (64 chars hex).
+/// Solo contiene A-Z, a-z, 0-9 — compatible con el requisito de Telegram.
+String _generateWebhookSecret() {
+  final rng = Random.secure();
+  return List.generate(
+    32,
+    (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ).join();
+}
+
+/// Llama a `com-telegram-setup` para registrar el webhook en Telegram.
+/// Retorna el mensaje de resultado (vacío si éxito).
+Future<String?> _callTelegramSetup(String accountId) async {
+  try {
+    await Supabase.instance.client.functions.invoke(
+      'com-telegram-setup',
+      body: {'account_id': accountId},
+    );
+    return null; // éxito
+  } catch (e) {
+    return e.toString();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Modelo
 // ---------------------------------------------------------------------------
 
@@ -45,6 +75,7 @@ class CuentaItem {
   final bool activo;
   final bool esDefecto;
   final Map<String, dynamic> configJson;
+  final Map<String, dynamic> metaJson;
   final String? usuarioId;
   final String? usuarioNombre;
   final bool esPersonal;
@@ -56,10 +87,15 @@ class CuentaItem {
     required this.activo,
     required this.esDefecto,
     required this.configJson,
+    this.metaJson = const {},
     this.usuarioId,
     this.usuarioNombre,
     required this.esPersonal,
   });
+
+  /// true si el webhook de Telegram fue registrado exitosamente.
+  bool get telegramWebhookOk =>
+      tipo == 'telegram' && (metaJson['webhook_ok'] as bool? ?? false);
 
   factory CuentaItem.fromMap(Map<String, dynamic> m) {
     final uid = m['usuario_id'] as String?;
@@ -70,6 +106,7 @@ class CuentaItem {
       activo: m['activo'] as bool? ?? false,
       esDefecto: m['es_defecto'] as bool? ?? false,
       configJson: (m['config_json'] as Map?)?.cast<String, dynamic>() ?? {},
+      metaJson: (m['meta_json'] as Map?)?.cast<String, dynamic>() ?? {},
       usuarioId: uid,
       usuarioNombre: m['usuario_nombre'] as String?,
       esPersonal: m['es_personal'] as bool? ?? (uid != null),
@@ -97,7 +134,7 @@ final comCuentasProvider =
     final empresaId = session?.user.appMetadata['empresa_id'] as String?;
     final query = Supabase.instance.client
         .from('com_cuentas')
-        .select('id, nombre, tipo, activo, es_defecto, config_json, usuario_id');
+        .select('id, nombre, tipo, activo, es_defecto, config_json, meta_json, usuario_id');
     final data = (empresaId != null
             ? await query.eq('empresa_id', empresaId).order('nombre')
             : await query.order('nombre')) as List;
@@ -255,6 +292,9 @@ class _CuentasComunicacionScreenState
                             _cambiarOwnership(cuenta, uid),
                         onGestionarRoles: () =>
                             _showRolesDialog(context, cuenta),
+                        onRegistrarWebhook: cuenta.tipo == 'telegram'
+                            ? () => _registrarWebhook(cuenta)
+                            : null,
                       ),
                     const SizedBox(height: 16),
                   ],
@@ -300,6 +340,9 @@ class _CuentasComunicacionScreenState
                             _cambiarOwnership(cuenta, uid),
                         onGestionarRoles: () =>
                             _showRolesDialog(context, cuenta),
+                        onRegistrarWebhook: cuenta.tipo == 'telegram'
+                            ? () => _registrarWebhook(cuenta)
+                            : null,
                       ),
                     const SizedBox(height: 16),
                   ],
@@ -418,6 +461,31 @@ class _CuentasComunicacionScreenState
       } catch (e) {
         if (mounted) _showError(this.context, e.toString());
       }
+    }
+  }
+
+  Future<void> _registrarWebhook(CuentaItem cuenta) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'com-telegram-setup',
+        body: {'account_id': cuenta.id},
+      );
+      ref.invalidate(comCuentasProvider);
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      displayInfoBar(
+        context,
+        builder: (_, close) => InfoBar(
+          title: const Text('Webhook registrado'),
+          content: Text('${cuenta.nombre} conectado a Telegram'),
+          severity: InfoBarSeverity.success,
+          onClose: close,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      _showError(context, 'Error al registrar webhook:\n$e');
     }
   }
 
@@ -612,6 +680,7 @@ class _CuentaCard extends StatefulWidget {
   final VoidCallback onEliminar;
   final VoidCallback onCambiarOwnership;
   final VoidCallback onGestionarRoles;
+  final VoidCallback? onRegistrarWebhook;
 
   const _CuentaCard({
     required this.cuenta,
@@ -622,6 +691,7 @@ class _CuentaCard extends StatefulWidget {
     required this.onEliminar,
     required this.onCambiarOwnership,
     required this.onGestionarRoles,
+    this.onRegistrarWebhook,
   });
 
   @override
@@ -659,7 +729,8 @@ class _CuentaCardState extends State<_CuentaCard> {
         final from = cfg['from_email'] as String? ?? '';
         subtitle = '$host · $from';
       case 'telegram':
-        subtitle = '@${cfg['bot_username'] ?? ''}';
+        final wh = cuenta.telegramWebhookOk ? ' · webhook ✓' : '';
+        subtitle = '@${cfg['bot_username'] ?? ''}$wh';
     }
 
     return Padding(
@@ -758,6 +829,19 @@ class _CuentaCardState extends State<_CuentaCard> {
                           _flyoutController.showFlyout(
                             builder: (_) => MenuFlyout(
                               items: [
+                                // Re-registrar webhook (solo Telegram)
+                                if (tipo == 'telegram' &&
+                                    widget.onRegistrarWebhook != null) ...[
+                                  MenuFlyoutItem(
+                                    leading: const Icon(
+                                      FluentIcons.plug_connected,
+                                      size: 16,
+                                    ),
+                                    text: const Text('Re-registrar webhook'),
+                                    onPressed: widget.onRegistrarWebhook,
+                                  ),
+                                  const MenuFlyoutSeparator(),
+                                ],
                                 MenuFlyoutItem(
                                   leading: Icon(
                                     cuenta.esPersonal
@@ -964,6 +1048,11 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     final nombre = _nombreCtrl.text.trim();
     if (nombre.isEmpty) return;
 
+    // Auto-generar webhook secret para Telegram si está vacío.
+    if (_tipo == 'telegram' && _tgSecretCtrl.text.trim().isEmpty) {
+      setState(() => _tgSecretCtrl.text = _generateWebhookSecret());
+    }
+
     setState(() => _saving = true);
     try {
       final uid = _esPersonal
@@ -979,13 +1068,48 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
         'usuario_id': uid,
       };
 
+      String accountId;
       if (_isEditing) {
+        accountId = widget.cuenta!.id;
         await Supabase.instance.client
             .from('com_cuentas')
             .update(payload)
-            .eq('id', widget.cuenta!.id);
+            .eq('id', accountId);
       } else {
-        await Supabase.instance.client.from('com_cuentas').insert(payload);
+        final result = await Supabase.instance.client
+            .from('com_cuentas')
+            .insert(payload)
+            .select('id')
+            .single();
+        accountId = result['id'] as String;
+      }
+
+      // Registrar webhook automáticamente para cuentas Telegram.
+      if (_tipo == 'telegram') {
+        final error = await _callTelegramSetup(accountId);
+        if (error != null && mounted) {
+          // El webhook falló pero el registro en DB fue exitoso.
+          // Mostramos advertencia y dejamos al usuario decidir.
+          final continuar = await showDialog<bool>(
+            context: context,
+            builder: (_) => ContentDialog(
+              title: const Text('Cuenta guardada — webhook pendiente'),
+              content: Text(
+                'La cuenta fue guardada correctamente, pero el registro '
+                'del webhook en Telegram falló:\n\n$error\n\n'
+                'Puedes re-intentarlo desde el menú "··· → Re-registrar webhook".',
+              ),
+              actions: [
+                FilledButton(
+                  child: const Text('Entendido'),
+                  onPressed: () => Navigator.pop(context, true),
+                ),
+              ],
+            ),
+          );
+          if (continuar == true && mounted) Navigator.pop(context, true);
+          return;
+        }
       }
 
       if (mounted) Navigator.pop(context, true);
@@ -1342,15 +1466,67 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   }
 
   Widget _buildTelegramFields() {
+    final theme = FluentTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Info: registro automático
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: theme.accentColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: theme.accentColor.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(FluentIcons.info, size: 14, color: theme.accentColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Al guardar, el webhook se registrará automáticamente '
+                  'en Telegram. El secret se genera solo si lo dejas vacío.',
+                  style: theme.typography.caption,
+                ),
+              ),
+            ],
+          ),
+        ),
         _field('Bot Token', _tgTokenCtrl,
             placeholder: '123456:ABC-DEF...', obscure: true),
         _field('Username del bot', _tgUsernameCtrl,
             placeholder: 'mi_empresa_bot'),
-        _field('Webhook Secret', _tgSecretCtrl,
-            placeholder: 'Token secreto para verificar webhooks'),
+        // Webhook Secret con botón "Generar"
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: InfoLabel(
+            label: 'Webhook Secret',
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextBox(
+                    controller: _tgSecretCtrl,
+                    placeholder: 'Se genera automáticamente al guardar',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Generar secret aleatorio',
+                  child: Button(
+                    child: const Text('Generar'),
+                    onPressed: () => setState(
+                      () => _tgSecretCtrl.text = _generateWebhookSecret(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -152,6 +152,17 @@ Future<void> main() async {
   final savedThemeMode = ThemeMode.values[
       savedThemeModeIdx.clamp(0, ThemeMode.values.length - 1)];
 
+  // ── DIAGNÓSTICO — quitar después de confirmar ──────────────────────────────
+  debugPrint('[PILAR-BOOT] === CACHÉ DE INICIO ===');
+  debugPrint('[PILAR-BOOT] lastEmpresaColor key : ${ConfigKeys.lastEmpresaColor}');
+  debugPrint('[PILAR-BOOT] lastEmpresaId  key   : ${ConfigKeys.lastEmpresaId}');
+  debugPrint('[PILAR-BOOT] savedColorValue (int) : $savedColorValue');
+  debugPrint('[PILAR-BOOT] savedEmpresaColor     : $savedEmpresaColor');
+  debugPrint('[PILAR-BOOT] savedThemeMode        : $savedThemeMode');
+  debugPrint('[PILAR-BOOT] lastEmpresaId (read)  : ${prefs.getString(ConfigKeys.lastEmpresaId)}');
+  debugPrint('[PILAR-BOOT] todas las claves cfg_ : ${prefs.getKeys().where((k) => k.startsWith('cfg_')).toList()}');
+  // ─────────────────────────────────────────────────────────────────────────
+
   // ── Splash — primer frame con el color Y tema correctos ───────────────────
   final splash = _SplashState();
   runApp(_SplashApp(
