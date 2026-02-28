@@ -134,15 +134,12 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
   bool _probando = false;
 
   Future<void> _probarConfig() async {
-    debugPrint('[PROBAR] ── inicio _probarConfig, mounted=$mounted');
     setState(() => _probando = true);
     try {
       await _probar();
-      debugPrint('[PROBAR] ── _probar() completó sin excepción');
     } catch (e, st) {
-      debugPrint('[PROBAR] ── EXCEPCIÓN en _probar(): $e\n$st');
+      debugPrint('[pilar_print] error en _probar: $e\n$st');
     } finally {
-      debugPrint('[PROBAR] ── finally, mounted=$mounted');
       if (mounted) setState(() => _probando = false);
     }
   }
@@ -229,38 +226,29 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
   }
 
   Future<void> _probar() async {
-    debugPrint('[PROBAR] ── _probar() start');
-
     // Asegura que PrintService tiene el catálogo — usa los datos ya cargados
     // por _impresorasProvider (que ya resolvió para mostrar esta pantalla).
     final impresoras = ref.read(_impresorasProvider).valueOrNull ?? [];
-    debugPrint('[PROBAR] ── catálogo: ${impresoras.length} impresoras');
     PrintService.instance.configure(impresoras);
 
     // Leer config guardada
     final config =
         await PrintService.instance.loadConfig(widget.impresora.nombre);
-    debugPrint('[PROBAR] ── config guardada: $config');
     if (config == null) {
       _mostrarResultado('Sin configuración',
           'Guarda la configuración antes de probar.', InfoBarSeverity.warning);
       return;
     }
 
-    debugPrint('[PROBAR] ── tipoConexion=${config.tipoConexion}, tipoDoc=${widget.impresora.tipoDoc}');
-
     if (config.tipoConexion == TipoConexion.sistema) {
-      debugPrint('[PROBAR] ── rama sistema → _probarSistema');
       await _probarSistema(config);
       return;
     }
 
     // TCP / Bluetooth / Gateway — enviar documento de prueba con timeout
     final doc = _buildTestDoc();
-    debugPrint('[PROBAR] ── doc.format=${doc.format}, rawBytes=${doc.rawBytes?.length}, pdfBytes=${doc.pdfBytes?.length}');
     PrintJobResult result;
     try {
-      debugPrint('[PROBAR] ── llamando PrintService.print()...');
       result = await PrintService.instance
           .print(widget.impresora.nombre, doc)
           .timeout(
@@ -268,9 +256,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
             onTimeout: () =>
                 PrintJobResult.error('Sin respuesta (10 s) — verifica IP/BT'),
           );
-      debugPrint('[PROBAR] ── print() retornó: isOk=${result.isOk}, err=${result.errorMessage}');
     } catch (e) {
-      debugPrint('[PROBAR] ── catch en print(): $e');
       result = PrintJobResult.error(e.toString());
     }
     _mostrarResultado(
@@ -281,21 +267,16 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
   }
 
   /// Para TipoConexion.sistema maneja dos sub-casos:
-  /// - Sin impresora fija → abre el diálogo nativo del OS (vista previa + PDF).
+  /// - Sin impresora fija → abre el visor PDF del OS (Preview.app en macOS).
   /// - Con impresora fija → verifica que el driver esté instalado sin imprimir.
   Future<void> _probarSistema(ConfiguracionLocal config) async {
     final printerName = config.printerName;
-    debugPrint('[PROBAR] ── _probarSistema printerName=$printerName');
 
     if (printerName == null || printerName.isEmpty) {
-      // Abre el diálogo nativo del OS. layoutPdf() es async y no bloquea
-      // la UI de Flutter; el congelamiento anterior era por await displayInfoBar,
-      // ya eliminado.
+      // Sin impresora fija → abrir PDF en visor del OS.
       final doc = _buildTestDoc();
-      debugPrint('[PROBAR] ── sin impresora fija → llamando layoutPdf via print()...');
       final result = await PrintService.instance
           .print(widget.impresora.nombre, doc);
-      debugPrint('[PROBAR] ── layoutPdf retornó: isOk=${result.isOk}, err=${result.errorMessage}');
       _mostrarResultado(
         result.isOk ? 'Enviado al OS' : 'Cancelado',
         result.errorMessage ?? 'Documento enviado correctamente',
@@ -305,9 +286,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
     }
 
     // Con impresora fija → verificar que el driver está instalado sin imprimir
-    debugPrint('[PROBAR] ── con impresora fija → listando impresoras del OS...');
     final disponibles = await PrintService.instance.getSystemPrinterNames();
-    debugPrint('[PROBAR] ── disponibles: $disponibles');
     final encontrada =
         disponibles.any((n) => n.toLowerCase() == printerName.toLowerCase());
     _mostrarResultado(
@@ -330,7 +309,6 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
 
   void _mostrarResultado(
       String title, String content, InfoBarSeverity severity) {
-    debugPrint('[PROBAR] ── _mostrarResultado: "$title" | mounted=$mounted');
     if (!mounted) return;
     // Sin await — el InfoBar no debe bloquear la UI.
     displayInfoBar(
@@ -342,7 +320,6 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
         action: IconButton(icon: const Icon(FluentIcons.clear), onPressed: close),
       ),
     );
-    debugPrint('[PROBAR] ── displayInfoBar() llamado (sin await)');
   }
 
   Future<void> _confirmarEliminar(BuildContext context) async {

@@ -13,6 +13,7 @@ import '../../features/alertas/widgets/alertas_panel.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
 import '../../features/notificaciones/widgets/notificaciones_dialog.dart';
 import '../../features/perfil/screens/perfil_screen.dart';
+import '../widgets/user_card.dart';
 
 /// The right-hand side of the [TitleBar] inside [PilarShell].
 ///
@@ -314,45 +315,13 @@ class _UserMenuFlyout extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ---- User info header ----
-            Padding(
+            UserCard(
+              nombre: displayName.isNotEmpty ? displayName : (usuario?.email ?? ''),
+              email: displayName.isNotEmpty ? (usuario?.email ?? '') : null,
+              sublabel: usuario?.rolNombre,
+              avatarUrl: perfil?.avatarUrl,
+              avatarRadius: 18,
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  _HeaderAvatar(
-                    avatarUrl: perfil?.avatarUrl,
-                    initial: initial,
-                    size: 36,
-                    theme: theme,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (displayName.isNotEmpty)
-                          Text(
-                            displayName,
-                            style: theme.typography.bodyStrong,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        Text(
-                          usuario?.email ?? '',
-                          style: theme.typography.caption
-                              ?.copyWith(color: theme.inactiveColor),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          usuario?.rolNombre ?? '',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.accentColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ),
             const Divider(),
 

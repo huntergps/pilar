@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:printing/printing.dart';
 
@@ -25,12 +27,9 @@ class SistemaAdapter implements PrintAdapter {
 
   @override
   Future<PrintJobResult> send(PrintDocument doc) async {
-    debugPrint('[SISTEMA] send() called, tipoConexion=${config.tipoConexion}, printerName=${config.printerName}');
     // Para documentos raw (ESC/POS, ZPL, ESC/P, texto) el driver del OS
-    // no los entiende directamente — el módulo debería enviar PDF.
-    // Si solo hay rawBytes, los envolvemos en un PDF de texto para pruebas.
+    // no los entiende directamente — el módulo debe enviar PDF.
     final pdfBytes = doc.pdfBytes;
-    debugPrint('[SISTEMA] pdfBytes: ${pdfBytes?.length ?? "null"} bytes');
     if (pdfBytes == null || pdfBytes.isEmpty) {
       return PrintJobResult.error(
         'Sistema: se requieren bytes PDF para imprimir vía driver del OS. '
@@ -42,43 +41,46 @@ class SistemaAdapter implements PrintAdapter {
       final printerName = config.printerName;
       if (printerName != null && printerName.isNotEmpty) {
         // Impresión silenciosa al driver especificado
-        debugPrint('[SISTEMA] buscando impresora "$printerName"...');
         final printer = await _findPrinter(printerName);
-        debugPrint('[SISTEMA] printer encontrada: ${printer?.name ?? "null"}');
         if (printer == null) {
           return PrintJobResult.error(
             'Sistema: impresora "$printerName" no encontrada en el OS. '
             'Verifica que el driver esté instalado.',
           );
         }
-        debugPrint('[SISTEMA] llamando directPrintPdf...');
         final ok = await Printing.directPrintPdf(
           printer: printer,
-          onLayout: (fmt) async {
-            debugPrint('[SISTEMA] onLayout(direct) callback invocado: ${fmt.width}x${fmt.height}');
-            return pdfBytes;
-          },
+          onLayout: (_) async => pdfBytes,
         );
-        debugPrint('[SISTEMA] directPrintPdf retornó: ok=$ok');
         return ok
             ? PrintJobResult.ok()
             : PrintJobResult.error('Sistema: impresión cancelada o fallida');
       } else {
-        // Abre el diálogo del OS
-        debugPrint('[SISTEMA] llamando layoutPdf (diálogo del OS)...');
-        final ok = await Printing.layoutPdf(
-          onLayout: (fmt) async {
-            debugPrint('[SISTEMA] onLayout callback invocado: ${fmt.width}x${fmt.height}');
-            return pdfBytes;
-          },
-        );
-        debugPrint('[SISTEMA] layoutPdf retornó: ok=$ok');
-        return ok
+        // Sin impresora fija → abrir en visor PDF del OS.
+        // Printing.layoutPdf() muestra el sheet adjunto al title bar, pero
+        // window_manager usa TitleBarStyle.hidden — el sheet queda invisible.
+        // En macOS: escribir temp file y abrir con 'open' (Preview.app como
+        // ventana separada, independiente del title bar).
+        if (!Platform.isMacOS) {
+          final ok = await Printing.layoutPdf(
+            onLayout: (_) async => pdfBytes,
+          );
+          return ok
+              ? PrintJobResult.ok()
+              : PrintJobResult.error('Sistema: impresión cancelada');
+        }
+        // macOS: abrir en Preview.app
+        final tempPath =
+            '${Directory.systemTemp.path}/pilar_preview_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        await File(tempPath).writeAsBytes(pdfBytes);
+        final result = await Process.run('open', [tempPath]);
+        return result.exitCode == 0
             ? PrintJobResult.ok()
-            : PrintJobResult.error('Sistema: impresión cancelada');
+            : PrintJobResult.error(
+                'Sistema: no se pudo abrir el visor PDF — ${result.stderr}');
       }
     } catch (e, st) {
-      debugPrint('[SISTEMA] EXCEPCIÓN: $e\n$st');
+      debugPrint('[pilar_print] SistemaAdapter error: $e\n$st');
       return PrintJobResult.error('Sistema: error al imprimir — $e');
     }
   }

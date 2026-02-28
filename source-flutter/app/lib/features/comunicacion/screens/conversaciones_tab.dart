@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
 import '../../../core/widgets/chatter_vincular_dialog.dart';
+import '../../../core/widgets/user_card.dart';
 import '../models/com_conversacion.dart';
 import '../models/com_mensaje.dart';
 import '../providers/conversaciones_provider.dart';
@@ -425,26 +426,20 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
       children: [
         // ---- Header ----
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: EdgeInsets.zero,
           color: theme.micaBackgroundColor,
           child: Row(
             children: [
-              CircleAvatar(
-                backgroundColor: meta.color.withValues(alpha: 0.15),
-                child: Icon(meta.icon, color: meta.color, size: 18),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(conv.displayName, style: theme.typography.bodyStrong),
-                    Text(
-                      conv.destinatarioRef,
-                      style: theme.typography.caption
-                          ?.copyWith(color: theme.inactiveColor),
-                    ),
-                  ],
+                child: UserCard(
+                  nombre: conv.displayName,
+                  email: conv.destinatarioRef,
+                  leading: CircleAvatar(
+                    backgroundColor: meta.color.withValues(alpha: 0.15),
+                    child: Icon(meta.icon, color: meta.color, size: 18),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
                 ),
               ),
               // Botón vincular / desvincular

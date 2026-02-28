@@ -14,6 +14,7 @@ import '../offline/offline_banner.dart';
 import '../providers/empresa_provider.dart';
 import '../providers/modulos_provider.dart';
 import '../providers/perfil_provider.dart';
+import '../providers/print_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
@@ -306,6 +307,10 @@ class _PilarShellState extends ConsumerState<PilarShell>
     final modulos = modulosAsync.valueOrNull ?? const <ModuloItem>[];
     final location = GoRouterState.of(context).matchedLocation;
     final paneDisplayMode = ref.watch(appConfigProvider).paneDisplayMode;
+
+    // Pre-carga catálogo de impresoras — fire-and-forget para que PrintService
+    // esté listo antes de que cualquier módulo llame a ps.print().
+    ref.watch(printCatalogoProvider);
 
     // Cuando cambia la empresa activa:
     // 1. Notificar a ConfigService para cargar el accentColor del usuario para esa empresa.

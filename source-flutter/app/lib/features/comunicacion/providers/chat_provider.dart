@@ -19,6 +19,22 @@ final canalSeleccionadoProvider = StateProvider<String?>((ref) => null);
 final presenciaProvider = StateProvider<Set<String>>((ref) => const {});
 
 // ---------------------------------------------------------------------------
+// empresaMiembrosProvider — usuarios activos de la empresa (para DM picker)
+// ---------------------------------------------------------------------------
+
+/// Lista de miembros activos de la empresa activa, excluyendo al usuario actual.
+/// Retorna [{usuario_id, nombre_display, email}] vía RPC get_empresa_miembros.
+final empresaMiembrosProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(empresaActivaIdProvider); // re-fetch al cambiar empresa
+
+  final result =
+      await Supabase.instance.client.rpc('get_empresa_miembros') as List;
+
+  return result.cast<Map<String, dynamic>>();
+});
+
+// ---------------------------------------------------------------------------
 // chatCanalesProvider — lista de canales con badge de no leídos
 // ---------------------------------------------------------------------------
 

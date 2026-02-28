@@ -11,6 +11,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/providers/perfil_provider.dart';
+import '../../../core/widgets/user_card.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../providers/admin_providers.dart';
 
@@ -510,66 +511,14 @@ class _UsuarioCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
-    final initial = nombre.isNotEmpty ? nombre[0].toUpperCase() : '?';
-
-    return Padding(
+    return UserCard(
+      nombre: nombre,
+      email: email,
+      avatarUrl: avatarUrl,
+      avatarRadius: 22,
+      dimmed: !activo,
+      trailing: esYo ? _TuChip() : null,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          // Avatar — 44px con foto o inicial
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: activo
-                  ? theme.accentColor.withValues(alpha: 0.12)
-                  : theme.resources.subtleFillColorSecondary,
-              shape: BoxShape.circle,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: avatarUrl != null
-                ? Image.network(
-                    avatarUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _AvatarInitial(
-                      initial: initial,
-                      activo: activo,
-                      theme: theme,
-                    ),
-                  )
-                : _AvatarInitial(initial: initial, activo: activo, theme: theme),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(children: [
-                  Flexible(
-                    child: Text(
-                      nombre,
-                      style: theme.typography.body,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (esYo) ...[
-                    const SizedBox(width: 6),
-                    _TuChip(),
-                  ],
-                ]),
-                Text(
-                  email,
-                  style: theme.typography.caption
-                      ?.copyWith(color: theme.inactiveColor),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

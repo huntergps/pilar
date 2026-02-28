@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/widgets/user_card.dart';
 import '../providers/chat_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -206,21 +207,183 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
   }
 
   void _mostrarNuevoCanal(BuildContext context) {
+    if (widget.scope == ChatScope.empresa) {
+      // Canal grupal — por implementar
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => ContentDialog(
+          title: const Text('Nuevo canal'),
+          content: const Text('Funcionalidad disponible en la próxima versión.'),
+          actions: [
+            Button(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+          ],
+        ),
+      );
+      return;
+    }
     showDialog<void>(
       context: context,
-      builder: (ctx) => ContentDialog(
-        title: const Text('Nuevo mensaje directo'),
-        content: const Text(
-          'Funcionalidad disponible en la próxima versión.',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
+      builder: (_) => _NuevoDmDialog(parentRef: ref),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dialog: Nuevo mensaje directo
+// ---------------------------------------------------------------------------
+
+class _NuevoDmDialog extends ConsumerStatefulWidget {
+  /// Referencia al `WidgetRef` del padre para poder leer providers de sesión.
+  final WidgetRef parentRef;
+
+  const _NuevoDmDialog({required this.parentRef});
+
+  @override
+  ConsumerState<_NuevoDmDialog> createState() => _NuevoDmDialogState();
+}
+
+class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
+  final _searchCtrl = TextEditingController();
+  String _busqueda = '';
+  bool _creando = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final miembrosAsync = ref.watch(empresaMiembrosProvider);
+    final theme = FluentTheme.of(context);
+
+    return ContentDialog(
+      title: const Text('Nuevo mensaje directo'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextBox(
+              controller: _searchCtrl,
+              placeholder: 'Buscar usuario...',
+              onChanged: (v) => setState(() => _busqueda = v.toLowerCase()),
+              prefix: const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(FluentIcons.search, size: 14),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 280,
+              child: miembrosAsync.when(
+                loading: () => const Center(child: ProgressRing()),
+                error: (e, _) => Center(
+                  child: InfoBar(
+                    title: const Text('Error'),
+                    content: Text(e.toString()),
+                    severity: InfoBarSeverity.error,
+                  ),
+                ),
+                data: (miembros) {
+                  final filtrados = _busqueda.isEmpty
+                      ? miembros
+                      : miembros.where((m) {
+                          final nombre = (m['nombre_display'] as String? ?? '')
+                              .toLowerCase();
+                          final email =
+                              (m['email'] as String? ?? '').toLowerCase();
+                          return nombre.contains(_busqueda) ||
+                              email.contains(_busqueda);
+                        }).toList();
+
+                  if (filtrados.isEmpty) {
+                    return Center(
+                      child: Text(
+                        _busqueda.isEmpty ? 'Sin otros usuarios' : 'Sin resultados',
+                        style: theme.typography.body
+                            ?.copyWith(color: theme.inactiveColor),
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: filtrados.length,
+                    separatorBuilder: (_, __) => const Divider(size: 1),
+                    itemBuilder: (_, i) {
+                      final m = filtrados[i];
+                      final nombreDisplay =
+                          (m['nombre_display'] as String?)?.trim();
+                      final email = m['email'] as String? ?? '';
+                      final displayName =
+                          nombreDisplay?.isNotEmpty == true
+                              ? nombreDisplay!
+                              : email;
+                      final uid = m['usuario_id'] as String;
+                      final avatarUrl = m['avatar_url'] as String?;
+
+                      return UserCard(
+                        nombre: displayName,
+                        email: nombreDisplay?.isNotEmpty == true ? email : null,
+                        avatarUrl: avatarUrl,
+                        avatarRadius: 24,
+                        onTap: _creando ? null : () => _abrirDm(uid),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            if (_creando) ...[
+              const SizedBox(height: 8),
+              const Center(child: ProgressRing()),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        Button(
+          onPressed: _creando ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _abrirDm(String otroUsuarioId) async {
+    setState(() => _creando = true);
+    try {
+      final canalId = await _getOrCreateDm(otroUsuarioId);
+      if (mounted) Navigator.pop(context);
+      widget.parentRef.read(canalSeleccionadoProvider.notifier).state = canalId;
+      widget.parentRef.invalidate(chatCanalesProvider);
+    } catch (e) {
+      if (mounted) {
+        displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al crear mensaje directo'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(
+                icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creando = false);
+    }
+  }
+
+  /// Devuelve el [canal_id] del DM existente o crea uno nuevo vía RPC.
+  Future<String> _getOrCreateDm(String otroId) async {
+    final result = await Supabase.instance.client.rpc(
+      'get_or_create_dm_canal',
+      params: {'p_otro_usuario_id': otroId},
+    ) as Map<String, dynamic>;
+    return result['canal_id'] as String;
   }
 }
 
