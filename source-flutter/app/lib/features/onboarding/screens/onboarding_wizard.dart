@@ -562,13 +562,13 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
                     ),
                   ),
                 if (_logoUploadedUrl != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: Spacing.xs),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: Spacing.xs),
                     child: Row(
                       children: [
                         Icon(FluentIcons.check_mark,
                             size: 12, color: Colors.successPrimaryColor),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4),
                         Text(
                           'Logo subido correctamente',
                           style: TextStyle(

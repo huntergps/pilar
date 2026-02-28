@@ -716,7 +716,6 @@ class _EditarUsuarioPanel extends ConsumerStatefulWidget {
     required this.usuarioData,
     required this.esYo,
     required this.inDialog,
-    this.onClose,
     required this.onRefresh,
   });
 
@@ -724,7 +723,6 @@ class _EditarUsuarioPanel extends ConsumerStatefulWidget {
   final Map<String, dynamic> usuarioData;
   final bool esYo;
   final bool inDialog;
-  final VoidCallback? onClose;
   final VoidCallback onRefresh;
 
   @override
@@ -1583,7 +1581,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
           email: email,
           uploadingAvatar: _uploadingAvatar,
           onUpload: _pickAndUploadAvatar,
-          onClose: widget.onClose,
+          onClose: null,
           theme: theme,
         ),
 
@@ -2633,10 +2631,25 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
     });
 
     try {
-      final response = await Supabase.instance.client.functions.invoke(
-        'invite-user',
-        body: {'email': email, 'rol_id': _selectedRolId},
-      );
+      // Helper para invocar — reutilizado en el retry tras refresh
+      Future<FunctionResponse> doInvoke() =>
+          Supabase.instance.client.functions.invoke(
+            'invite-user',
+            body: {'email': email, 'rol_id': _selectedRolId},
+          );
+
+      FunctionResponse response;
+      try {
+        response = await doInvoke();
+      } on FunctionException catch (fe) {
+        // JWT inválido/revocado → refrescar sesión y reintentar una vez
+        if (fe.status == 401) {
+          await Supabase.instance.client.auth.refreshSession();
+          response = await doInvoke();
+        } else {
+          rethrow;
+        }
+      }
 
       final data = response.data as Map<String, dynamic>?;
 

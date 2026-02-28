@@ -29,7 +29,11 @@ const _zonasHorarias = [
 ];
 
 class PerfilDialog extends ConsumerStatefulWidget {
-  const PerfilDialog({super.key});
+  /// Callback opcional: navega a la pantalla completa de perfil.
+  /// Si se pasa, se muestra el botón "Ver perfil completo" en las acciones.
+  final VoidCallback? onVerPerfilCompleto;
+
+  const PerfilDialog({super.key, this.onVerPerfilCompleto});
 
   @override
   ConsumerState<PerfilDialog> createState() => _PerfilDialogState();
@@ -194,10 +198,10 @@ class _PerfilDialogState extends ConsumerState<PerfilDialog> {
         maxWidth: isWide ? 680 : 440,
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
-      title: Tooltip(
+      title: const Tooltip(
         message:
             'Datos visibles solo en esta empresa. Cada empresa tiene un perfil independiente.',
-        child: const Text('Mi perfil'),
+        child: Text('Mi perfil'),
       ),
       content: perfilAsync.when(
         loading: () => const SizedBox(
@@ -245,6 +249,16 @@ class _PerfilDialogState extends ConsumerState<PerfilDialog> {
         },
       ),
       actions: [
+        if (widget.onVerPerfilCompleto != null)
+          Button(
+            onPressed: _saving
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    widget.onVerPerfilCompleto!();
+                  },
+            child: const Text('Ver perfil completo'),
+          ),
         Button(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
@@ -640,6 +654,270 @@ class _Initial extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: theme.accentColor,
         ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// PerfilPage — pantalla completa de perfil (footer nav + ruta /perfil)
+// ===========================================================================
+
+/// Pantalla completa de perfil de usuario.
+///
+/// Misma funcionalidad que [PerfilDialog] pero integrada en una [ScaffoldPage]
+/// con header propio. Accesible desde el footer de navegación (PaneItem "Mi
+/// Perfil") y desde la ruta `/perfil`.
+class PerfilPage extends ConsumerStatefulWidget {
+  const PerfilPage({super.key});
+
+  @override
+  ConsumerState<PerfilPage> createState() => _PerfilPageState();
+}
+
+class _PerfilPageState extends ConsumerState<PerfilPage> {
+  final _nombreCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
+  final _emailLoginCtrl = TextEditingController();
+
+  bool _initialized = false;
+  bool _saving = false;
+  bool _uploadingAvatar = false;
+  String? _successMsg;
+  String? _errorMsg;
+  String? _zonaHoraria;
+  String? _originalEmailLogin;
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _telefonoCtrl.dispose();
+    _emailLoginCtrl.dispose();
+    super.dispose();
+  }
+
+  void _initFields(PerfilUsuario perfil) {
+    if (_initialized) return;
+    _initialized = true;
+    _nombreCtrl.text = perfil.nombreDisplay ?? '';
+    _telefonoCtrl.text = perfil.telefono ?? '';
+    _zonaHoraria = perfil.zonaHoraria;
+    _emailLoginCtrl.text = perfil.emailLogin;
+    _originalEmailLogin = perfil.emailLogin;
+  }
+
+  String _errorLabel(String? code) => switch (code) {
+        'EMAIL_EXISTS' => 'Este email ya está en uso por otro usuario.',
+        'INVALID_EMAIL' => 'El email ingresado no es válido.',
+        'PERMISSION_DENIED' => 'Sin permiso para realizar esta acción.',
+        _ => code ?? 'Error desconocido',
+      };
+
+  Future<void> _pickAndUploadAvatar(PerfilUsuario perfil) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.first.bytes;
+    if (bytes == null || bytes.isEmpty) return;
+
+    setState(() {
+      _uploadingAvatar = true;
+      _errorMsg = null;
+    });
+
+    try {
+      final path = '${perfil.usuarioId}/${perfil.empresaId}/avatar.jpg';
+      await Supabase.instance.client.storage.from('avatares').uploadBinary(
+            path,
+            Uint8List.fromList(bytes),
+            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+          );
+      final url = Supabase.instance.client.storage
+          .from('avatares')
+          .getPublicUrl(path);
+      final urlBust = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+      final error = await ref
+          .read(perfilUsuarioProvider.notifier)
+          .saveChanges(avatarUrl: urlBust);
+      if (mounted) {
+        setState(() {
+          _uploadingAvatar = false;
+          if (error != null) _errorMsg = error;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _uploadingAvatar = false;
+          _errorMsg = 'Error subiendo la imagen: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _save(PerfilUsuario perfil) async {
+    setState(() {
+      _saving = true;
+      _errorMsg = null;
+      _successMsg = null;
+    });
+
+    final error = await ref.read(perfilUsuarioProvider.notifier).saveChanges(
+          nombreDisplay: _nombreCtrl.text.trim().isEmpty
+              ? null
+              : _nombreCtrl.text.trim(),
+          telefono: _telefonoCtrl.text.trim().isEmpty
+              ? null
+              : _telefonoCtrl.text.trim(),
+          zonaHoraria: _zonaHoraria,
+        );
+
+    if (error != null) {
+      if (mounted) setState(() { _saving = false; _errorMsg = error; });
+      return;
+    }
+
+    final newEmail = _emailLoginCtrl.text.trim().toLowerCase();
+    final currentEmail = (_originalEmailLogin ?? '').toLowerCase();
+    if (newEmail.isNotEmpty && newEmail != currentEmail) {
+      try {
+        final result = await Supabase.instance.client.rpc(
+          'change_email_usuario',
+          params: {
+            'p_usuario_id': perfil.usuarioId,
+            'p_new_email': newEmail,
+          },
+        );
+        final map = Map<String, dynamic>.from(result as Map);
+        if (map['ok'] != true) {
+          if (mounted) {
+            setState(() {
+              _saving = false;
+              _errorMsg = _errorLabel(map['error']?.toString());
+            });
+          }
+          return;
+        }
+        _originalEmailLogin = newEmail;
+      } catch (e) {
+        if (mounted) setState(() { _saving = false; _errorMsg = e.toString(); });
+        return;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _saving = false;
+        _successMsg = 'Perfil actualizado correctamente.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final perfilAsync = ref.watch(perfilUsuarioProvider);
+    final perfil = perfilAsync.valueOrNull;
+
+    return ScaffoldPage(
+      header: PageHeader(
+        title: const Text('Mi Perfil'),
+        commandBar: perfil != null
+            ? CommandBar(
+                mainAxisAlignment: MainAxisAlignment.end,
+                primaryItems: [
+                  CommandBarButton(
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: ProgressRing(strokeWidth: 2),
+                          )
+                        : const Icon(FluentIcons.save),
+                    label: const Text('Guardar cambios'),
+                    onPressed: _saving ? null : () => _save(perfil),
+                  ),
+                ],
+              )
+            : null,
+      ),
+      content: perfilAsync.when(
+        loading: () => const Center(child: ProgressRing()),
+        error: (e, _) => Center(
+          child: Text(
+            'Error cargando perfil: $e',
+            style: TextStyle(color: theme.resources.systemFillColorCritical),
+          ),
+        ),
+        data: (perfil) {
+          if (perfil == null) {
+            return const Center(child: Text('No se encontró el perfil.'));
+          }
+          _initFields(perfil);
+          return LayoutBuilder(
+            builder: (ctx, constraints) {
+              final isWide = constraints.maxWidth >= 600;
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_successMsg != null) ...[
+                      InfoBar(
+                        title: const Text('Cambios guardados'),
+                        content: Text(_successMsg!),
+                        severity: InfoBarSeverity.success,
+                        onClose: () => setState(() => _successMsg = null),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_errorMsg != null) ...[
+                      InfoBar(
+                        title: const Text('Error'),
+                        content: Text(_errorMsg!),
+                        severity: InfoBarSeverity.error,
+                        onClose: () => setState(() => _errorMsg = null),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    isWide
+                        ? _WideContent(
+                            perfil: perfil,
+                            nombreCtrl: _nombreCtrl,
+                            telefonoCtrl: _telefonoCtrl,
+                            emailLoginCtrl: _emailLoginCtrl,
+                            zonaHoraria: _zonaHoraria,
+                            saving: _saving,
+                            uploadingAvatar: _uploadingAvatar,
+                            errorMsg: null,
+                            onUpload: () => _pickAndUploadAvatar(perfil),
+                            onZonaChanged: (v) => setState(() => _zonaHoraria = v),
+                            onDismissError: () {},
+                            theme: theme,
+                          )
+                        : _NarrowContent(
+                            perfil: perfil,
+                            nombreCtrl: _nombreCtrl,
+                            telefonoCtrl: _telefonoCtrl,
+                            emailLoginCtrl: _emailLoginCtrl,
+                            zonaHoraria: _zonaHoraria,
+                            saving: _saving,
+                            uploadingAvatar: _uploadingAvatar,
+                            errorMsg: null,
+                            onUpload: () => _pickAndUploadAvatar(perfil),
+                            onZonaChanged: (v) => setState(() => _zonaHoraria = v),
+                            onDismissError: () {},
+                            theme: theme,
+                          ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

@@ -17,7 +17,14 @@ import '../../features/administracion/screens/modulos_screen.dart';
 import '../../features/administracion/screens/configuracion_screen.dart';
 import '../../features/administracion/screens/archivos_screen.dart';
 import '../../features/administracion/screens/cuentas_comunicacion_screen.dart';
-import '../../features/comunicacion/screens/comunicacion_screen.dart';
+import '../../features/administracion/screens/gestor_permisos_screen.dart';
+import '../../features/administracion/screens/impresoras_screen.dart';
+import '../../features/comunicacion/screens/chat_tab.dart'
+    show ChatScope, ChatTab;
+import '../../features/comunicacion/screens/conversaciones_tab.dart';
+import '../../features/comunicacion/screens/email_tab.dart';
+import '../../features/comunicacion/screens/historial_tab.dart';
+import '../../features/perfil/screens/perfil_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -50,12 +57,17 @@ abstract final class PilarRoutes {
   static const String adminModulos = '/admin/modulos';
   static const String adminArchivos = '/admin/archivos';
   static const String adminComunicacion = '/admin/comunicacion';
+  static const String adminPermisos = '/admin/permisos';
+  static const String adminImpresoras = '/admin/impresoras';
   static const String adminConfiguracion = '/admin/configuracion';
+  static const String perfil = '/perfil';
   static const String configuracion = '/configuracion';
   static const String comunicacion = '/comunicacion';
   static const String comunicacionEmail = '/comunicacion/email';
   static const String comunicacionHistorial = '/comunicacion/historial';
   static const String comunicacionChat = '/comunicacion/chat';
+  static const String misMensajesEmail = '/mis-mensajes/email';
+  static const String misMensajesChat = '/mis-mensajes/chat';
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +132,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoggedIn && loc.startsWith('/admin')) {
         final permisos =
             session.user.appMetadata['permisos'] as List<dynamic>? ?? [];
-        if (!permisos.contains('administracion.empresa.ver')) {
+        if (!permisos.contains('administracion.empresa.menu')) {
           return PilarRoutes.dashboard;
         }
       }
@@ -164,22 +176,31 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: PilarRoutes.dashboard,
             builder: (_, __) => const DashboardScreen(),
           ),
-          // ---- Comunicación (Mensajes) ----
+          // ---- Empresa — canales de empresa (usuario_id IS NULL) ----
           GoRoute(
             path: PilarRoutes.comunicacion,
-            builder: (_, __) => const ComunicacionScreen(),
+            builder: (_, __) => const ConversacionesTab(esEmpresa: true),
           ),
           GoRoute(
             path: PilarRoutes.comunicacionEmail,
-            builder: (_, __) => const ComunicacionScreen(tabIndex: 1),
+            builder: (_, __) => const EmailTab(esEmpresa: true),
           ),
           GoRoute(
             path: PilarRoutes.comunicacionHistorial,
-            builder: (_, __) => const ComunicacionScreen(tabIndex: 2),
+            builder: (_, __) => const HistorialTab(),
           ),
           GoRoute(
             path: PilarRoutes.comunicacionChat,
-            builder: (_, __) => const ComunicacionScreen(tabIndex: 3),
+            builder: (_, __) => const ChatTab(scope: ChatScope.empresa),
+          ),
+          // ---- Mis mensajes — canales personales del usuario ----
+          GoRoute(
+            path: PilarRoutes.misMensajesEmail,
+            builder: (_, __) => const EmailTab(esEmpresa: false),
+          ),
+          GoRoute(
+            path: PilarRoutes.misMensajesChat,
+            builder: (_, __) => const ChatTab(scope: ChatScope.personal),
           ),
           GoRoute(
             path: PilarRoutes.admin,
@@ -206,8 +227,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const CuentasComunicacionScreen(),
           ),
           GoRoute(
+            path: PilarRoutes.adminPermisos,
+            builder: (_, __) => const GestorPermisosScreen(),
+          ),
+          GoRoute(
+            path: PilarRoutes.adminImpresoras,
+            builder: (_, __) => const ImpresorasScreen(),
+          ),
+          GoRoute(
             path: PilarRoutes.adminConfiguracion,
             redirect: (_, __) => PilarRoutes.configuracion,
+          ),
+          GoRoute(
+            path: PilarRoutes.perfil,
+            builder: (_, __) => const PerfilPage(),
           ),
           GoRoute(
             path: PilarRoutes.configuracion,

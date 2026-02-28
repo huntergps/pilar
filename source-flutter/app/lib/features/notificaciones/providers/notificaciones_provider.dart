@@ -159,7 +159,7 @@ final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) asyn
     Where.exact('usuarioId', session.user.id),
   ]);
 
-  NotificacionItem _fromBrick(Notificacion n) => NotificacionItem(
+  NotificacionItem fromBrick(Notificacion n) => NotificacionItem(
         id: n.id,
         tipo: n.tipo,
         titulo: n.titulo,
@@ -170,11 +170,11 @@ final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) asyn
         accionUrl: n.accionUrl,
       );
 
-  List<NotificacionItem> _sortAndLimit(List<Notificacion> notifs) {
+  List<NotificacionItem> sortAndLimit(List<Notificacion> notifs) {
     final sorted = notifs.toList()
       ..sort((a, b) =>
           (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
-    return sorted.take(20).map(_fromBrick).toList();
+    return sorted.take(20).map(fromBrick).toList();
   }
 
   // 1. Local primero
@@ -183,7 +183,7 @@ final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) asyn
       policy: OfflineFirstGetPolicy.localOnly,
       query: query,
     );
-    yield _sortAndLimit(local);
+    yield sortAndLimit(local);
   } catch (_) {
     yield const <NotificacionItem>[];
   }
@@ -194,7 +194,7 @@ final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) asyn
       policy: OfflineFirstGetPolicy.awaitRemote,
       query: query,
     );
-    yield _sortAndLimit(fresh);
+    yield sortAndLimit(fresh);
     ref.read(connectivityProvider.notifier).reportOnline();
   } catch (e) {
     if (isOfflineError(e)) {

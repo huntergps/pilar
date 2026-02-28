@@ -24,6 +24,12 @@ class ComConversacion {
   final Map<String, dynamic> metaJson;
   final DateTime creadoEn;
 
+  /// Tipo de entidad de negocio vinculada (ej: 'facturas', 'contactos'). Nullable.
+  final String? entidadTipo;
+
+  /// UUID del registro de negocio vinculado. Nullable.
+  final String? entidadId;
+
   const ComConversacion({
     required this.id,
     required this.empresaId,
@@ -37,6 +43,8 @@ class ComConversacion {
     required this.activa,
     required this.metaJson,
     required this.creadoEn,
+    this.entidadTipo,
+    this.entidadId,
   });
 
   /// `true` si la ventana de 24h de WhatsApp está activa (se puede enviar texto libre).
@@ -56,7 +64,8 @@ class ComConversacion {
   factory ComConversacion.fromJson(Map<String, dynamic> json) {
     return ComConversacion(
       id: json['id'] as String,
-      empresaId: json['empresa_id'] as String,
+      // empresa_id is not returned by com_get_conversaciones RPC; default to empty.
+      empresaId: json['empresa_id'] as String? ?? '',
       cuentaId: json['cuenta_id'] as String,
       canal: json['canal'] as String,
       destinatarioRef: json['destinatario_ref'] as String,
@@ -69,8 +78,14 @@ class ComConversacion {
           ? null
           : DateTime.parse(json['valida_hasta'] as String),
       activa: json['activa'] as bool? ?? true,
+      // meta_json is not returned by com_get_conversaciones RPC; default to empty.
       metaJson: (json['meta_json'] as Map<String, dynamic>?) ?? {},
-      creadoEn: DateTime.parse(json['creado_en'] as String),
+      // creado_en is not returned by com_get_conversaciones RPC; default to epoch.
+      creadoEn: json['creado_en'] != null
+          ? DateTime.parse(json['creado_en'] as String)
+          : DateTime.fromMillisecondsSinceEpoch(0),
+      entidadTipo: json['entidad_tipo'] as String?,
+      entidadId: json['entidad_id'] as String?,
     );
   }
 
@@ -87,5 +102,7 @@ class ComConversacion {
         'activa': activa,
         'meta_json': metaJson,
         'creado_en': creadoEn.toIso8601String(),
+        'entidad_tipo': entidadTipo,
+        'entidad_id': entidadId,
       };
 }

@@ -9,6 +9,8 @@ import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:system_theme/system_theme.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'core/config/supabase_config.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart' show routerProvider, supabaseConfiguredProvider, supabaseUrlProvider;
@@ -57,11 +59,31 @@ Future<void> main() async {
     await Supabase.initialize(url: config.url, anonKey: config.anonKey);
   }
 
+  // Pre-carga el color primario de empresa desde caché (SharedPreferences) para
+  // que el primer frame ya use el color correcto y no haya flash del azul del SO.
+  // La caché se escribe en pilar_shell.dart cada vez que Supabase devuelve el color.
+  Color? cachedEmpresaColor;
+  try {
+    final session = Supabase.instance.client.auth.currentSession;
+    final empresaId = session?.user.appMetadata['empresa_id'] as String?;
+    if (empresaId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final colorValue = prefs.getInt('${ConfigKeys.empresaColorPrefix}$empresaId');
+      if (colorValue != null && colorValue != 0) {
+        cachedEmpresaColor = Color(colorValue);
+      }
+    }
+  } catch (_) {
+    // Si falla la lectura (primer uso, prefs corruptas) se inicia sin color cacheado.
+  }
+
   runApp(
     ProviderScope(
       overrides: [
         supabaseConfiguredProvider.overrideWith((ref) => true),
         supabaseUrlProvider.overrideWith((ref) => config.url),
+        if (cachedEmpresaColor != null)
+          empresaColorProvider.overrideWith((ref) => cachedEmpresaColor!),
       ],
       child: const PilarApp(),
     ),

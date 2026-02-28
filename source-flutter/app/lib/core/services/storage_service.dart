@@ -108,7 +108,7 @@ abstract final class StorageService {
     if (logoUrl == null || logoUrl.isEmpty) return null;
 
     // Extraer el storagePath de la URL completa
-    final marker = '/public/$_kBucketLogos/';
+    const marker = '/public/$_kBucketLogos/';
     final idx = logoUrl.indexOf(marker);
     if (idx == -1) return logoUrl; // URL externa, devolver sin modificar
 

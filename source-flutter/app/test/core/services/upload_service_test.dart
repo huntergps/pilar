@@ -103,32 +103,32 @@ void main() {
 
   group('UploadProgress —', () {
     test('fraction = bytesUploaded / totalBytes', () {
-      final p = UploadProgress(bytesUploaded: 3, totalBytes: 10);
+      const p = UploadProgress(bytesUploaded: 3, totalBytes: 10);
       expect(p.fraction, closeTo(0.3, 0.001));
     });
 
     test('fraction = 0.0 cuando totalBytes = 0 (sin división por cero)', () {
-      final p = UploadProgress(bytesUploaded: 0, totalBytes: 0);
+      const p = UploadProgress(bytesUploaded: 0, totalBytes: 0);
       expect(p.fraction, 0.0);
     });
 
     test('fraction = 1.0 cuando está completo', () {
-      final p = UploadProgress(bytesUploaded: 512, totalBytes: 512);
+      const p = UploadProgress(bytesUploaded: 512, totalBytes: 512);
       expect(p.fraction, 1.0);
     });
 
     test('label formatea bytes < 1 KB', () {
-      final p = UploadProgress(bytesUploaded: 512, totalBytes: 1000);
+      const p = UploadProgress(bytesUploaded: 512, totalBytes: 1000);
       expect(p.label, '512 B / 1000 B');
     });
 
     test('label formatea KB', () {
-      final p = UploadProgress(bytesUploaded: 1024, totalBytes: 2048);
+      const p = UploadProgress(bytesUploaded: 1024, totalBytes: 2048);
       expect(p.label, '1.0 KB / 2.0 KB');
     });
 
     test('label formatea MB', () {
-      final p = UploadProgress(
+      const p = UploadProgress(
         bytesUploaded: 1024 * 1024,
         totalBytes: 5 * 1024 * 1024,
       );

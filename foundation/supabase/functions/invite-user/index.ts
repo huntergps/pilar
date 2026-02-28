@@ -22,7 +22,7 @@
  *     que llame a auth-setup-handler para actualizar app_metadata del JWT.
  *
  * Método:   POST
- * Auth:     Authorization: Bearer <JWT_del_usuario> (rol con plataforma.usuarios.gestionar)
+ * Auth:     Authorization: Bearer <JWT_del_usuario> (rol con administracion.usuarios.crear)
  * Body:     { email: string, rol_id: string, dias_vigencia?: number }
  *
  * Respuestas:
@@ -115,6 +115,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
         ok: false,
         error: 'RPC_ERROR',
         message: inviteCheckErr.message,
+      });
+    }
+
+    // El RPC retornó ok: false — propagar el error con mensaje legible
+    if (inviteCheck?.ok === false) {
+      const errorCode: string = inviteCheck.error ?? 'RPC_ERROR';
+      console.error('[invite-user] admin_invite_user retornó error:', errorCode);
+      const messages: Record<string, string> = {
+        PERMISSION_DENIED: 'Sin permiso para invitar usuarios',
+        ROL_NO_VALIDO: 'El rol seleccionado no es válido para esta empresa',
+      };
+      return jsonResponse({
+        ok: false,
+        error: errorCode,
+        message: messages[errorCode] ?? `Error al procesar la invitación: ${errorCode}`,
       });
     }
 

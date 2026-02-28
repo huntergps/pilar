@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
   gtk
+  printing
   screen_retriever_linux
   syncfusion_pdfviewer_linux
   system_theme

@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_auth_ui_fluent/supabase_auth_ui_fluent.dart';
 
@@ -178,17 +179,17 @@ class _LoginContent extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // --- Logo + title ---
-        Text(
-          'PILAR ERP',
-          style: theme.typography.titleLarge,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Sistema de Gestión Empresarial',
-          style: theme.typography.body,
-          textAlign: TextAlign.center,
+        // --- Logo ---
+        Center(
+          child: SvgPicture.asset(
+            'assets/logos/pilar_logo.svg',
+            height: 72,
+            fit: BoxFit.contain,
+            colorFilter: ColorFilter.mode(
+              theme.accentColor,
+              BlendMode.srcIn,
+            ),
+          ),
         ),
         const SizedBox(height: 32),
 

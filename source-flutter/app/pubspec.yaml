@@ -18,6 +18,8 @@ dependencies:
     path: ../paquetes/fluent_ui_reactive
   supabase_auth_ui_fluent:
     path: ../paquetes/flutter-auth-fluent-ui
+  pilar_print:
+    path: ../paquetes/pilar_print
 
   # === State management ===
   flutter_riverpod: ^2.5.0
@@ -47,6 +49,9 @@ dependencies:
   syncfusion_flutter_datagrid: ^32.2.5
   syncfusion_flutter_pdfviewer: ^32.2.5
 
+  # === SVG ===
+  flutter_svg: ^2.0.10+1
+
   # === Utilities ===
   decimal: ^2.3.3
   intl: ^0.20.2
@@ -55,6 +60,7 @@ dependencies:
   file_picker: ^8.1.2
   http: ^1.2.2
   url_launcher: ^6.3.1
+  syncfusion_flutter_pdf: ^32.2.5
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +69,7 @@ dev_dependencies:
   riverpod_generator: ^2.4.0
   build_runner: ^2.4.0
   flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.3
   # brick_offline_first_with_supabase_build y brick_build se mantienen en
   # un workspace separado (brick_models/) para evitar conflicto build ^2 vs ^3
   # con riverpod_generator ^2.x
@@ -81,6 +88,15 @@ flutter_launcher_icons:
   macos:
     generate: true
     image_path: "assets/icon/pilar_icon.png"
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  color_dark: "#1C1C1C"
+  image: assets/logos/pilar_logo.png
+  image_dark: assets/logos/pilar_logo.png
+  android: true
+  ios: true
+  web: true
 
 flutter:
   uses-material-design: true

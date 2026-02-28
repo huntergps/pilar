@@ -5,6 +5,8 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   flutter_acrylic
+  permission_handler_windows
+  printing
   screen_retriever_windows
   syncfusion_pdfviewer_windows
   system_theme

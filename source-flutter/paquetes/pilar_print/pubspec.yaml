@@ -1,0 +1,31 @@
+name: pilar_print
+description: Virtual printer management for PILAR ERP
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  web_socket_channel: ^3.0.2
+  printing: ^5.13.2
+  shared_preferences: ^2.5.4
+  permission_handler: ^12.0.1
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: tech.galapagos.pilarprint
+        pluginClass: PilarPrintPlugin
+      ios:
+        pluginClass: PilarPrintPlugin

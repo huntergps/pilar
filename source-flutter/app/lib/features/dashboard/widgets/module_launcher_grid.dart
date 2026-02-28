@@ -39,7 +39,7 @@ class ModuleLauncherGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tieneAdmin =
-        ref.watch(hasPermissionProvider('administracion.empresa.ver'));
+        ref.watch(hasPermissionProvider('administracion.empresa.menu'));
 
     return Padding(
       padding: const EdgeInsets.all(24),

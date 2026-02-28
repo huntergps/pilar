@@ -1,12 +1,7 @@
-import 'package:brick_gen/brick_gen.dart';
-import 'package:brick_offline_first/brick_offline_first.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
-import '../offline/connectivity_service.dart';
-import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -70,104 +65,35 @@ class ModuloEstado {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-List<ModuloItem> _buildModuloItems(
-  List<Modulo> modulos,
-  List<ModuloEmpresa> modulosEmpresa,
-) {
-  final enabledIds = modulosEmpresa
-      .where((me) => me.habilitado)
-      .map((me) => me.moduloId)
-      .toSet();
-
-  return modulos
-      .where((m) => enabledIds.contains(m.id))
-      .map((m) => ModuloItem(
-            id: m.id,
-            nombre: m.nombre,
-            icono: m.icono ?? 'apps',
-            orden: m.orden ?? 99,
-            tipo: m.tipo,
-          ))
-      .toList()
-    ..sort((a, b) => a.orden.compareTo(b.orden));
-}
-
-// ---------------------------------------------------------------------------
 // Provider — módulos activos
 // ---------------------------------------------------------------------------
 
-/// Lista de modulos activos para la empresa y usuario actuales.
+/// Lista de módulos activos para la empresa y usuario actuales.
 ///
-/// Patrón local-first + background sync:
-/// 1. Emite desde SQLite (Brick) inmediatamente.
-/// 2. Sincroniza en background desde Supabase.
-/// 3. Emite datos actualizados.
+/// Usa la RPC `get_modulos_activos` directamente (todas las plataformas):
+/// - Infraestructura: siempre visibles.
+/// - Core/auxiliar: solo si están habilitados para la empresa activa.
+///
+/// Nota: el path Brick (SQLite) fue eliminado porque el generador de código
+/// producía `primaryKeyByUniqueColumns` incorrecto (devolvía instance.primaryKey
+/// en vez de hacer lookup por campo único), causando que cada sincronización
+/// insertara filas duplicadas en SQLite en vez de hacer upsert.
 final modulosActivosProvider = StreamProvider<List<ModuloItem>>((ref) async* {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
 
-  // Web o sin empresa: RPC directa
-  if (kIsWeb || empresaId == null) {
-    if (empresaId == null) { yield const <ModuloItem>[]; return; }
-    final client = ref.watch(supabaseClientProvider);
-    try {
-      final data = await client.rpc('get_modulos_activos');
-      yield (data as List)
-          .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      yield const <ModuloItem>[];
-    }
+  if (empresaId == null) {
+    yield const <ModuloItem>[];
     return;
   }
 
-  final repo = ref.read(repositoryProvider);
-  if (repo == null) { yield const <ModuloItem>[]; return; }
-
-  // 1. Local primero — datos de SQLite inmediatamente
   try {
-    final results = await Future.wait<dynamic>([
-      repo.get<Modulo>(
-        policy: OfflineFirstGetPolicy.localOnly,
-        query: Query.where('activo', true),
-      ),
-      repo.get<ModuloEmpresa>(
-        policy: OfflineFirstGetPolicy.localOnly,
-        query: Query.where('empresaId', empresaId),
-      ),
-    ]);
-    yield _buildModuloItems(
-      results[0] as List<Modulo>,
-      results[1] as List<ModuloEmpresa>,
-    );
+    final data = await ref.read(supabaseClientProvider).rpc('get_modulos_activos');
+    yield (data as List)
+        .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   } catch (_) {
     yield const <ModuloItem>[];
-  }
-
-  // 2. Background sync — Brick trae datos frescos de Supabase y actualiza SQLite
-  try {
-    final results = await Future.wait<dynamic>([
-      repo.get<Modulo>(
-        policy: OfflineFirstGetPolicy.awaitRemote,
-        query: Query.where('activo', true),
-      ),
-      repo.get<ModuloEmpresa>(
-        policy: OfflineFirstGetPolicy.awaitRemote,
-        query: Query.where('empresaId', empresaId),
-      ),
-    ]);
-    yield _buildModuloItems(
-      results[0] as List<Modulo>,
-      results[1] as List<ModuloEmpresa>,
-    );
-    ref.read(connectivityProvider.notifier).reportOnline();
-  } catch (e) {
-    if (isOfflineError(e)) {
-      ref.read(connectivityProvider.notifier).reportOffline();
-    }
   }
 });
 

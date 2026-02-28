@@ -3,20 +3,109 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/empresa_provider.dart';
+import '../../../core/providers/usuario_provider.dart';
+
+// ---------------------------------------------------------------------------
+// Providers de roles para cuentas
+// ---------------------------------------------------------------------------
+
+/// Roles asignados a una cuenta específica (acceso restringido por rol).
+/// Retorna lista de maps con: rol_id, roles.nombre, roles.codigo.
+final cuentaRolesProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
+        (ref, cuentaId) async {
+  final rows = await Supabase.instance.client
+      .from('com_cuentas_roles')
+      .select('rol_id, roles(nombre, codigo)')
+      .eq('cuenta_id', cuentaId) as List;
+  return rows.cast<Map<String, dynamic>>();
+});
+
+/// Todos los roles del sistema disponibles para asignar a cuentas.
+final rolesEmpresaProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(authStateProvider);
+  final rows = await Supabase.instance.client
+      .from('roles')
+      .select('id, nombre, codigo')
+      .filter('empresa_id', 'is', null)
+      .order('nombre') as List;
+  return rows.cast<Map<String, dynamic>>();
+});
+
+// ---------------------------------------------------------------------------
+// Modelo
+// ---------------------------------------------------------------------------
+
+class CuentaItem {
+  final String id;
+  final String nombre;
+  final String tipo;
+  final bool activo;
+  final bool esDefecto;
+  final Map<String, dynamic> configJson;
+  final String? usuarioId;
+  final String? usuarioNombre;
+  final bool esPersonal;
+
+  const CuentaItem({
+    required this.id,
+    required this.nombre,
+    required this.tipo,
+    required this.activo,
+    required this.esDefecto,
+    required this.configJson,
+    this.usuarioId,
+    this.usuarioNombre,
+    required this.esPersonal,
+  });
+
+  factory CuentaItem.fromMap(Map<String, dynamic> m) {
+    final uid = m['usuario_id'] as String?;
+    return CuentaItem(
+      id: m['id'] as String,
+      nombre: m['nombre'] as String? ?? '',
+      tipo: m['tipo'] as String? ?? '',
+      activo: m['activo'] as bool? ?? false,
+      esDefecto: m['es_defecto'] as bool? ?? false,
+      configJson: (m['config_json'] as Map?)?.cast<String, dynamic>() ?? {},
+      usuarioId: uid,
+      usuarioNombre: m['usuario_nombre'] as String?,
+      esPersonal: m['es_personal'] as bool? ?? (uid != null),
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
 final comCuentasProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<CuentaItem>>((ref) async {
   ref.watch(authStateProvider);
-  final data = await Supabase.instance.client
-      .from('com_cuentas')
-      .select()
-      .order('tipo')
-      .order('nombre');
-  return (data as List).cast<Map<String, dynamic>>();
+  try {
+    final data = await Supabase.instance.client
+        .rpc('com_get_todas_cuentas') as List;
+    return data
+        .cast<Map<String, dynamic>>()
+        .map(CuentaItem.fromMap)
+        .toList();
+  } catch (_) {
+    // Fallback: query directa (no admin o RPC no disponible)
+    final session = Supabase.instance.client.auth.currentSession;
+    final empresaId = session?.user.appMetadata['empresa_id'] as String?;
+    final query = Supabase.instance.client
+        .from('com_cuentas')
+        .select('id, nombre, tipo, activo, es_defecto, config_json, usuario_id');
+    final data = (empresaId != null
+            ? await query.eq('empresa_id', empresaId).order('nombre')
+            : await query.order('nombre')) as List;
+    return data
+        .cast<Map<String, dynamic>>()
+        .map(CuentaItem.fromMap)
+        .toList();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -55,6 +144,8 @@ class _CuentasComunicacionScreenState
     extends ConsumerState<CuentasComunicacionScreen> {
   @override
   Widget build(BuildContext context) {
+    final puedeCompartida =
+        ref.watch(hasPermissionProvider('comunicacion.cuentas.compartida'));
     final cuentasAsync = ref.watch(comCuentasProvider);
     final theme = FluentTheme.of(context);
 
@@ -108,35 +199,127 @@ class _CuentasComunicacionScreenState
             );
           }
 
-          // Agrupar por tipo
-          final porTipo = <String, List<Map<String, dynamic>>>{};
-          for (final c in cuentas) {
-            final tipo = c['tipo'] as String;
-            (porTipo[tipo] ??= []).add(c);
+          // Separar en empresa vs personales
+          String? uid;
+          try {
+            uid = Supabase.instance.client.auth.currentUser?.id;
+          } catch (_) {
+            uid = null; // Supabase no inicializado (tests)
+          }
+          final empresariales = cuentas.where((c) => !c.esPersonal).toList();
+          final personales =
+              cuentas.where((c) => c.esPersonal).toList();
+
+          // Agrupar empresariales por tipo
+          final porTipo = <String, List<CuentaItem>>{};
+          for (final c in empresariales) {
+            (porTipo[c.tipo] ??= []).add(c);
+          }
+
+          // Agrupar personales por tipo
+          final porTipoPersonal = <String, List<CuentaItem>>{};
+          for (final c in personales) {
+            (porTipoPersonal[c.tipo] ??= []).add(c);
           }
 
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
-              for (final tipo in _tipoOrden)
-                if (porTipo.containsKey(tipo)) ...[
-                  _SectionHeader(
-                    icon: _tipoIcons[tipo]!,
-                    label: _tipoLabels[tipo]!,
-                    onAdd: () => _showCuentaDialog(context, tipoInicial: tipo),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final cuenta in porTipo[tipo]!)
-                    _CuentaCard(
-                      cuenta: cuenta,
-                      onEdit: () =>
-                          _showCuentaDialog(context, cuenta: cuenta),
-                      onToggleActivo: () => _toggleActivo(cuenta),
-                      onSetDefecto: () => _setDefecto(cuenta),
-                      onEliminar: () => _confirmarEliminar(context, cuenta),
+              // ── Cuentas de la empresa ─────────────────────────────────────
+              if (empresariales.isNotEmpty) ...[
+                _GroupHeader(
+                  icon: FluentIcons.people,
+                  label: 'Cuentas de la empresa',
+                  color: theme.accentColor,
+                ),
+                const SizedBox(height: 12),
+                for (final tipo in _tipoOrden)
+                  if (porTipo.containsKey(tipo)) ...[
+                    _SectionHeader(
+                      icon: _tipoIcons[tipo]!,
+                      label: _tipoLabels[tipo]!,
+                      onAdd: () =>
+                          _showCuentaDialog(context, tipoInicial: tipo),
                     ),
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 8),
+                    for (final cuenta in porTipo[tipo]!)
+                      _CuentaCard(
+                        cuenta: cuenta,
+                        puedeCompartida: puedeCompartida,
+                        onEdit: () =>
+                            _showCuentaDialog(context, cuenta: cuenta),
+                        onToggleActivo: () => _toggleActivo(cuenta),
+                        onSetDefecto: () => _setDefecto(cuenta),
+                        onEliminar: () => _confirmarEliminar(context, cuenta),
+                        onCambiarOwnership: () =>
+                            _cambiarOwnership(cuenta, uid),
+                        onGestionarRoles: () =>
+                            _showRolesDialog(context, cuenta),
+                      ),
+                    const SizedBox(height: 16),
+                  ],
+              ],
+
+              // ── Mis cuentas personales ────────────────────────────────────
+              _GroupHeader(
+                icon: FluentIcons.contact,
+                label: 'Mis cuentas personales',
+                color: theme.resources.textFillColorPrimary,
+              ),
+              const SizedBox(height: 12),
+              if (personales.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    'No tienes cuentas personales. '
+                    'Usa "Nueva cuenta" y selecciona "Personal".',
+                    style: theme.typography.body?.copyWith(
+                        color: theme.inactiveColor),
+                  ),
+                )
+              else
+                for (final tipo in _tipoOrden)
+                  if (porTipoPersonal.containsKey(tipo)) ...[
+                    _SectionHeader(
+                      icon: _tipoIcons[tipo]!,
+                      label: _tipoLabels[tipo]!,
+                      onAdd: () =>
+                          _showCuentaDialog(context, tipoInicial: tipo),
+                    ),
+                    const SizedBox(height: 8),
+                    for (final cuenta in porTipoPersonal[tipo]!)
+                      _CuentaCard(
+                        cuenta: cuenta,
+                        puedeCompartida: puedeCompartida,
+                        onEdit: () =>
+                            _showCuentaDialog(context, cuenta: cuenta),
+                        onToggleActivo: () => _toggleActivo(cuenta),
+                        onSetDefecto: () => _setDefecto(cuenta),
+                        onEliminar: () => _confirmarEliminar(context, cuenta),
+                        onCambiarOwnership: () =>
+                            _cambiarOwnership(cuenta, uid),
+                        onGestionarRoles: () =>
+                            _showRolesDialog(context, cuenta),
+                      ),
+                    const SizedBox(height: 16),
+                  ],
+              // Botón añadir cuenta personal
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Button(
+                  onPressed: () => _showCuentaDialog(context,
+                      forzarPersonal: true),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(FluentIcons.add, size: 14),
+                      SizedBox(width: 6),
+                      Text('Añadir cuenta personal'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
             ],
           );
         },
@@ -148,31 +331,51 @@ class _CuentasComunicacionScreenState
   // Acciones
   // -------------------------------------------------------------------------
 
-  Future<void> _toggleActivo(Map<String, dynamic> cuenta) async {
+  Future<void> _toggleActivo(CuentaItem cuenta) async {
     try {
       await Supabase.instance.client
           .from('com_cuentas')
-          .update({'activo': !(cuenta['activo'] as bool)})
-          .eq('id', cuenta['id'] as String);
+          .update({'activo': !cuenta.activo})
+          .eq('id', cuenta.id);
       ref.invalidate(comCuentasProvider);
     } catch (e) {
       if (mounted) _showError(context, e.toString());
     }
   }
 
-  Future<void> _setDefecto(Map<String, dynamic> cuenta) async {
+  Future<void> _setDefecto(CuentaItem cuenta) async {
     try {
-      // Quitar defecto de otras cuentas del mismo tipo
       await Supabase.instance.client
           .from('com_cuentas')
           .update({'es_defecto': false})
-          .eq('tipo', cuenta['tipo'] as String)
-          .neq('id', cuenta['id'] as String);
-      // Activar defecto en esta cuenta
+          .eq('tipo', cuenta.tipo)
+          .neq('id', cuenta.id);
       await Supabase.instance.client
           .from('com_cuentas')
           .update({'es_defecto': true, 'activo': true})
-          .eq('id', cuenta['id'] as String);
+          .eq('id', cuenta.id);
+      ref.invalidate(comCuentasProvider);
+    } catch (e) {
+      if (mounted) _showError(context, e.toString());
+    }
+  }
+
+  Future<void> _cambiarOwnership(CuentaItem cuenta, String? uid) async {
+    try {
+      if (cuenta.esPersonal) {
+        // Hacer compartida: pasar null
+        await Supabase.instance.client.rpc('com_set_cuenta_usuario', params: {
+          'p_cuenta_id': cuenta.id,
+          'p_usuario_id': null,
+        });
+      } else {
+        // Hacer personal del usuario actual
+        if (uid == null) return;
+        await Supabase.instance.client.rpc('com_set_cuenta_usuario', params: {
+          'p_cuenta_id': cuenta.id,
+          'p_usuario_id': uid,
+        });
+      }
       ref.invalidate(comCuentasProvider);
     } catch (e) {
       if (mounted) _showError(context, e.toString());
@@ -180,13 +383,13 @@ class _CuentasComunicacionScreenState
   }
 
   Future<void> _confirmarEliminar(
-      BuildContext context, Map<String, dynamic> cuenta) async {
+      BuildContext context, CuentaItem cuenta) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => ContentDialog(
         title: const Text('Eliminar cuenta'),
         content: Text(
-          '¿Eliminar "${cuenta['nombre']}"?\n\n'
+          '¿Eliminar "${cuenta.nombre}"?\n\n'
           'Los mensajes enviados con esta cuenta quedarán en el historial.',
         ),
         actions: [
@@ -210,10 +413,10 @@ class _CuentasComunicacionScreenState
         await Supabase.instance.client
             .from('com_cuentas')
             .delete()
-            .eq('id', cuenta['id'] as String);
+            .eq('id', cuenta.id);
         ref.invalidate(comCuentasProvider);
       } catch (e) {
-        if (mounted) _showError(context, e.toString());
+        if (mounted) _showError(this.context, e.toString());
       }
     }
   }
@@ -236,22 +439,69 @@ class _CuentasComunicacionScreenState
 
   Future<void> _showCuentaDialog(
     BuildContext context, {
-    Map<String, dynamic>? cuenta,
+    CuentaItem? cuenta,
     String? tipoInicial,
+    bool forzarPersonal = false,
   }) async {
+    final puedeCompartida =
+        ref.read(hasPermissionProvider('comunicacion.cuentas.compartida'));
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) => _CuentaDialog(
         cuenta: cuenta,
         tipoInicial: tipoInicial,
+        forzarPersonal: forzarPersonal || !puedeCompartida,
+        puedeCompartida: puedeCompartida,
       ),
     );
     if (saved == true) ref.invalidate(comCuentasProvider);
   }
+
+  Future<void> _showRolesDialog(
+      BuildContext context, CuentaItem cuenta) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _CuentaRolesDialog(cuenta: cuenta),
+    );
+    // Invalidar por si cambió algo relevante
+    ref.invalidate(cuentaRolesProvider(cuenta.id));
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Section header
+// Group header (Empresa / Personal)
+// ---------------------------------------------------------------------------
+
+class _GroupHeader extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _GroupHeader({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(label, style: theme.typography.subtitle),
+          const Expanded(child: Divider(style: DividerThemeData())),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section header (por tipo: WhatsApp / Email / Telegram)
 // ---------------------------------------------------------------------------
 
 class _SectionHeader extends StatelessWidget {
@@ -284,31 +534,117 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Cuenta card
+// Acceso chip
 // ---------------------------------------------------------------------------
 
-class _CuentaCard extends StatelessWidget {
-  final Map<String, dynamic> cuenta;
-  final VoidCallback onEdit;
-  final VoidCallback onToggleActivo;
-  final VoidCallback onSetDefecto;
-  final VoidCallback onEliminar;
+class _AccesoChip extends StatelessWidget {
+  final bool esPersonal;
+  final String? usuarioNombre;
 
-  const _CuentaCard({
-    required this.cuenta,
-    required this.onEdit,
-    required this.onToggleActivo,
-    required this.onSetDefecto,
-    required this.onEliminar,
-  });
+  const _AccesoChip({required this.esPersonal, this.usuarioNombre});
 
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
-    final activo = cuenta['activo'] as bool? ?? false;
-    final defecto = cuenta['es_defecto'] as bool? ?? false;
-    final tipo = cuenta['tipo'] as String;
-    final cfg = (cuenta['config_json'] as Map?)?.cast<String, dynamic>() ?? {};
+
+    if (!esPersonal) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: theme.accentColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(FluentIcons.people, size: 11, color: theme.accentColor),
+            const SizedBox(width: 4),
+            Text(
+              'Compartida',
+              style: TextStyle(fontSize: 11, color: theme.accentColor),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Personal
+    final label =
+        'Personal${usuarioNombre != null ? ' — $usuarioNombre' : ''}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.resources.subtleFillColorSecondary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            FluentIcons.contact,
+            size: 11,
+            color: theme.resources.textFillColorSecondary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: theme.resources.textFillColorSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cuenta card
+// ---------------------------------------------------------------------------
+
+class _CuentaCard extends StatefulWidget {
+  final CuentaItem cuenta;
+  final bool puedeCompartida;
+  final VoidCallback onEdit;
+  final VoidCallback onToggleActivo;
+  final VoidCallback onSetDefecto;
+  final VoidCallback onEliminar;
+  final VoidCallback onCambiarOwnership;
+  final VoidCallback onGestionarRoles;
+
+  const _CuentaCard({
+    required this.cuenta,
+    required this.puedeCompartida,
+    required this.onEdit,
+    required this.onToggleActivo,
+    required this.onSetDefecto,
+    required this.onEliminar,
+    required this.onCambiarOwnership,
+    required this.onGestionarRoles,
+  });
+
+  @override
+  State<_CuentaCard> createState() => _CuentaCardState();
+}
+
+class _CuentaCardState extends State<_CuentaCard> {
+  final FlyoutController _flyoutController = FlyoutController();
+
+  @override
+  void dispose() {
+    _flyoutController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cuenta = widget.cuenta;
+    final theme = FluentTheme.of(context);
+    final activo = cuenta.activo;
+    final defecto = cuenta.esDefecto;
+    final tipo = cuenta.tipo;
+    final cfg = cuenta.configJson;
 
     String subtitle = '';
     switch (tipo) {
@@ -349,7 +685,7 @@ class _CuentaCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(cuenta['nombre'] as String? ?? '',
+                      Text(cuenta.nombre,
                           style: theme.typography.bodyStrong),
                       if (defecto) ...[
                         const SizedBox(width: 8),
@@ -365,6 +701,11 @@ class _CuentaCard extends StatelessWidget {
                                   color: theme.accentColor)),
                         ),
                       ],
+                      const SizedBox(width: 8),
+                      _AccesoChip(
+                        esPersonal: cuenta.esPersonal,
+                        usuarioNombre: cuenta.usuarioNombre,
+                      ),
                     ],
                   ),
                   if (subtitle.isNotEmpty) ...[
@@ -383,7 +724,7 @@ class _CuentaCard extends StatelessWidget {
                     message: 'Establecer como predeterminada',
                     child: IconButton(
                       icon: const Icon(FluentIcons.favorite_star, size: 16),
-                      onPressed: onSetDefecto,
+                      onPressed: widget.onSetDefecto,
                     ),
                   ),
                 Tooltip(
@@ -395,22 +736,65 @@ class _CuentaCard extends StatelessWidget {
                           : FluentIcons.toggle_left,
                       size: 16,
                     ),
-                    onPressed: onToggleActivo,
+                    onPressed: widget.onToggleActivo,
                   ),
                 ),
                 Tooltip(
                   message: 'Editar',
                   child: IconButton(
                     icon: const Icon(FluentIcons.edit, size: 16),
-                    onPressed: onEdit,
+                    onPressed: widget.onEdit,
                   ),
                 ),
+                // Menú de más opciones (solo usuarios con permiso compartida)
+                if (widget.puedeCompartida)
+                  FlyoutTarget(
+                    controller: _flyoutController,
+                    child: Tooltip(
+                      message: 'Más opciones',
+                      child: IconButton(
+                        icon: const Icon(FluentIcons.more, size: 16),
+                        onPressed: () {
+                          _flyoutController.showFlyout(
+                            builder: (_) => MenuFlyout(
+                              items: [
+                                MenuFlyoutItem(
+                                  leading: Icon(
+                                    cuenta.esPersonal
+                                        ? FluentIcons.people
+                                        : FluentIcons.contact,
+                                    size: 16,
+                                  ),
+                                  text: Text(cuenta.esPersonal
+                                      ? 'Hacer compartida'
+                                      : 'Hacer personal'),
+                                  onPressed: widget.onCambiarOwnership,
+                                ),
+                                // Gestión de roles solo para cuentas compartidas
+                                if (!cuenta.esPersonal) ...[
+                                  const MenuFlyoutSeparator(),
+                                  MenuFlyoutItem(
+                                    leading: const Icon(
+                                      FluentIcons.permissions,
+                                      size: 16,
+                                    ),
+                                    text: const Text('Acceso por rol'),
+                                    onPressed: widget.onGestionarRoles,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 Tooltip(
                   message: 'Eliminar',
                   child: IconButton(
                     icon: Icon(FluentIcons.delete, size: 16,
                         color: Colors.red),
-                    onPressed: onEliminar,
+                    onPressed: widget.onEliminar,
                   ),
                 ),
               ],
@@ -427,10 +811,17 @@ class _CuentaCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CuentaDialog extends ConsumerStatefulWidget {
-  final Map<String, dynamic>? cuenta;
+  final CuentaItem? cuenta;
   final String? tipoInicial;
+  final bool forzarPersonal;
+  final bool puedeCompartida;
 
-  const _CuentaDialog({this.cuenta, this.tipoInicial});
+  const _CuentaDialog({
+    this.cuenta,
+    this.tipoInicial,
+    this.forzarPersonal = false,
+    this.puedeCompartida = false,
+  });
 
   @override
   ConsumerState<_CuentaDialog> createState() => _CuentaDialogState();
@@ -441,6 +832,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   String _tipo = 'whatsapp';
   bool _activo = true;
   bool _esDefecto = false;
+  bool _esPersonal = false;
   bool _saving = false;
 
   // WhatsApp fields
@@ -480,16 +872,18 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   void initState() {
     super.initState();
     if (widget.tipoInicial != null) _tipo = widget.tipoInicial!;
+    if (widget.forzarPersonal) _esPersonal = true;
     if (_isEditing) _loadFromCuenta(widget.cuenta!);
   }
 
-  void _loadFromCuenta(Map<String, dynamic> c) {
-    _nombreCtrl.text = c['nombre'] as String? ?? '';
-    _tipo = c['tipo'] as String? ?? 'whatsapp';
-    _activo = c['activo'] as bool? ?? true;
-    _esDefecto = c['es_defecto'] as bool? ?? false;
+  void _loadFromCuenta(CuentaItem c) {
+    _nombreCtrl.text = c.nombre;
+    _tipo = c.tipo;
+    _activo = c.activo;
+    _esDefecto = c.esDefecto;
+    _esPersonal = c.esPersonal;
 
-    final cfg = (c['config_json'] as Map?)?.cast<String, dynamic>() ?? {};
+    final cfg = c.configJson;
     switch (_tipo) {
       case 'whatsapp':
         _waAppUidCtrl.text = cfg['app_uid'] as String? ?? '';
@@ -572,19 +966,24 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
 
     setState(() => _saving = true);
     try {
-      final payload = {
+      final uid = _esPersonal
+          ? Supabase.instance.client.auth.currentUser?.id
+          : null;
+
+      final payload = <String, dynamic>{
         'nombre': nombre,
         'tipo': _tipo,
         'activo': _activo,
         'es_defecto': _esDefecto,
         'config_json': _buildConfigJson(),
+        'usuario_id': uid,
       };
 
       if (_isEditing) {
         await Supabase.instance.client
             .from('com_cuentas')
             .update(payload)
-            .eq('id', widget.cuenta!['id'] as String);
+            .eq('id', widget.cuenta!.id);
       } else {
         await Supabase.instance.client.from('com_cuentas').insert(payload);
       }
@@ -627,6 +1026,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
     return ContentDialog(
       constraints: const BoxConstraints(maxWidth: 520),
       title: Text(_isEditing ? 'Editar cuenta' : 'Nueva cuenta'),
@@ -687,13 +1087,71 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            // ── Acceso ───────────────────────────────────────────────────────
+            if (widget.puedeCompartida) ...[
+              Text('Acceso a esta cuenta',
+                  style: theme.typography.bodyStrong),
+              const SizedBox(height: 10),
+              RadioGroup<bool>(
+                groupValue: _esPersonal,
+                onChanged: (v) =>
+                    setState(() => _esPersonal = v ?? _esPersonal),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RadioButton<bool>(
+                      value: false,
+                      content: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Icon(FluentIcons.people, size: 14,
+                                color: theme.accentColor),
+                            const SizedBox(width: 6),
+                            const Text('Compartida'),
+                          ]),
+                          Text(
+                            'Todos los usuarios de la empresa pueden usar esta cuenta',
+                            style: theme.typography.caption
+                                ?.copyWith(color: theme.inactiveColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    RadioButton<bool>(
+                      value: true,
+                      content: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Icon(FluentIcons.contact, size: 14,
+                                color:
+                                    theme.resources.textFillColorSecondary),
+                            const SizedBox(width: 6),
+                            const Text('Personal'),
+                          ]),
+                          Text(
+                            'Solo tú puedes ver y usar esta cuenta',
+                            style: theme.typography.caption
+                                ?.copyWith(color: theme.inactiveColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
       actions: [
         Button(
-          child: const Text('Cancelar'),
           onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -870,9 +1328,9 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           onChanged: (v) => setState(() => _imapSsl = v ?? true),
         ),
         const SizedBox(height: 4),
-        InfoBar(
-          title: const Text('App Password requerida'),
-          content: const Text(
+        const InfoBar(
+          title: Text('App Password requerida'),
+          content: Text(
             'Gmail y Yahoo requieren una contraseña de aplicación (App Password), '
             'no la contraseña normal de la cuenta. '
             'Genérala en: Google Account → Seguridad → Contraseñas de aplicaciones.',
@@ -913,6 +1371,178 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           obscureText: obscure,
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Diálogo de gestión de acceso por rol para una cuenta compartida
+// ---------------------------------------------------------------------------
+
+/// Muestra los roles que tienen acceso a una cuenta compartida y permite
+/// agregar o quitar roles.
+///
+/// Comportamiento:
+/// - Si la cuenta no tiene roles asignados → todos los usuarios la ven.
+/// - Al asignar uno o más roles → solo usuarios con esos roles la verán.
+class _CuentaRolesDialog extends ConsumerStatefulWidget {
+  final CuentaItem cuenta;
+
+  const _CuentaRolesDialog({required this.cuenta});
+
+  @override
+  ConsumerState<_CuentaRolesDialog> createState() => _CuentaRolesDialogState();
+}
+
+class _CuentaRolesDialogState extends ConsumerState<_CuentaRolesDialog> {
+  bool _saving = false;
+
+  Future<void> _toggleRol(
+    Map<String, dynamic> rol,
+    bool actualmente,
+    String empresaId,
+  ) async {
+    setState(() => _saving = true);
+    try {
+      if (actualmente) {
+        // Quitar rol
+        await Supabase.instance.client
+            .from('com_cuentas_roles')
+            .delete()
+            .eq('cuenta_id', widget.cuenta.id)
+            .eq('rol_id', rol['id'] as String);
+      } else {
+        // Agregar rol
+        await Supabase.instance.client.from('com_cuentas_roles').insert({
+          'cuenta_id': widget.cuenta.id,
+          'rol_id': rol['id'] as String,
+          'empresa_id': empresaId,
+        });
+      }
+      ref.invalidate(cuentaRolesProvider(widget.cuenta.id));
+    } catch (e) {
+      if (mounted) {
+        await displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al actualizar rol'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(
+                icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final rolesAsync = ref.watch(rolesEmpresaProvider);
+    final cuentaRolesAsync =
+        ref.watch(cuentaRolesProvider(widget.cuenta.id));
+    final empresaId = ref.watch(empresaActivaIdProvider) ?? '';
+
+    return ContentDialog(
+      constraints: const BoxConstraints(maxWidth: 480),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Acceso por rol — ${widget.cuenta.nombre}'),
+          const SizedBox(height: 4),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const InfoBar(
+            title: Text('Restricción de visibilidad'),
+            content: Text(
+              'Si no asignas ningún rol, la cuenta es visible para todos los usuarios. '
+              'Al asignar roles, solo los usuarios con esos roles podrán ver y usar esta cuenta.',
+            ),
+            severity: InfoBarSeverity.info,
+          ),
+          const SizedBox(height: 16),
+          Text('Roles con acceso:', style: theme.typography.bodyStrong),
+          const SizedBox(height: 8),
+          rolesAsync.when(
+            loading: () => const Center(child: ProgressRing()),
+            error: (e, _) => InfoBar(
+              title: const Text('Error cargando roles'),
+              content: Text(e.toString()),
+              severity: InfoBarSeverity.error,
+            ),
+            data: (todos) => cuentaRolesAsync.when(
+              loading: () => const Center(child: ProgressRing()),
+              error: (e, _) => InfoBar(
+                title: const Text('Error cargando roles de la cuenta'),
+                content: Text(e.toString()),
+                severity: InfoBarSeverity.error,
+              ),
+              data: (asignados) {
+                // IDs de roles actualmente asignados
+                final asignadosIds = asignados
+                    .map((r) => r['rol_id'] as String)
+                    .toSet();
+
+                if (todos.isEmpty) {
+                  return Text(
+                    'No hay roles de sistema disponibles.',
+                    style:
+                        theme.typography.body?.copyWith(color: theme.inactiveColor),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: todos.map((rol) {
+                    final rolId = rol['id'] as String;
+                    final tieneAcceso = asignadosIds.contains(rolId);
+                    final nombre = rol['nombre'] as String? ??
+                        rol['codigo'] as String? ?? '';
+                    final codigo = rol['codigo'] as String? ?? '';
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Checkbox(
+                        checked: tieneAcceso,
+                        onChanged: _saving
+                            ? null
+                            : (_) => _toggleRol(
+                                  rol,
+                                  tieneAcceso,
+                                  empresaId,
+                                ),
+                        content: Row(
+                          children: [
+                            Expanded(child: Text(nombre)),
+                            Text(
+                              codigo,
+                              style: theme.typography.caption?.copyWith(
+                                  color: theme.inactiveColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }

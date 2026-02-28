@@ -8,11 +8,26 @@ import '../../../core/theme/pilar_breakpoints.dart';
 import '../providers/chat_provider.dart';
 
 // ---------------------------------------------------------------------------
+// ChatScope — controla qué secciones se muestran en el panel de canales
+// ---------------------------------------------------------------------------
+
+/// Define qué secciones del panel de canales mostrar en [ChatTab].
+///
+/// - [empresa]: solo canales grupales (`tipo != 'directo'`), oculta DMs.
+/// - [personal]: solo mensajes directos (`tipo == 'directo'`), oculta canales.
+/// - [todos]: muestra ambas secciones (comportamiento original).
+enum ChatScope { empresa, personal, todos }
+
+// ---------------------------------------------------------------------------
 // ChatTab — chat interno entre usuarios ERP
 // ---------------------------------------------------------------------------
 
 class ChatTab extends ConsumerWidget {
-  const ChatTab({super.key});
+  /// Controla qué secciones se muestran en el panel de canales.
+  /// Ver [ChatScope] para los valores disponibles.
+  final ChatScope scope;
+
+  const ChatTab({super.key, this.scope = ChatScope.todos});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,7 +42,7 @@ class ChatTab extends ConsumerWidget {
         children: [
           SizedBox(
             width: 240,
-            child: _PanelCanales(),
+            child: _PanelCanales(scope: scope),
           ),
           const Divider(direction: Axis.vertical),
           const Expanded(child: _PanelMensajes()),
@@ -36,20 +51,45 @@ class ChatTab extends ConsumerWidget {
     }
 
     // Móvil: stack
-    return canalSel == null ? _PanelCanales() : _PanelMensajesMovil();
+    return canalSel == null
+        ? _PanelCanales(scope: scope)
+        : _PanelMensajesMovil();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Panel Canales (izquierdo)
+// Panel Canales (izquierdo) — secciones: Canales de empresa + Mensajes directos
 // ---------------------------------------------------------------------------
 
-class _PanelCanales extends ConsumerWidget {
+class _PanelCanales extends ConsumerStatefulWidget {
+  final ChatScope scope;
+
+  const _PanelCanales({this.scope = ChatScope.todos});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PanelCanales> createState() => _PanelCanalesState();
+}
+
+class _PanelCanalesState extends ConsumerState<_PanelCanales> {
+  bool _canalesExpandido = true;
+  bool _directosExpandido = true;
+
+  @override
+  Widget build(BuildContext context) {
     final canalesAsync = ref.watch(chatCanalesProvider);
-    final canalSel = ref.watch(canalSeleccionadoProvider);
     final theme = FluentTheme.of(context);
+    final scope = widget.scope;
+
+    // Determinar etiqueta del header y tooltip según scope
+    final headerLabel = switch (scope) {
+      ChatScope.empresa => 'Canales',
+      ChatScope.personal => 'Mis DMs',
+      ChatScope.todos => 'Chat interno',
+    };
+    final tooltipLabel = switch (scope) {
+      ChatScope.empresa => 'Nuevo canal',
+      ChatScope.personal || ChatScope.todos => 'Nuevo mensaje directo',
+    };
 
     return Column(
       children: [
@@ -58,17 +98,20 @@ class _PanelCanales extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              Text('Chat', style: theme.typography.subtitle),
+              Text(headerLabel, style: theme.typography.subtitle),
               const Spacer(),
-              IconButton(
-                icon: const Icon(FluentIcons.add),
-                onPressed: () => _mostrarNuevoCanal(context, ref),
+              Tooltip(
+                message: tooltipLabel,
+                child: IconButton(
+                  icon: const Icon(FluentIcons.add, size: 16),
+                  onPressed: () => _mostrarNuevoCanal(context),
+                ),
               ),
             ],
           ),
         ),
         const Divider(),
-        // Lista de canales
+        // Contenido
         Expanded(
           child: canalesAsync.when(
             loading: () => const Center(child: ProgressRing()),
@@ -80,60 +123,80 @@ class _PanelCanales extends ConsumerWidget {
               ),
             ),
             data: (canales) {
-              if (canales.isEmpty) {
+              final grupos = canales
+                  .where((c) => (c['tipo'] as String? ?? 'group') != 'directo')
+                  .toList();
+              final directos = canales
+                  .where((c) => (c['tipo'] as String? ?? 'group') == 'directo')
+                  .toList();
+
+              // Mostrar vacío según scope
+              final hayContenido = switch (scope) {
+                ChatScope.empresa => grupos.isNotEmpty,
+                ChatScope.personal => directos.isNotEmpty,
+                ChatScope.todos => canales.isNotEmpty,
+              };
+
+              if (!hayContenido) {
                 return Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(FluentIcons.people, size: 40),
+                      Icon(
+                        scope == ChatScope.personal
+                            ? FluentIcons.contact
+                            : FluentIcons.people,
+                        size: 40,
+                      ),
                       const SizedBox(height: 8),
-                      Text('Sin canales', style: theme.typography.body),
+                      Text(
+                        scope == ChatScope.personal
+                            ? 'Sin mensajes directos'
+                            : 'Sin canales',
+                        style: theme.typography.body,
+                      ),
                     ],
                   ),
                 );
               }
-              return ListView.builder(
-                itemCount: canales.length,
-                itemBuilder: (ctx, i) {
-                  final c = canales[i];
-                  final id = c['canal_id'] as String? ?? '';
-                  final nombre = c['nombre'] as String? ?? 'Canal';
-                  final tipo = c['tipo'] as String? ?? 'group';
-                  final noLeidos = c['no_leidos'] as int? ?? 0;
-                  final seleccionado = canalSel == id;
 
-                  return ListTile.selectable(
-                    selected: seleccionado,
-                    onSelectionChange: (_) async {
-                      ref.read(canalSeleccionadoProvider.notifier).state = id;
-                      // Marcar leído
-                      final usuarioId = ref.read(usuarioActualProvider)?.id;
-                      if (usuarioId != null) {
-                        await Supabase.instance.client.rpc(
-                          'mark_messages_read',
-                          params: {'canal_id': id, 'usuario_id': usuarioId},
-                        );
-                        ref.invalidate(chatCanalesProvider);
-                      }
-                    },
-                    leading: Icon(
-                      tipo == 'directo'
-                          ? FluentIcons.contact
-                          : FluentIcons.people,
-                      size: 18,
+              return ListView(
+                children: [
+                  // ---- Sección: Canales de empresa (ocultar en scope personal) ----
+                  if (scope != ChatScope.personal) ...[
+                    _SeccionHeader(
+                      label: 'Canales',
+                      expandido: _canalesExpandido,
+                      onTap: () => setState(
+                          () => _canalesExpandido = !_canalesExpandido),
                     ),
-                    title: Text(
-                      nombre,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.typography.body,
+                    if (_canalesExpandido)
+                      ...grupos.map((c) => _CanalTile(canal: c)),
+                    const SizedBox(height: 4),
+                  ],
+
+                  // ---- Sección: Mensajes directos (ocultar en scope empresa) ----
+                  if (scope != ChatScope.empresa) ...[
+                    _SeccionHeader(
+                      label: 'Mensajes directos',
+                      expandido: _directosExpandido,
+                      onTap: () => setState(
+                          () => _directosExpandido = !_directosExpandido),
                     ),
-                    trailing: noLeidos > 0
-                        ? InfoBadge(
-                            source: Text('$noLeidos'),
-                          )
-                        : null,
-                  );
-                },
+                    if (_directosExpandido)
+                      ...directos.map((c) => _CanalTile(canal: c)),
+                    if (_directosExpandido && directos.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 6),
+                        child: Text(
+                          'Sin mensajes directos',
+                          style: theme.typography.caption?.copyWith(
+                              color: theme.inactiveColor),
+                        ),
+                      ),
+                  ],
+                ],
               );
             },
           ),
@@ -142,12 +205,11 @@ class _PanelCanales extends ConsumerWidget {
     );
   }
 
-  void _mostrarNuevoCanal(BuildContext context, WidgetRef ref) {
-    // Placeholder — crear nuevo canal DM/grupo (próxima iteración)
+  void _mostrarNuevoCanal(BuildContext context) {
     showDialog<void>(
       context: context,
       builder: (ctx) => ContentDialog(
-        title: const Text('Nuevo canal / Mensaje directo'),
+        title: const Text('Nuevo mensaje directo'),
         content: const Text(
           'Funcionalidad disponible en la próxima versión.',
         ),
@@ -158,6 +220,101 @@ class _PanelCanales extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Header de sección colapsable
+// ---------------------------------------------------------------------------
+
+class _SeccionHeader extends StatelessWidget {
+  final String label;
+  final bool expandido;
+  final VoidCallback onTap;
+
+  const _SeccionHeader({
+    required this.label,
+    required this.expandido,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              expandido
+                  ? FluentIcons.chevron_down_small
+                  : FluentIcons.chevron_right_small,
+              size: 12,
+              color: theme.inactiveColor,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label.toUpperCase(),
+              style: theme.typography.caption?.copyWith(
+                color: theme.inactiveColor,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tile de un canal (grupo o directo)
+// ---------------------------------------------------------------------------
+
+class _CanalTile extends ConsumerWidget {
+  final Map<String, dynamic> canal;
+
+  const _CanalTile({required this.canal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = canal['canal_id'] as String? ?? '';
+    final nombre = canal['nombre'] as String? ?? 'Canal';
+    final tipo = canal['tipo'] as String? ?? 'group';
+    final noLeidos = canal['no_leidos'] as int? ?? 0;
+    final canalSel = ref.watch(canalSeleccionadoProvider);
+    final seleccionado = canalSel == id;
+    final theme = FluentTheme.of(context);
+
+    return ListTile.selectable(
+      selected: seleccionado,
+      onSelectionChange: (_) async {
+        ref.read(canalSeleccionadoProvider.notifier).state = id;
+        final usuarioId = ref.read(usuarioActualProvider)?.id;
+        if (usuarioId != null) {
+          await Supabase.instance.client.rpc(
+            'mark_messages_read',
+            params: {'canal_id': id, 'usuario_id': usuarioId},
+          );
+          ref.invalidate(chatCanalesProvider);
+        }
+      },
+      leading: Icon(
+        tipo == 'directo' ? FluentIcons.contact : FluentIcons.people,
+        size: 16,
+      ),
+      title: Text(
+        tipo == 'group' ? '# $nombre' : nombre,
+        overflow: TextOverflow.ellipsis,
+        style: theme.typography.body,
+      ),
+      trailing: noLeidos > 0
+          ? InfoBadge(source: Text('$noLeidos'))
+          : null,
     );
   }
 }
@@ -233,20 +390,34 @@ class _CanalMensajesView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mensajesAsync = ref.watch(chatMensajesProvider(canalId));
     final presencia = ref.watch(presenciaProvider);
+    final theme = FluentTheme.of(context);
+
+    // Obtener nombre y tipo del canal desde el provider cacheado
+    final canalesAsync = ref.watch(chatCanalesProvider);
+    final canalInfo = canalesAsync.valueOrNull?.firstWhere(
+      (c) => c['canal_id'] == canalId,
+      orElse: () => const {},
+    );
+    final nombre = canalInfo?['nombre'] as String? ?? 'Canal';
+    final tipo = canalInfo?['tipo'] as String? ?? 'group';
+    final esDirecto = tipo == 'directo';
 
     return Column(
       children: [
         // ---- Header canal ----
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: FluentTheme.of(context).micaBackgroundColor,
+          color: theme.micaBackgroundColor,
           child: Row(
             children: [
-              const Icon(FluentIcons.people),
+              Icon(
+                esDirecto ? FluentIcons.contact : FluentIcons.people,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Text(
-                'Canal',
-                style: FluentTheme.of(context).typography.bodyStrong,
+                esDirecto ? nombre : '# $nombre',
+                style: theme.typography.bodyStrong,
               ),
               const Spacer(),
               // Indicador de presencia: "N online"
@@ -264,9 +435,7 @@ class _CanalMensajesView extends ConsumerWidget {
                     const SizedBox(width: 4),
                     Text(
                       '${presencia.length} online',
-                      style: FluentTheme.of(context)
-                          .typography
-                          .caption
+                      style: theme.typography.caption
                           ?.copyWith(color: Colors.successPrimaryColor),
                     ),
                   ],

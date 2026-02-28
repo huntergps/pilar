@@ -40,13 +40,15 @@ class ConversacionesNotifier
       _channel = null;
     });
 
-    final rows = await Supabase.instance.client
-        .from('com_conversaciones')
-        .select()
-        .eq('empresa_id', empresaId)
-        .order('ultimo_mensaje_en', ascending: false);
+    // Usa la RPC que filtra por cuentas accesibles para el usuario actual
+    // (respeta la tabla com_cuentas_roles — si una cuenta tiene roles asignados,
+    // solo es visible para usuarios con esos roles).
+    final rows = await Supabase.instance.client.rpc(
+      'com_get_conversaciones',
+      params: {'p_activas': true, 'p_limit': 100, 'p_offset': 0},
+    ) as List;
 
-    return (rows as List)
+    return rows
         .map((r) => ComConversacion.fromJson(r as Map<String, dynamic>))
         .toList();
   }

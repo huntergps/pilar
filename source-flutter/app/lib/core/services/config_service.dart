@@ -37,6 +37,9 @@ abstract final class ConfigKeys {
   // accentColor es por empresa: clave = 'cfg_accent_color_${empresaId}'
   // La clave legacy 'cfg_accent_color' (sin prefijo) se ignora.
   static const String accentColorPrefix = 'cfg_accent_color_';
+  // Color primario de empresa cacheado para evitar flash al iniciar.
+  // Clave: 'cfg_empresa_color_${empresaId}' (ARGB int)
+  static const String empresaColorPrefix = 'cfg_empresa_color_';
   // Timestamp del último force de color que este dispositivo ha aplicado.
   // Clave: 'cfg_color_forzado_ack_${empresaId}' (ISO 8601)
   static const String colorForzadoAckPrefix = 'cfg_color_forzado_ack_';
@@ -92,6 +95,9 @@ class ConfigService extends Notifier<AppConfigModel> {
 
   String get _accentKey =>
       _empresaId != null ? '${ConfigKeys.accentColorPrefix}$_empresaId' : '';
+
+  String get _empresaColorKey =>
+      _empresaId != null ? '${ConfigKeys.empresaColorPrefix}$_empresaId' : '';
 
   AccentColor? _accentFromPrefs(SharedPreferences prefs) {
     final key = _accentKey;
@@ -181,6 +187,22 @@ class ConfigService extends Notifier<AppConfigModel> {
     final prefs = await _getPrefs();
     final accentColor = _accentFromPrefs(prefs);
     state = state.copyWith(accentColor: accentColor);
+  }
+
+  /// Persiste el color primario de la empresa para que el próximo inicio de la
+  /// app pueda usarlo sin esperar a Supabase, eliminando el flash de color.
+  ///
+  /// Llamar desde pilar_shell.dart cada vez que [empresaColorProvider] se
+  /// actualiza con el valor real de la empresa. Pasa [null] para borrar.
+  Future<void> cacheEmpresaColor(Color? color) async {
+    final key = _empresaColorKey;
+    if (key.isEmpty) return;
+    final prefs = await _getPrefs();
+    if (color == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setInt(key, color.toARGB32());
+    }
   }
 
   /// Comprueba si el admin ha forzado un color más reciente que el ack local.

@@ -1,0 +1,82 @@
+# =============================================================================
+# PILAR ERP — Build Flutter Web + Deploy a GitHub Pages
+#
+# Se ejecuta automáticamente al hacer push a main cuando hay cambios en
+# source-flutter/ o en este mismo workflow.
+#
+# URL pública: https://huntergps.github.io/pilar/
+#
+# Requisito único: en GitHub → Settings → Pages → Source → "GitHub Actions"
+# =============================================================================
+
+name: Flutter Web → GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source-flutter/**'
+      - '.github/workflows/deploy-flutter-web.yml'
+
+  # Permite ejecutar manualmente desde GitHub Actions UI
+  workflow_dispatch:
+
+# Permisos necesarios para desplegar en GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Solo un deploy a la vez; cancela el anterior si hay uno en curso
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────────
+  build:
+    name: Build Flutter Web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: source-flutter/app
+        run: flutter pub get
+
+      - name: Build web (release)
+        working-directory: source-flutter/app
+        run: |
+          flutter build web \
+            --release \
+            --base-href /pilar/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: source-flutter/app/build/web
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

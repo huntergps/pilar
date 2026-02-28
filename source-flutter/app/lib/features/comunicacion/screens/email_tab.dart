@@ -59,7 +59,11 @@ Widget _vertDiv(BuildContext context) => Container(
 // ============================================================================
 
 class EmailTab extends ConsumerStatefulWidget {
-  const EmailTab({super.key});
+  /// Cuando `true` muestra el email de empresa (cuentas con `usuario_id IS NULL`).
+  /// Cuando `false` muestra el email personal del usuario actual.
+  final bool esEmpresa;
+
+  const EmailTab({super.key, this.esEmpresa = true});
 
   @override
   ConsumerState<EmailTab> createState() => _EmailTabState();
@@ -86,9 +90,13 @@ class _EmailTabState extends ConsumerState<EmailTab> {
           return _EmailDesktopLayout(
             isLarge: w >= 1200,
             onCompose: _openCompose,
+            esEmpresa: widget.esEmpresa,
           );
         }
-        return _EmailMobileLayout(onCompose: _openCompose);
+        return _EmailMobileLayout(
+          onCompose: _openCompose,
+          esEmpresa: widget.esEmpresa,
+        );
       },
     );
   }
@@ -101,8 +109,13 @@ class _EmailTabState extends ConsumerState<EmailTab> {
 class _EmailDesktopLayout extends ConsumerWidget {
   final bool isLarge;
   final void Function({EmailThread? replyTo}) onCompose;
+  final bool esEmpresa;
 
-  const _EmailDesktopLayout({required this.isLarge, required this.onCompose});
+  const _EmailDesktopLayout({
+    required this.isLarge,
+    required this.onCompose,
+    this.esEmpresa = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -114,7 +127,10 @@ class _EmailDesktopLayout extends ConsumerWidget {
         // ── Sidebar (carpetas) ──────────────────────────────────────────────
         SizedBox(
           width: 200,
-          child: _EmailSidebar(onCompose: () => onCompose()),
+          child: _EmailSidebar(
+            onCompose: () => onCompose(),
+            esEmpresa: esEmpresa,
+          ),
         ),
         _vertDiv(context),
 
@@ -154,8 +170,9 @@ enum _EmailView { lista, lector }
 
 class _EmailMobileLayout extends ConsumerStatefulWidget {
   final void Function({EmailThread? replyTo}) onCompose;
+  final bool esEmpresa;
 
-  const _EmailMobileLayout({required this.onCompose});
+  const _EmailMobileLayout({required this.onCompose, this.esEmpresa = true});
 
   @override
   ConsumerState<_EmailMobileLayout> createState() => _EmailMobileLayoutState();
@@ -250,8 +267,9 @@ class _EmailMobileLayoutState extends ConsumerState<_EmailMobileLayout> {
 
 class _EmailSidebar extends ConsumerWidget {
   final VoidCallback onCompose;
+  final bool esEmpresa;
 
-  const _EmailSidebar({required this.onCompose});
+  const _EmailSidebar({required this.onCompose, this.esEmpresa = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -262,6 +280,27 @@ class _EmailSidebar extends ConsumerWidget {
       color: theme.resources.layerFillColorDefault,
       child: Column(
         children: [
+          // ---- Encabezado de scope ----
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Row(
+              children: [
+                Icon(
+                  esEmpresa ? FluentIcons.company_directory : FluentIcons.contact,
+                  size: 14,
+                  color: theme.inactiveColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  esEmpresa ? 'Email empresa' : 'Mi Email',
+                  style: theme.typography.caption?.copyWith(
+                    color: theme.inactiveColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
           // Botón Redactar
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),

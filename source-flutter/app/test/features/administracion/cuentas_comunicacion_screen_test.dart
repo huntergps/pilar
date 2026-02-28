@@ -92,14 +92,14 @@ List<Map<String, dynamic>> _fakeCuentas() => [
 Override _cuentasOverride(AsyncValue<List<Map<String, dynamic>>> value) =>
     comCuentasProvider.overrideWith((_) async {
       if (value is AsyncData<List<Map<String, dynamic>>>) {
-        return value.value;
+        return value.value.map(CuentaItem.fromMap).toList();
       }
       if (value is AsyncError<List<Map<String, dynamic>>>) {
         throw value.error;
       }
       // loading: bloquear indefinidamente
       await Future<void>.delayed(const Duration(hours: 1));
-      return <Map<String, dynamic>>[];
+      return <CuentaItem>[];
     });
 
 Widget _buildScreen(AsyncValue<List<Map<String, dynamic>>> value) {
@@ -141,7 +141,7 @@ void main() {
   group('CuentasComunicacionScreen — estado de carga', () {
     testWidgets('muestra ProgressRing mientras carga', (tester) async {
       // Completer que nunca se completa → no deja timers pendientes
-      final completer = Completer<List<Map<String, dynamic>>>();
+      final completer = Completer<List<CuentaItem>>();
       final app = ProviderScope(
         overrides: [
           ...baseOverrides(),

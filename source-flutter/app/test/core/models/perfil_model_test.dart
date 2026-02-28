@@ -77,7 +77,7 @@ void main() {
 
   group('PerfilUsuario.displayName', () {
     test('retorna nombreDisplay cuando está definido (máxima prioridad)', () {
-      final p = PerfilUsuario(
+      const p = PerfilUsuario(
         usuarioId: 'u-001',
         empresaId: 'e-001',
         emailLogin: 'login@test.com',
@@ -89,7 +89,7 @@ void main() {
     });
 
     test('retorna nombreGlobal cuando no hay nombreDisplay', () {
-      final p = PerfilUsuario(
+      const p = PerfilUsuario(
         usuarioId: 'u-001',
         empresaId: 'e-001',
         emailLogin: 'login@test.com',
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('retorna emailLogin como fallback final', () {
-      final p = PerfilUsuario(
+      const p = PerfilUsuario(
         usuarioId: 'u-001',
         empresaId: 'e-001',
         emailLogin: 'login@test.com',
@@ -116,7 +116,7 @@ void main() {
 
   group('PerfilUsuario.initial', () {
     test('retorna la inicial en mayúscula del displayName', () {
-      final p = PerfilUsuario(
+      const p = PerfilUsuario(
         usuarioId: 'u-001',
         empresaId: 'e-001',
         emailLogin: 'j@test.com',
@@ -127,7 +127,7 @@ void main() {
     });
 
     test('retorna ? cuando displayName está vacío', () {
-      final p = PerfilUsuario(
+      const p = PerfilUsuario(
         usuarioId: 'u-001',
         empresaId: 'e-001',
         emailLogin: '',
@@ -142,7 +142,7 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('PerfilUsuario.copyWith', () {
-    final base = PerfilUsuario(
+    const base = PerfilUsuario(
       usuarioId: 'u-001',
       empresaId: 'e-001',
       emailLogin: 'base@test.com',

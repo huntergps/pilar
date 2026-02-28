@@ -296,7 +296,11 @@ class _UserMenuFlyout extends ConsumerWidget {
       if (context.mounted) {
         showDialog<void>(
           context: context,
-          builder: (_) => const PerfilDialog(),
+          builder: (_) => PerfilDialog(
+            onVerPerfilCompleto: () {
+              if (context.mounted) context.go(PilarRoutes.perfil);
+            },
+          ),
         );
       }
     }

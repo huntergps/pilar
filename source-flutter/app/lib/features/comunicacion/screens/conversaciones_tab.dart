@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
+import '../../../core/widgets/chatter_vincular_dialog.dart';
 import '../models/com_conversacion.dart';
 import '../models/com_mensaje.dart';
 import '../providers/conversaciones_provider.dart';
@@ -43,7 +46,12 @@ String _relativo(DateTime? dt) {
 // ---------------------------------------------------------------------------
 
 class ConversacionesTab extends ConsumerWidget {
-  const ConversacionesTab({super.key});
+  /// Cuando `true` muestra conversaciones de cuentas de empresa
+  /// (`usuario_id IS NULL`). Cuando `false` muestra las del usuario actual
+  /// (`usuario_id = current_user`).
+  final bool esEmpresa;
+
+  const ConversacionesTab({super.key, this.esEmpresa = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -56,7 +64,7 @@ class ConversacionesTab extends ConsumerWidget {
         children: [
           SizedBox(
             width: 300,
-            child: _PanelLista(),
+            child: _PanelLista(esEmpresa: esEmpresa),
           ),
           const Divider(direction: Axis.vertical),
           const Expanded(child: _PanelDetalle()),
@@ -66,7 +74,7 @@ class ConversacionesTab extends ConsumerWidget {
 
     // Móvil/tablet: stack de páginas
     if (convSeleccionada == null) {
-      return _PanelLista();
+      return _PanelLista(esEmpresa: esEmpresa);
     }
     return _PanelDetalleMovil();
   }
@@ -77,13 +85,39 @@ class ConversacionesTab extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _PanelLista extends ConsumerWidget {
+  final bool esEmpresa;
+
+  const _PanelLista({required this.esEmpresa});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final conversaciones = ref.watch(conversacionesFiltradas);
     final canal = ref.watch(convFiltroCanal);
+    final theme = FluentTheme.of(context);
 
     return Column(
       children: [
+        // ---- Encabezado de scope ----
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                esEmpresa ? FluentIcons.company_directory : FluentIcons.contact,
+                size: 16,
+                color: theme.inactiveColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                esEmpresa ? 'Mensajes de empresa' : 'Mis mensajes',
+                style: theme.typography.caption?.copyWith(
+                  color: theme.inactiveColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
         // ---- Filtros de canal ----
         _FiltroCanal(canalActivo: canal),
 
@@ -321,16 +355,71 @@ class _PanelDetalleMovil extends ConsumerWidget {
 // ThreadView — header + mensajes + input
 // ---------------------------------------------------------------------------
 
-class _ThreadView extends ConsumerWidget {
+class _ThreadView extends ConsumerStatefulWidget {
   final ComConversacion conv;
 
   const _ThreadView({required this.conv});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mensajesAsync = ref.watch(mensajesProvider(conv.id));
-    final meta = _canalMeta(conv.canal);
+  ConsumerState<_ThreadView> createState() => _ThreadViewState();
+}
+
+class _ThreadViewState extends ConsumerState<_ThreadView> {
+  bool _desvinculando = false;
+
+  Future<void> _mostrarDialogVincular() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ChatterVincularDialog(
+        conversacionId: widget.conv.id,
+        onVincular: (entidadTipo, entidadId) {
+          ref.invalidate(conversacionesProvider);
+        },
+      ),
+    );
+  }
+
+  Future<void> _desvincularConversacion() async {
+    setState(() => _desvinculando = true);
+    try {
+      await Supabase.instance.client.rpc('com_desvincular_conversacion',
+          params: {'p_conversacion_id': widget.conv.id});
+      if (mounted) {
+        ref.invalidate(conversacionesProvider);
+        await displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Conversación desvinculada'),
+            severity: InfoBarSeverity.success,
+            action: IconButton(
+                icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        await displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al desvincular'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(
+                icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _desvinculando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mensajesAsync = ref.watch(mensajesProvider(widget.conv.id));
+    final meta = _canalMeta(widget.conv.canal);
     final theme = FluentTheme.of(context);
+    final conv = widget.conv;
 
     return Column(
       children: [
@@ -358,10 +447,43 @@ class _ThreadView extends ConsumerWidget {
                   ],
                 ),
               ),
+              // Botón vincular / desvincular
+              if (_desvinculando)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: ProgressRing(strokeWidth: 2),
+                )
+              else if (conv.entidadId == null)
+                Button(
+                  onPressed: _mostrarDialogVincular,
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(FluentIcons.link, size: 14),
+                      SizedBox(width: 6),
+                      Text('Vincular a registro'),
+                    ],
+                  ),
+                )
+              else
+                Button(
+                  onPressed: _desvincularConversacion,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(FluentIcons.remove_link, size: 14),
+                      const SizedBox(width: 6),
+                      Text('Vinculada a ${conv.entidadTipo ?? ''}'),
+                    ],
+                  ),
+                ),
+              const SizedBox(width: 6),
               // Botón refrescar
               IconButton(
                 icon: const Icon(FluentIcons.refresh),
-                onPressed: () => ref.invalidate(mensajesProvider(conv.id)),
+                onPressed: () =>
+                    ref.invalidate(mensajesProvider(conv.id)),
               ),
             ],
           ),
