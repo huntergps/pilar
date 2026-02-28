@@ -12,8 +12,7 @@ dependencies:
     sdk: flutter
 
   # === Paquetes locales PILAR ===
-  fluent_ui:
-    path: ../paquetes/fluent_ui
+  fluent_ui: ^4.14.0
   fluent_ui_reactive:
     path: ../paquetes/fluent_ui_reactive
   supabase_auth_ui_fluent:
