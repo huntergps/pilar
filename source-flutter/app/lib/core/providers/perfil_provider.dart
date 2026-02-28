@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../offline/connectivity_service.dart';
+import 'auth_provider.dart';
 import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -84,14 +85,24 @@ class PerfilUsuario {
 class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
   @override
   Future<PerfilUsuario?> build() async {
-    final session = Supabase.instance.client.auth.currentSession;
+    // Observar la sesión activa: cuando el token cambie (refresh automático,
+    // switchEmpresa, sign-in), Riverpod reconstruye este provider y reintenta
+    // la carga con el JWT actualizado. Esto elimina la condición de carrera
+    // donde build() capturaba un JWT transitorio sin empresa_id.
+    final session = ref.watch(sessionProvider);
     if (session == null) return null;
 
     // Web: RPC directa, sin cache local
     if (kIsWeb) {
       final data = await Supabase.instance.client.rpc('get_mi_perfil');
-      if (data == null || (data as Map).isEmpty) return null;
-      return PerfilUsuario.fromJson(Map<String, dynamic>.from(data));
+      if (data != null && (data as Map).isNotEmpty) {
+        return PerfilUsuario.fromJson(Map<String, dynamic>.from(data));
+      }
+      // get_mi_perfil retornó {} → empresa_id aún no está en el JWT de esta
+      // petición (ej.: el hook aún no corrió para este refresh de token).
+      // Al próximo cambio de sesión, sessionProvider cambiará y este provider
+      // se reconstruirá automáticamente con el JWT correcto.
+      return null;
     }
 
     // Native: local-first + background refresh

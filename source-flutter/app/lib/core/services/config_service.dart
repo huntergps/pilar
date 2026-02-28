@@ -33,11 +33,32 @@ PaneDisplayMode _paneDisplayModeFromKey(int key) => switch (key) {
 // ---------------------------------------------------------------------------
 
 abstract final class ConfigKeys {
+  // ---------------------------------------------------------------------------
+  // Claves de inicio rápido — se leen en main() ANTES del primer runApp().
+  // No requieren Supabase inicializado. Se escriben cada vez que cambia el valor.
+  // ---------------------------------------------------------------------------
+
+  /// ThemeMode del usuario (índice de ThemeMode.values).
+  /// Escrito por ConfigService.setThemeMode / saveAll.
   static const String themeMode        = 'cfg_theme_mode';
+
+  /// ID de la última empresa activa. Permite verificar que el color
+  /// cacheado corresponde a la empresa actual.
+  static const String lastEmpresaId    = 'cfg_last_empresa_id';
+
+  /// Color primario de la última empresa activa (ARGB int).
+  /// Escrito por cacheEmpresaColor cada vez que el color cambia
+  /// (arranque, Realtime update, cambio manual del admin).
+  static const String lastEmpresaColor = 'cfg_last_empresa_color';
+
+  // ---------------------------------------------------------------------------
+  // Claves por empresa (requieren empresa_id)
+  // ---------------------------------------------------------------------------
+
   // accentColor es por empresa: clave = 'cfg_accent_color_${empresaId}'
   // La clave legacy 'cfg_accent_color' (sin prefijo) se ignora.
   static const String accentColorPrefix = 'cfg_accent_color_';
-  // Color primario de empresa cacheado para evitar flash al iniciar.
+  // Color primario de empresa cacheado (respaldo por-empresa).
   // Clave: 'cfg_empresa_color_${empresaId}' (ARGB int)
   static const String empresaColorPrefix = 'cfg_empresa_color_';
   // Timestamp del último force de color que este dispositivo ha aplicado.
@@ -194,14 +215,29 @@ class ConfigService extends Notifier<AppConfigModel> {
   ///
   /// Llamar desde pilar_shell.dart cada vez que [empresaColorProvider] se
   /// actualiza con el valor real de la empresa. Pasa [null] para borrar.
+  /// Persiste el color de empresa activa en SharedPreferences.
+  ///
+  /// Escribe tres claves atómicamente:
+  /// - Por empresa (`cfg_empresa_color_$id`) — respaldo granular.
+  /// - Fija (`cfg_last_empresa_color`) — leída en main() antes de Supabase.
+  /// - Empresa id (`cfg_last_empresa_id`) — permite verificar coherencia al arrancar.
+  ///
+  /// Llamar desde pilar_shell.dart cada vez que el color cambie: arranque,
+  /// Realtime update del admin o cambio manual.
   Future<void> cacheEmpresaColor(Color? color) async {
     final key = _empresaColorKey;
     if (key.isEmpty) return;
     final prefs = await _getPrefs();
     if (color == null) {
       await prefs.remove(key);
+      await prefs.remove(ConfigKeys.lastEmpresaColor);
+      // lastEmpresaId se mantiene: la empresa sigue activa, solo sin color.
     } else {
       await prefs.setInt(key, color.toARGB32());
+      await prefs.setInt(ConfigKeys.lastEmpresaColor, color.toARGB32());
+      if (_empresaId != null) {
+        await prefs.setString(ConfigKeys.lastEmpresaId, _empresaId!);
+      }
     }
   }
 

@@ -45,13 +45,10 @@ class SplashScreen extends StatelessWidget {
                 vertical: 48,
               ),
               child: isDesktop
-                  ? Card(
-                      padding: const EdgeInsets.all(32),
-                      child: _SplashContent(
+                  ? _SplashContent(
                         theme: theme,
                         status: status,
                         progress: progress,
-                      ),
                     )
                   : _SplashContent(
                       theme: theme,

@@ -325,6 +325,11 @@ class _PilarShellState extends ConsumerState<PilarShell>
       final empresa = next.valueOrNull;
       if (empresa == null) return;
 
+      // El emit local (Brick/SQLite) usa empresas.color_primario que puede diferir
+      // del color real en configuracion_empresa. Solo el emit remoto (Supabase RPC)
+      // es autoritativo para el color de acento — evita el flash azul en cada inicio.
+      if (!empresa.isFromRemote) return;
+
       // Si el admin forzó el color después del último ack de este dispositivo,
       // descartar el override personal del usuario.
       final configSvc = ref.read(appConfigProvider.notifier);
@@ -344,7 +349,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
       if (value != null) {
         final color = Color(value);
         ref.read(empresaColorProvider.notifier).state = color;
-        // Cachea el color en SharedPreferences para elimininar el flash azul
+        // Cachea el color en SharedPreferences para eliminar el flash azul
         // en el próximo inicio: main.dart lo lee antes del primer frame.
         unawaited(ref.read(appConfigProvider.notifier).cacheEmpresaColor(color));
       }

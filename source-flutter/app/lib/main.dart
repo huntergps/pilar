@@ -4,6 +4,7 @@ import 'package:brick_gen/brick_gen.dart';
 import 'package:brick_offline_first_with_supabase/brick_offline_first_with_supabase.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -19,13 +20,9 @@ import 'core/services/window_service.dart';
 import 'features/splash/screens/splash_screen.dart';
 
 // ---------------------------------------------------------------------------
-// Splash state notifier
+// Splash state
 // ---------------------------------------------------------------------------
 
-/// Estado compartido entre [main] y [_SplashApp].
-///
-/// [main] llama a [report] en cada paso de inicialización para actualizar
-/// el texto y la barra de progreso de la pantalla splash.
 class _SplashState extends ChangeNotifier {
   String step = 'Iniciando…';
   double progress = 0.0;
@@ -38,38 +35,74 @@ class _SplashState extends ChangeNotifier {
 }
 
 // ---------------------------------------------------------------------------
-// Splash app (reemplazada por PilarApp al terminar la inicialización)
+// Helper — ejecuta un paso con tiempo mínimo de visualización
 // ---------------------------------------------------------------------------
 
-/// [FluentApp] mínimo que solo renderiza [SplashScreen].
+/// Muestra [msg] en el splash, espera a que el frame se renderice,
+/// ejecuta [op] y garantiza que el mensaje sea visible al menos [minMs] ms.
 ///
-/// Se muestra mientras [main] completa la inicialización asíncrona.
-/// Es reemplazado por un segundo [runApp] con el [PilarApp] real.
-///
-/// - Detecta modo claro/oscuro del SO en el primer frame via
-///   [ThemeMode.system] + ambos [theme]/[darkTheme] configurados.
-/// - El accent color usa [SystemTheme.accentColor.accent]; antes de que
-///   [load()] termine devuelve el color del sistema operativo directamente
-///   (azul Windows / azul macOS por defecto). Se actualiza automáticamente
-///   al notificar el siguiente paso.
+/// - Si [op] tarda más que [minMs] → sin pausa extra.
+/// - Si [op] es muy rápida (< 16ms) → al menos un frame se renderiza +
+///   se espera el tiempo restante hasta completar [minMs].
+Future<T> _step<T>(
+  _SplashState splash,
+  String msg,
+  double p,
+  Future<T> Function() op, {
+  int minMs = 220,
+}) async {
+  splash.report(msg, p);
+
+  // Espera a que el frame con el nuevo mensaje se pinte en pantalla.
+  // Sin esto, operaciones de < 16ms nunca renderizan su mensaje.
+  await SchedulerBinding.instance.endOfFrame;
+
+  final sw = Stopwatch()..start();
+  final result = await op();
+  sw.stop();
+
+  // Completar el tiempo mínimo de visualización si la operación fue rápida.
+  final remaining = minMs - sw.elapsedMilliseconds;
+  if (remaining > 0) {
+    await Future.delayed(Duration(milliseconds: remaining));
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Splash app
+// ---------------------------------------------------------------------------
+
 class _SplashApp extends StatelessWidget {
   final _SplashState state;
 
-  const _SplashApp({required this.state});
+  /// Color de empresa leído desde SharedPreferences antes de este primer
+  /// runApp. Si es null, se usa el color de acento del sistema operativo.
+  final Color? initialColor;
+
+  /// Tema leído desde SharedPreferences antes del primer runApp.
+  /// Garantiza que el splash respeta dark/light del usuario desde el frame 1.
+  final ThemeMode initialThemeMode;
+
+  const _SplashApp({
+    required this.state,
+    required this.initialThemeMode,
+    this.initialColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: state,
       builder: (_, __) {
-        final accent = SystemTheme.accentColor.accent.toAccentColor();
+        final accent = initialColor != null
+            ? initialColor!.toAccentColor()
+            : SystemTheme.accentColor.accent.toAccentColor();
 
         return FluentApp(
           debugShowCheckedModeBanner: false,
-          // ThemeMode.system → usa theme (light) o darkTheme (dark) según el SO.
-          // El OS preference es detectado sincrónicamente por Flutter en el
-          // primer frame — sin necesidad de SharedPreferences.
-          themeMode: ThemeMode.system,
+          themeMode: initialThemeMode,
           theme: FluentThemeData(
             brightness: Brightness.light,
             accentColor: accent,
@@ -95,85 +128,128 @@ class _SplashApp extends StatelessWidget {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Mostrar splash ANTES de cualquier inicialización asíncrona.
-  final splash = _SplashState();
-  runApp(_SplashApp(state: splash));
+  // ── 0. Leer caché de inicio rápido — ANTES de cualquier UI ──────────────────
+  // SharedPreferences no requiere Supabase. Tres claves fijas permiten
+  // restaurar el estado visual exacto de la última sesión:
+  //   • cfg_last_empresa_id    — empresa activa (para trazabilidad)
+  //   • cfg_last_empresa_color — color primario de esa empresa (ARGB int)
+  //   • cfg_theme_mode         — preferencia claro/oscuro/sistema del usuario
+  //
+  // Estas claves se escriben cada vez que el valor cambia en la sesión activa
+  // (cambio de empresa, update Realtime del admin, cambio de tema en perfil).
+  final prefs = await SharedPreferences.getInstance();
 
-  void step(String msg, double p) => splash.report(msg, p);
+  // Color de empresa:
+  final savedColorValue = prefs.getInt(ConfigKeys.lastEmpresaColor);
+  final savedEmpresaColor =
+      (savedColorValue != null && savedColorValue != 0)
+          ? Color(savedColorValue)
+          : null;
+
+  // Tema claro / oscuro / sistema:
+  final savedThemeModeIdx = prefs.getInt(ConfigKeys.themeMode)
+      ?? ThemeMode.system.index;
+  final savedThemeMode = ThemeMode.values[
+      savedThemeModeIdx.clamp(0, ThemeMode.values.length - 1)];
+
+  // ── Splash — primer frame con el color Y tema correctos ───────────────────
+  final splash = _SplashState();
+  runApp(_SplashApp(
+    state: splash,
+    initialColor: savedEmpresaColor,
+    initialThemeMode: savedThemeMode,
+  ));
 
   // ── 1. Ventana desktop ────────────────────────────────────────────────────
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-    step('Configurando ventana…', 0.08);
-    await WindowService.initialize();
+    await _step(
+      splash,
+      'Configurando ventana…',
+      0.08,
+      WindowService.initialize,
+    );
   }
 
-  // ── 2. Color de acento del sistema ────────────────────────────────────────
-  step('Cargando tema del sistema…', 0.18);
-  if (kIsWeb || (!kIsWeb && (Platform.isAndroid || Platform.isIOS))) {
-    await SystemTheme.accentColor.load();
+  // ── 2. Color de acento del sistema (solo mobile/web sin empresa color) ────
+  // Si ya tenemos el color de empresa no necesitamos el color del SO.
+  if (savedEmpresaColor == null &&
+      (kIsWeb || (!kIsWeb && (Platform.isAndroid || Platform.isIOS)))) {
+    await _step(
+      splash,
+      'Cargando tema del sistema…',
+      0.18,
+      SystemTheme.accentColor.load,
+    );
   }
 
-  // ── 3. Credenciales Supabase ──────────────────────────────────────────────
-  step('Cargando configuración…', 0.32);
-  final config = await SupabaseConfigService.load();
+  // ── 3. Credenciales Supabase (dart-define → SharedPreferences → defaults) ─
+  final config = await _step(
+    splash,
+    'Cargando configuración…',
+    0.32,
+    SupabaseConfigService.load,
+  );
 
   // ── 4. Supabase + cliente offline ─────────────────────────────────────────
-  step('Conectando a Supabase…', 0.50);
   if (!kIsWeb) {
-    final (offlineClient, offlineQueue) =
-        OfflineFirstWithSupabaseRepository.clientQueue(
-      databaseFactory: databaseFactory,
-      ignorePaths: {'/auth/v1', '/storage/v1', '/functions/v1'},
-    );
-    await Supabase.initialize(
-      url: config.url,
-      anonKey: config.anonKey,
-      httpClient: offlineClient,
-    );
-    PilarRepository.configure(
-      supabaseClient: Supabase.instance.client,
-      offlineQueue: offlineQueue,
+    await _step(
+      splash,
+      'Conectando a Supabase…',
+      0.52,
+      () async {
+        final (offlineClient, offlineQueue) =
+            OfflineFirstWithSupabaseRepository.clientQueue(
+          databaseFactory: databaseFactory,
+          ignorePaths: {'/auth/v1', '/storage/v1', '/functions/v1'},
+        );
+        await Supabase.initialize(
+          url: config.url,
+          anonKey: config.anonKey,
+          httpClient: offlineClient,
+        );
+        PilarRepository.configure(
+          supabaseClient: Supabase.instance.client,
+          offlineQueue: offlineQueue,
+        );
+      },
     );
 
     // ── 5. Base de datos local (SQLite + cola offline) ──────────────────────
-    step('Iniciando base de datos local…', 0.70);
-    await PilarRepository.instance.initialize();
+    await _step(
+      splash,
+      'Iniciando base de datos local…',
+      0.72,
+      PilarRepository.instance.initialize,
+    );
   } else {
-    // Web: sin cola offline (sqflite no disponible en browser)
-    await Supabase.initialize(url: config.url, anonKey: config.anonKey);
+    await _step(
+      splash,
+      'Conectando a Supabase…',
+      0.62,
+      () => Supabase.initialize(url: config.url, anonKey: config.anonKey),
+    );
   }
 
-  // ── 6. Color de empresa desde caché ──────────────────────────────────────
-  step('Preparando interfaz…', 0.88);
-  Color? cachedEmpresaColor;
-  try {
-    final session = Supabase.instance.client.auth.currentSession;
-    final empresaId = session?.user.appMetadata['empresa_id'] as String?;
-    if (empresaId != null) {
-      final prefs = await SharedPreferences.getInstance();
-      final colorValue =
-          prefs.getInt('${ConfigKeys.empresaColorPrefix}$empresaId');
-      if (colorValue != null && colorValue != 0) {
-        cachedEmpresaColor = Color(colorValue);
-      }
-    }
-  } catch (_) {
-    // Primer uso o prefs corruptas → sin color cacheado, sin problema.
-  }
+  // ── 6. Listo ──────────────────────────────────────────────────────────────
+  await _step(
+    splash,
+    'Preparando interfaz…',
+    0.88,
+    () async {}, // tiempo de visualización mínimo antes de la transición
+  );
 
-  // ── 7. Listo ─────────────────────────────────────────────────────────────
-  step('¡Listo!', 1.0);
-  // Pausa breve para que el usuario vea el 100% completado.
-  await Future.delayed(const Duration(milliseconds: 350));
+  splash.report('¡Listo!', 1.0);
+  await SchedulerBinding.instance.endOfFrame; // renderizar el 100%
+  await Future.delayed(const Duration(milliseconds: 400));
 
-  // Reemplazar la splash app con la app real (Riverpod + go_router).
+  // Reemplazar la splash app con la app real.
   runApp(
     ProviderScope(
       overrides: [
         supabaseConfiguredProvider.overrideWith((ref) => true),
         supabaseUrlProvider.overrideWith((ref) => config.url),
-        if (cachedEmpresaColor != null)
-          empresaColorProvider.overrideWith((ref) => cachedEmpresaColor!),
+        if (savedEmpresaColor != null)
+          empresaColorProvider.overrideWith((ref) => savedEmpresaColor),
       ],
       child: const PilarApp(),
     ),
@@ -184,10 +260,6 @@ Future<void> main() async {
 // Root application widget
 // ---------------------------------------------------------------------------
 
-/// Widget raíz de la app. Se monta después de que [main] completa la
-/// inicialización y reemplaza [_SplashApp] con un segundo [runApp].
-///
-/// Usa [FluentApp.router] como requiere el design system PILAR (fluent_ui).
 class PilarApp extends ConsumerWidget {
   const PilarApp({super.key});
 
@@ -199,9 +271,7 @@ class PilarApp extends ConsumerWidget {
 
     return FluentApp.router(
       title: 'PILAR ERP',
-      // --- Routing ---
       routerConfig: router,
-      // --- Theming ---
       theme: PilarTheme.build(
         brightness: Brightness.light,
         config: config,
@@ -213,7 +283,6 @@ class PilarApp extends ConsumerWidget {
         empresaColor: empresaColor,
       ),
       themeMode: config.themeMode,
-      // --- Localization ---
       locale: const Locale('es'),
       supportedLocales: const [
         Locale('es'),

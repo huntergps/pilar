@@ -569,70 +569,131 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
   // Upload desde ArchivosScreen
   // ---------------------------------------------------------------------------
 
+  /// Busca registros en la tabla correspondiente al tipo de entidad.
+  /// Retorna lista de {id, nombre}. Si la tabla no existe, retorna [].
+  Future<List<Map<String, dynamic>>> _searchEntidad(
+      String tipo, String query, String empresaId) async {
+    const tableMap = {
+      'contacto': ('contactos', 'nombre_completo'),
+      'producto': ('productos', 'nombre'),
+      'factura': ('facturas', 'numero'),
+      'orden_venta': ('ordenes_venta', 'numero'),
+      'orden_compra': ('ordenes_compra', 'numero'),
+      'empleado': ('empleados', 'nombre_completo'),
+    };
+    final info = tableMap[tipo];
+    if (info == null) return [];
+    final (tableName, nameField) = info;
+    try {
+      final rows = await Supabase.instance.client
+          .from(tableName)
+          .select('id, $nameField')
+          .eq('empresa_id', empresaId)
+          .ilike(nameField, '%$query%')
+          .limit(10);
+      return (rows as List).map((r) => {
+            'id': r['id'] as String,
+            'nombre': r[nameField]?.toString() ?? r['id'] as String,
+          }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<void> _mostrarUploadDialog() async {
     final empresaId = ref.read(empresaActivaIdProvider);
     if (empresaId == null) return;
 
-    PlatformFile? selectedFile;
-    String?       selectedTipo;
-    final         idCtrl = TextEditingController();
+    PlatformFile?                     selectedFile;
+    String                            selectedTipo      = 'empresa';
+    String?                           selectedEntidadId = empresaId;
+    List<AutoSuggestBoxItem<String>>  entidadItems      = [];
+    final entidadCtrl = TextEditingController();
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dctx) => StatefulBuilder(
         builder: (dialogCtx, setDlg) {
-          final canConfirm = selectedFile != null &&
-              selectedTipo != null &&
-              idCtrl.text.trim().isNotEmpty;
+          final needsSearch = selectedTipo != 'empresa';
+          final canConfirm  = selectedFile != null;
 
           return ContentDialog(
             title: const Text('Subir archivo'),
             content: SizedBox(
-              width: 380,
+              width: 400,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Tipo de entidad
-                  const Text('Tipo de entidad'),
+                  // ---- Tipo de entidad ----
+                  const Text('Asociar a'),
                   const SizedBox(height: 4),
                   ComboBox<String>(
                     value: selectedTipo,
-                    placeholder: const Text('Seleccionar...'),
                     isExpanded: true,
                     items: _kTiposEntidad
-                        .map((t) =>
-                            ComboBoxItem(value: t, child: Text(t)))
+                        .map((t) => ComboBoxItem(value: t, child: Text(t)))
                         .toList(),
                     onChanged: (v) => setDlg(() {
-                      selectedTipo = v;
-                      if (v == 'empresa' && idCtrl.text.isEmpty) {
-                        idCtrl.text = empresaId;
+                      selectedTipo = v ?? 'empresa';
+                      entidadCtrl.clear();
+                      entidadItems = [];
+                      if (selectedTipo == 'empresa') {
+                        selectedEntidadId = empresaId;
+                      } else {
+                        selectedEntidadId = null;
                       }
                     }),
                   ),
                   const SizedBox(height: 12),
 
-                  // ID de entidad
-                  const Text('ID de la entidad'),
-                  const SizedBox(height: 4),
-                  TextBox(
-                    controller: idCtrl,
-                    placeholder: 'UUID de la entidad...',
-                    onChanged: (_) => setDlg(() {}),
-                  ),
-                  const SizedBox(height: 12),
+                  // ---- Buscador de entidad (solo cuando no es empresa) ----
+                  if (needsSearch) ...[
+                    Text('Buscar $selectedTipo'),
+                    const SizedBox(height: 4),
+                    AutoSuggestBox<String>(
+                      controller: entidadCtrl,
+                      placeholder: 'Escribe para buscar...',
+                      items: entidadItems,
+                      onChanged: (text, reason) async {
+                        if (text.length < 2) return;
+                        final rows = await _searchEntidad(
+                            selectedTipo, text, empresaId);
+                        setDlg(() {
+                          selectedEntidadId = null;
+                          entidadItems = rows
+                              .map((r) => AutoSuggestBoxItem<String>(
+                                    value: r['id'] as String,
+                                    label: r['nombre'] as String,
+                                  ))
+                              .toList();
+                        });
+                      },
+                      onSelected: (item) {
+                        setDlg(() => selectedEntidadId = item.value);
+                      },
+                    ),
+                    if (selectedEntidadId == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Selecciona un registro o el archivo se asociará a la empresa.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: FluentTheme.of(dialogCtx).inactiveColor),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
 
-                  // Selector de archivo
+                  // ---- Selector de archivo ----
                   Row(
                     children: [
                       Button(
                         child: const Text('Elegir archivo'),
                         onPressed: () async {
                           final f = await UploadService.pickFile();
-                          if (f != null) {
-                            setDlg(() => selectedFile = f);
-                          }
+                          if (f != null) setDlg(() => selectedFile = f);
                         },
                       ),
                       if (selectedFile != null) ...[
@@ -656,8 +717,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                 onPressed: () => Navigator.pop(dctx, false),
               ),
               FilledButton(
-                onPressed:
-                    canConfirm ? () => Navigator.pop(dctx, true) : null,
+                onPressed: canConfirm ? () => Navigator.pop(dctx, true) : null,
                 child: const Text('Subir'),
               ),
             ],
@@ -668,15 +728,12 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
 
     final file      = selectedFile;
     final tipo      = selectedTipo;
-    final entidadId = idCtrl.text.trim();
-    idCtrl.dispose();
+    // Si no se seleccionó entidad específica, cae en empresa
+    final entidadId = selectedEntidadId ?? empresaId;
+    final tipoFinal = selectedEntidadId != null ? tipo : 'empresa';
+    entidadCtrl.dispose();
 
-    if (confirmed != true ||
-        file == null ||
-        tipo == null ||
-        entidadId.isEmpty) {
-      return;
-    }
+    if (confirmed != true || file == null) return;
 
     // Iniciar upload
     final token = UploadCancelToken();
@@ -696,7 +753,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
       final result = await UploadService.uploadResumable(
         file:               file,
         empresaId:          empresaId,
-        entidadTipo:        tipo,
+        entidadTipo:        tipoFinal,
         entidadId:          entidadId,
         progressController: progressCtrl,
         cancelToken:        token,
@@ -707,7 +764,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
 
       await Supabase.instance.client.rpc('registrar_adjunto', params: {
         'p_empresa_id'      : empresaId,
-        'p_entidad_tipo'    : tipo,
+        'p_entidad_tipo'    : tipoFinal,
         'p_entidad_id'      : entidadId,
         'p_nombre'          : result.nombreOriginal,
         'p_nombre_original' : result.nombreOriginal,

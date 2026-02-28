@@ -68,6 +68,7 @@ class EmpresaConfig {
     this.loginTitulo,
     required this.monedaFuncional,
     this.colorForzadoEn,
+    this.isFromRemote = false,
   });
 
   final String empresaId;
@@ -98,6 +99,11 @@ class EmpresaConfig {
   /// Timestamp en que el admin forzó el color a todos los usuarios.
   final DateTime? colorForzadoEn;
 
+  /// true cuando el dato viene del RPC de Supabase (fuente autoritativa).
+  /// false cuando viene de la caché local de Brick/SQLite.
+  /// Solo el emit remoto debe actualizar el color de acento.
+  final bool isFromRemote;
+
   factory EmpresaConfig.fromJson(Map<String, dynamic> json) {
     return EmpresaConfig(
       empresaId: json['empresa_id'] as String,
@@ -119,6 +125,7 @@ class EmpresaConfig {
       colorForzadoEn: json['color_forzado_en'] != null
           ? DateTime.tryParse(json['color_forzado_en'] as String)
           : null,
+      isFromRemote: true,
     );
   }
 }
