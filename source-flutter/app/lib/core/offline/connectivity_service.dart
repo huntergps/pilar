@@ -45,6 +45,7 @@ class ConnectivityNotifier extends Notifier<bool> {
   }
 
   void reportOffline() {
+    if (kIsWeb) return; // Web has no SQLite cache; don't show offline banner
     if (state) {
       state = false;
       _schedule(fast: true); // probe more aggressively while offline
