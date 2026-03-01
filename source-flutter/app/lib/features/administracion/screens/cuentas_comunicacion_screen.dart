@@ -1059,7 +1059,11 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           ? Supabase.instance.client.auth.currentUser?.id
           : null;
 
+      final empresaId =
+          Supabase.instance.client.auth.currentSession?.user.appMetadata['empresa_id'] as String?;
+
       final payload = <String, dynamic>{
+        if (empresaId != null) 'empresa_id': empresaId,
         'nombre': nombre,
         'tipo': _tipo,
         'activo': _activo,
