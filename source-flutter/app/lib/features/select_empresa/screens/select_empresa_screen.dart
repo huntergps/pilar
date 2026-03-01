@@ -1,59 +1,46 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/router/app_router.dart';
 
-/// Company-selection screen shown after login when the user belongs to
-/// more than one empresa (or when no empresa_id is present in the JWT).
+/// Pantalla de selección de empresa mostrada al iniciar sesión cuando el usuario
+/// pertenece a más de una empresa (o cuando no hay empresa_id en el JWT).
 ///
-/// Auto-selection rules (via [ref.listen]):
-/// - 0 empresas → go to [PilarRoutes.onboarding] (create first empresa).
-/// - 1 empresa  → auto-select silently, then:
-///     • placeholder empresa (nombre "Mi Empresa" / ruc "9999999999999")
-///       → [PilarRoutes.onboarding] to complete company setup.
-///     • configured empresa → [PilarRoutes.dashboard].
-/// - >1 empresas → show the picker grid so the user can choose.
-///
-/// Layout: responsive card grid.
-/// - >900px  → 4 columns
-/// - >600px  → 3 columns
-/// - <=600px → 2 columns
+/// Auto-selección:
+/// - 0 empresas → [PilarRoutes.onboarding] (crear primera empresa).
+/// - 1 empresa  → auto-selecciona silenciosamente:
+///     • placeholder → [PilarRoutes.onboarding] para completar wizard.
+///     • configurada → [PilarRoutes.dashboard].
+/// - >1 empresas → muestra el picker centrado con branding PILAR.
 class SelectEmpresaScreen extends ConsumerWidget {
   const SelectEmpresaScreen({super.key});
 
-  /// Returns true when the empresa was created as a placeholder by the
-  /// onboarding trigger and still needs the user to complete the wizard.
   static bool _esPlaceholder(EmpresaResumen e) =>
       e.nombre == 'Mi Empresa' || e.ruc == '9999999999999' || e.ruc == null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final misEmpresasAsync = ref.watch(misEmpresasProvider);
+    final theme = FluentTheme.of(context);
 
+    // Auto-selección cuando llegan los datos
     ref.listen<AsyncValue<List<EmpresaResumen>>>(misEmpresasProvider, (_, next) {
       next.whenData((empresas) async {
         if (!context.mounted) return;
 
         if (empresas.isEmpty) {
-          // No empresa at all → create first one.
           context.go(PilarRoutes.onboarding);
           return;
         }
 
         if (empresas.length == 1) {
-          // Single empresa → auto-select without user interaction.
           final empresa = empresas.first;
           try {
-            final switchFn = ref.read(switchEmpresaProvider);
-            await switchFn(empresa.empresaId);
-          } catch (_) {
-            // Ignore — router will re-evaluate after session refresh.
-          }
+            await ref.read(switchEmpresaProvider)(empresa.empresaId);
+          } catch (_) {}
           if (!context.mounted) return;
-          // Navigate based on whether the empresa data is configured.
           context.go(
             _esPlaceholder(empresa)
                 ? PilarRoutes.onboarding
@@ -63,147 +50,355 @@ class SelectEmpresaScreen extends ConsumerWidget {
       });
     });
 
-    return ScaffoldPage(
-      header: const PageHeader(title: Text('Seleccionar empresa')),
-      content: PilarAsyncBuilder<List<EmpresaResumen>>(
-        value: misEmpresasAsync,
-        isEmpty: (empresas) => empresas.isEmpty,
-        emptyWidget: const Center(child: ProgressRing()),
-        builder: (context, empresas) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final cols = width > 900 ? 4 : width > 600 ? 3 : 2;
-                const spacing = 16.0;
-                final cardWidth =
-                    (width - (cols - 1) * spacing) / cols;
-
-                return Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: empresas
-                      .map(
-                        (empresa) => SizedBox(
-                          width: cardWidth,
-                          child: _EmpresaCard(empresa: empresa),
-                        ),
-                      )
-                      .toList(),
-                );
-              },
+    return Container(
+      color: theme.scaffoldBackgroundColor,
+      child: Center(
+        child: misEmpresasAsync.when(
+          loading: () => const ProgressRing(),
+          error: (e, _) => SizedBox(
+            width: 360,
+            child: InfoBar(
+              title: const Text('Error al cargar empresas'),
+              content: Text(e.toString()),
+              severity: InfoBarSeverity.error,
             ),
-          );
-        },
+          ),
+          data: (empresas) {
+            // Mostrar spinner mientras se hace auto-selección
+            if (empresas.isEmpty || empresas.length == 1) {
+              return const ProgressRing();
+            }
+            return _PickerContent(empresas: empresas);
+          },
+        ),
       ),
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Letter avatar helper
+// Picker content — visible solo cuando hay ≥ 2 empresas
 // ---------------------------------------------------------------------------
 
-class _LetterAvatar extends StatelessWidget {
-  final String nombre;
-  final FluentThemeData theme;
+class _PickerContent extends StatefulWidget {
+  final List<EmpresaResumen> empresas;
 
-  const _LetterAvatar({required this.nombre, required this.theme});
+  const _PickerContent({required this.empresas});
+
+  @override
+  State<_PickerContent> createState() => _PickerContentState();
+}
+
+class _PickerContentState extends State<_PickerContent> {
+  final _searchCtrl = TextEditingController();
+  String _busqueda = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 48,
-      color: theme.accentColor.withValues(alpha: 0.15),
-      alignment: Alignment.center,
-      child: Text(
-        nombre.isNotEmpty ? nombre[0].toUpperCase() : '?',
-        style: theme.typography.subtitle,
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-
-/// Individual empresa card.
-///
-/// Shows company logo (or letter avatar), name, RUC and the user's role.
-/// Pressing the card switches the active empresa and navigates to dashboard.
-class _EmpresaCard extends ConsumerWidget {
-  final EmpresaResumen empresa;
-
-  const _EmpresaCard({required this.empresa});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
     final theme = FluentTheme.of(context);
+    final mostrarSearch = widget.empresas.length > 4;
 
-    return Card(
-      padding: EdgeInsets.zero,
-      child: HoverButton(
-        onPressed: () async {
-          final switchFn = ref.read(switchEmpresaProvider);
-          await switchFn(empresa.empresaId);
-          if (context.mounted) {
-            context.go(PilarRoutes.dashboard);
-          }
-        },
-        builder: (context, states) => Padding(
-          padding: const EdgeInsets.all(16),
+    final filtradas = _busqueda.isEmpty
+        ? widget.empresas
+        : widget.empresas.where((e) {
+            final q = _busqueda.toLowerCase();
+            return e.nombre.toLowerCase().contains(q) ||
+                (e.ruc?.contains(q) ?? false);
+          }).toList();
+
+    // Empresa activa (último uso) siempre primero
+    final ordenadas = [...filtradas]
+      ..sort((a, b) => (b.esActiva ? 1 : 0).compareTo(a.esActiva ? 1 : 0));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Company logo or letter avatar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: empresa.logoUrl != null
-                    ? Image.network(
-                        empresa.logoUrl!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _LetterAvatar(
-                          nombre: empresa.nombre,
-                          theme: theme,
-                        ),
-                      )
-                    : _LetterAvatar(nombre: empresa.nombre, theme: theme),
-              ),
-              const SizedBox(height: 12),
-
-              // Company name
+              // ---- Branding ----
               Text(
-                empresa.nombre,
-                style: theme.typography.bodyStrong,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              // RUC (optional)
-              if (empresa.ruc != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  empresa.ruc!,
-                  style: theme.typography.caption,
+                'PILAR ERP',
+                style: theme.typography.display?.copyWith(
+                  color: theme.accentColor,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Selecciona una empresa para continuar',
+                style: theme.typography.subtitle?.copyWith(
+                  color: theme.resources.textFillColorSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 36),
+
+              // ---- Búsqueda (solo si > 4 empresas) ----
+              if (mostrarSearch) ...[
+                TextBox(
+                  controller: _searchCtrl,
+                  placeholder: 'Buscar por nombre o RUC...',
+                  prefix: const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(FluentIcons.search, size: 14),
+                  ),
+                  suffix: _busqueda.isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: IconButton(
+                            icon: const Icon(FluentIcons.clear, size: 12),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _busqueda = '');
+                            },
+                          ),
+                        )
+                      : null,
+                  onChanged: (v) => setState(() => _busqueda = v),
+                ),
+                const SizedBox(height: 20),
               ],
 
-              const SizedBox(height: 4),
+              // ---- Grid de empresas ----
+              if (ordenadas.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Text(
+                    'Sin resultados para "$_busqueda"',
+                    style: theme.typography.body
+                        ?.copyWith(color: theme.inactiveColor),
+                  ),
+                )
+              else
+                LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    final cols = constraints.maxWidth > 480 ? 3 : 2;
+                    const spacing = 12.0;
+                    final cardWidth =
+                        (constraints.maxWidth - (cols - 1) * spacing) / cols;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: ordenadas
+                          .map(
+                            (e) => SizedBox(
+                              width: cardWidth,
+                              child: _EmpresaCard(empresa: e),
+                            ),
+                          )
+                          .toList(),
+                    );
+                  },
+                ),
 
-              // Role badge
-              Text(
-                empresa.rolNombre,
-                style: theme.typography.caption?.copyWith(
-                  color: theme.accentColor,
+              const SizedBox(height: 28),
+
+              // ---- Crear nueva empresa ----
+              HyperlinkButton(
+                onPressed: () => context.go(PilarRoutes.onboarding),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(FluentIcons.add,
+                        size: 14, color: theme.accentColor),
+                    const SizedBox(width: 6),
+                    const Text('Crear nueva empresa'),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tarjeta de empresa
+// ---------------------------------------------------------------------------
+
+class _EmpresaCard extends ConsumerStatefulWidget {
+  final EmpresaResumen empresa;
+
+  const _EmpresaCard({required this.empresa});
+
+  @override
+  ConsumerState<_EmpresaCard> createState() => _EmpresaCardState();
+}
+
+class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final esActiva = widget.empresa.esActiva;
+
+    return HoverButton(
+      onPressed: _loading
+          ? null
+          : () async {
+              setState(() => _loading = true);
+              try {
+                await ref.read(switchEmpresaProvider)(widget.empresa.empresaId);
+                if (context.mounted) context.go(PilarRoutes.dashboard);
+              } catch (_) {
+                if (mounted) setState(() => _loading = false);
+              }
+            },
+      builder: (ctx, states) {
+        final hovered = states.isHovered;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: esActiva
+                ? theme.accentColor.withValues(alpha: 0.06)
+                : (hovered
+                    ? theme.resources.subtleFillColorSecondary
+                    : theme.cardColor),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: esActiva
+                  ? theme.accentColor
+                  : (hovered
+                      ? theme.resources.controlStrokeColorDefault
+                      : theme.resources.controlStrokeColorDefault
+                          .withValues(alpha: 0.5)),
+              width: esActiva ? 1.5 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ---- Logo + badge activa ----
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _EmpresaLogoAvatar(
+                    logoUrl: widget.empresa.logoUrl,
+                    nombre: widget.empresa.nombre,
+                    size: 44,
+                  ),
+                  const Spacer(),
+                  if (esActiva)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.accentColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Activa',
+                        style: theme.typography.caption?.copyWith(
+                          color: theme.accentColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  if (_loading)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: ProgressRing(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // ---- Nombre ----
+              Text(
+                widget.empresa.nombre,
+                style: theme.typography.bodyStrong,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+
+              // ---- RUC ----
+              if (widget.empresa.ruc != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  widget.empresa.ruc!,
+                  style: theme.typography.caption,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              const SizedBox(height: 4),
+
+              // ---- Rol ----
+              Text(
+                widget.empresa.rolNombre,
+                style: theme.typography.caption
+                    ?.copyWith(color: theme.accentColor),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Logo / initial avatar de empresa
+// ---------------------------------------------------------------------------
+
+class _EmpresaLogoAvatar extends StatelessWidget {
+  final String? logoUrl;
+  final String nombre;
+  final double size;
+
+  const _EmpresaLogoAvatar({
+    required this.logoUrl,
+    required this.nombre,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final initial = nombre.isNotEmpty ? nombre[0].toUpperCase() : '?';
+
+    Widget fallback() => Container(
+          width: size,
+          height: size,
+          color: theme.accentColor.withValues(alpha: 0.15),
+          alignment: Alignment.center,
+          child: Text(
+            initial,
+            style: theme.typography.subtitle?.copyWith(
+              color: theme.accentColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.18),
+      child: (logoUrl != null && logoUrl!.isNotEmpty)
+          ? Image.network(
+              logoUrl!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback(),
+            )
+          : fallback(),
     );
   }
 }
