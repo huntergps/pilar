@@ -13,13 +13,13 @@
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from '@supabase/supabase-js';
-import { corsHeaders, handleCors } from '../../../../../foundation/supabase/functions/_shared/cors.ts';
+import { corsHeaders, handleCors } from './cors.ts';
 import {
   type WaAccount,
   waGetTemplates,
   waSubmitTemplate,
   waUpdateTemplate,
-} from '../../../../../foundation/supabase/functions/_shared/whatsapp-api.ts';
+} from './whatsapp-api.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -146,7 +146,10 @@ async function handleSync(
       categoria: tmpl.category?.toLowerCase() ?? null,
       idioma: tmpl.language ?? 'es',
       estado: tmpl.status?.toLowerCase() ?? 'unknown',
-      calidad: tmpl.quality_score ?? null,
+      // Meta returns quality_score as an object {score: "GREEN", ...} in the template list
+      calidad: typeof tmpl.quality_score === 'object' && tmpl.quality_score !== null
+        ? (tmpl.quality_score.score ?? null)
+        : (tmpl.quality_score ?? null),
       cuerpo: bodyComponent?.text ?? null,
       actualizado_en: new Date().toISOString(),
     };

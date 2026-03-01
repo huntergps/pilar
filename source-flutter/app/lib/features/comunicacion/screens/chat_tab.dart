@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/providers/presencia_provider.dart' show EstadoPresencia;
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../../../core/widgets/user_card.dart';
@@ -208,22 +209,260 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
 
   void _mostrarNuevoCanal(BuildContext context) {
     if (widget.scope == ChatScope.empresa) {
-      // Canal grupal — por implementar
       showDialog<void>(
         context: context,
-        builder: (ctx) => ContentDialog(
-          title: const Text('Nuevo canal'),
-          content: const Text('Funcionalidad disponible en la próxima versión.'),
-          actions: [
-            Button(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
-          ],
-        ),
+        builder: (_) => _NuevoCanalGrupalDialog(parentRef: ref),
       );
       return;
     }
     showDialog<void>(
       context: context,
       builder: (_) => _NuevoDmDialog(parentRef: ref),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dialog: Nuevo canal grupal
+// ---------------------------------------------------------------------------
+
+class _NuevoCanalGrupalDialog extends ConsumerStatefulWidget {
+  final WidgetRef parentRef;
+  const _NuevoCanalGrupalDialog({required this.parentRef});
+
+  @override
+  ConsumerState<_NuevoCanalGrupalDialog> createState() =>
+      _NuevoCanalGrupalDialogState();
+}
+
+class _NuevoCanalGrupalDialogState
+    extends ConsumerState<_NuevoCanalGrupalDialog> {
+  final _nombreCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
+  String _busqueda = '';
+  final Set<String> _seleccionados = {};
+  bool _creando = false;
+  String? _errorNombre;
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _crear() async {
+    final nombre = _nombreCtrl.text.trim();
+    if (nombre.isEmpty) {
+      setState(() => _errorNombre = 'El nombre es requerido');
+      return;
+    }
+    setState(() {
+      _creando = true;
+      _errorNombre = null;
+    });
+    try {
+      final result = await Supabase.instance.client.rpc(
+        'create_canal_grupo',
+        params: {
+          'p_nombre': nombre,
+          'p_miembro_ids': _seleccionados.toList(),
+        },
+      ) as Map<String, dynamic>;
+
+      final canalId = result['canal_id'] as String;
+      widget.parentRef.invalidate(chatCanalesProvider);
+      widget.parentRef.read(canalSeleccionadoProvider.notifier).state = canalId;
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al crear canal'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(
+                icon: const Icon(FluentIcons.clear), onPressed: close),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final miembrosAsync = ref.watch(empresaMiembrosProvider);
+    final theme = FluentTheme.of(context);
+
+    return ContentDialog(
+      title: const Text('Nuevo canal'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InfoLabel(
+              label: 'Nombre del canal *',
+              child: TextBox(
+                controller: _nombreCtrl,
+                placeholder: 'ej: ventas, proyectos, general',
+                enabled: !_creando,
+                onChanged: (_) => setState(() => _errorNombre = null),
+                prefix: const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+            if (_errorNombre != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _errorNombre!,
+                  style: TextStyle(
+                      color: Colors.red, fontSize: 12),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text('Agregar miembros',
+                style: theme.typography.bodyStrong),
+            const SizedBox(height: 6),
+            TextBox(
+              controller: _searchCtrl,
+              placeholder: 'Buscar usuario...',
+              enabled: !_creando,
+              onChanged: (v) => setState(() => _busqueda = v.toLowerCase()),
+              prefix: const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(FluentIcons.search, size: 14),
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 220,
+              child: miembrosAsync.when(
+                loading: () => const Center(child: ProgressRing()),
+                error: (e, _) => Center(child: Text(e.toString())),
+                data: (miembros) {
+                  final filtrados = _busqueda.isEmpty
+                      ? miembros
+                      : miembros.where((m) {
+                          final nombre = (m['nombre_display'] as String? ?? '')
+                              .toLowerCase();
+                          final email =
+                              (m['email'] as String? ?? '').toLowerCase();
+                          return nombre.contains(_busqueda) ||
+                              email.contains(_busqueda);
+                        }).toList();
+
+                  if (filtrados.isEmpty) {
+                    return Center(
+                      child: Text(
+                        _busqueda.isEmpty
+                            ? 'Sin otros usuarios'
+                            : 'Sin resultados',
+                        style: theme.typography.body
+                            ?.copyWith(color: theme.inactiveColor),
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: filtrados.length,
+                    separatorBuilder: (_, __) => const Divider(size: 1),
+                    itemBuilder: (_, i) {
+                      final m = filtrados[i];
+                      final uid = m['usuario_id'] as String;
+                      final nombreDisplay =
+                          (m['nombre_display'] as String?)?.trim();
+                      final email = m['email'] as String? ?? '';
+                      final displayName =
+                          nombreDisplay?.isNotEmpty == true
+                              ? nombreDisplay!
+                              : email;
+                      final seleccionado = _seleccionados.contains(uid);
+
+                      return ListTile.selectable(
+                        selected: seleccionado,
+                        onSelectionChange: (_) => setState(() {
+                          if (seleccionado) {
+                            _seleccionados.remove(uid);
+                          } else {
+                            _seleccionados.add(uid);
+                          }
+                        }),
+                        leading: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              child: Text(
+                                displayName.isNotEmpty
+                                    ? displayName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            if (seleccionado)
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: theme.accentColor,
+                                  ),
+                                  child: const Icon(FluentIcons.check_mark,
+                                      size: 10, color: Colors.white),
+                                ),
+                              ),
+                          ],
+                        ),
+                        title: Text(displayName,
+                            overflow: TextOverflow.ellipsis),
+                        subtitle: nombreDisplay?.isNotEmpty == true
+                            ? Text(email,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.typography.caption?.copyWith(
+                                    color: theme.inactiveColor))
+                            : null,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            if (_seleccionados.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '${_seleccionados.length} miembro${_seleccionados.length == 1 ? '' : 's'} seleccionado${_seleccionados.length == 1 ? '' : 's'}',
+                  style: theme.typography.caption?.copyWith(
+                    color: theme.accentColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        Button(
+          onPressed: _creando ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _creando ? null : _crear,
+          child: _creando
+              ? const SizedBox(
+                  width: 16, height: 16, child: ProgressRing())
+              : const Text('Crear canal'),
+        ),
+      ],
     );
   }
 }
@@ -590,16 +829,16 @@ class _CanalMensajesView extends ConsumerWidget {
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.successPrimaryColor,
+                        color: EstadoPresencia.online.color,
                       ),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '${presencia.length} online',
                       style: theme.typography.caption
-                          ?.copyWith(color: Colors.successPrimaryColor),
+                          ?.copyWith(color: EstadoPresencia.online.color),
                     ),
                   ],
                 ),
@@ -658,7 +897,7 @@ class _CanalMensajesView extends ConsumerWidget {
 
 class _ChatMensajeTile extends ConsumerWidget {
   final Map<String, dynamic> msg;
-  final Set<String> presencia;
+  final Map<String, EstadoPresencia> presencia;
 
   const _ChatMensajeTile({required this.msg, required this.presencia});
 
@@ -672,7 +911,9 @@ class _ChatMensajeTile extends ConsumerWidget {
     final nombreAutor = msg['nombre_display'] as String? ??
         msg['autor_nombre'] as String? ??
         'Usuario';
-    final estaOnline = presencia.contains(autorId);
+    final estadoAutor = presencia[autorId];
+    final estaOnline = estadoAutor != null;
+    final colorEstado = estadoAutor?.color ?? EstadoPresencia.online.color;
     final theme = FluentTheme.of(context);
 
     // Mensajes de sistema — centrados, itálica
@@ -711,13 +952,16 @@ class _ChatMensajeTile extends ConsumerWidget {
                   Positioned(
                     right: 0,
                     bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.successPrimaryColor,
-                        border: Border.all(color: theme.cardColor, width: 1.5),
+                    child: Tooltip(
+                      message: estadoAutor.label,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colorEstado,
+                          border: Border.all(color: theme.cardColor, width: 1.5),
+                        ),
                       ),
                     ),
                   ),
@@ -743,12 +987,15 @@ class _ChatMensajeTile extends ConsumerWidget {
                         ),
                         if (estaOnline) ...[
                           const SizedBox(width: 4),
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.successPrimaryColor,
+                          Tooltip(
+                            message: estadoAutor.label,
+                            child: Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: colorEstado,
+                              ),
                             ),
                           ),
                         ],

@@ -17,7 +17,7 @@
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from '@supabase/supabase-js';
-import { verifyWaSignature } from '../../../../../foundation/supabase/functions/_shared/whatsapp-api.ts';
+import { verifyWaSignature } from './whatsapp-api.ts';
 
 // ---------------------------------------------------------------------------
 // Supabase admin client (service_role — bypasses RLS)
@@ -121,10 +121,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // 5. Verify HMAC signature
     const appSecret: string = cuenta.config_json?.app_secret ?? '';
-    if (appSecret) {
+    if (!appSecret) {
+      console.warn(
+        `[com-whatsapp-webhook] SECURITY: app_secret no configurado para cuenta ${cuenta.id}. ` +
+        'El webhook acepta payloads sin validar firma HMAC. ' +
+        'Configura app_secret en la cuenta para rechazar peticiones no autorizadas.',
+      );
+    } else {
       const valid = await verifyWaSignature(rawBody, signature, appSecret);
       if (!valid) {
-        console.warn('[com-whatsapp-webhook] Invalid HMAC signature');
+        console.warn('[com-whatsapp-webhook] Invalid HMAC signature — request rejected');
         return new Response('Unauthorized', { status: 401 });
       }
     }
@@ -171,7 +177,9 @@ async function processChange(
 
     for (const msg of messages) {
       try {
-        const contactName = contacts[0]?.profile?.name ?? null;
+        // Match contact by wa_id to get the correct name for each message sender
+        const contactForMsg = contacts.find((c: any) => c.wa_id === msg.from);
+        const contactName = contactForMsg?.profile?.name ?? contacts[0]?.profile?.name ?? null;
         const body = msg.text?.body ?? `[${msg.type}]`;
 
         await supabase.rpc('com_registrar_mensaje_inbound', {

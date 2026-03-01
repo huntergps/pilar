@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../providers/alertas_provider.dart';
 import '../providers/perfil_provider.dart';
+import '../providers/presencia_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
@@ -190,7 +191,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Avatar circle — foto de perfil o inicial.
+                      // Avatar con punto de estado de presencia.
                       _HeaderAvatar(
                         avatarUrl: perfil?.avatarUrl,
                         initial: perfil?.initial ??
@@ -199,6 +200,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                                 : '?'),
                         size: 28,
                         theme: theme,
+                        estado: ref.watch(estadoPresenciaProvider),
                       ),
                       const SizedBox(width: 4),
                       Icon(
@@ -274,12 +276,9 @@ class _UserMenuFlyout extends ConsumerWidget {
     final theme = FluentTheme.of(flyoutCtx);
     final usuario = ref.watch(usuarioActualProvider);
     final perfil = ref.watch(perfilUsuarioProvider).valueOrNull;
+    final estadoActual = ref.watch(estadoPresenciaProvider);
 
     final displayName = perfil?.displayName ?? usuario?.nombre ?? usuario?.email ?? '';
-    final initial = perfil?.initial ??
-        (usuario != null && usuario.email.isNotEmpty
-            ? usuario.email[0].toUpperCase()
-            : '?');
 
     Future<void> signOut() async {
       Navigator.of(flyoutCtx).maybePop();
@@ -322,6 +321,60 @@ class _UserMenuFlyout extends ConsumerWidget {
               avatarUrl: perfil?.avatarUrl,
               avatarRadius: 18,
               padding: const EdgeInsets.all(16),
+            ),
+            const Divider(),
+
+            // ---- Selector de estado de presencia ----
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: EstadoPresencia.values.map((estado) {
+                  final seleccionado = estadoActual == estado;
+                  return HoverButton(
+                    onPressed: () {
+                      ref.read(estadoPresenciaProvider.notifier).state = estado;
+                    },
+                    builder: (ctx, states) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: seleccionado
+                            ? theme.accentColor.withValues(alpha: 0.12)
+                            : states.isHovered
+                                ? theme.resources.subtleFillColorSecondary
+                                : null,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: estado.color,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            estado.label,
+                            style: theme.typography.body?.copyWith(
+                              fontWeight: seleccionado
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (seleccionado)
+                            Icon(FluentIcons.check_mark,
+                                size: 12, color: theme.accentColor),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
             const Divider(),
 
@@ -410,17 +463,20 @@ class _HeaderAvatar extends StatelessWidget {
   final String initial;
   final double size;
   final FluentThemeData theme;
+  final EstadoPresencia estado;
 
   const _HeaderAvatar({
     required this.avatarUrl,
     required this.initial,
     required this.size,
     required this.theme,
+    required this.estado,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final dotSize = size * 0.38;
+    final avatar = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -432,9 +488,30 @@ class _HeaderAvatar extends StatelessWidget {
           ? Image.network(
               avatarUrl!,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _Initial(initial: initial, size: size, theme: theme),
+              errorBuilder: (_, __, ___) =>
+                  _Initial(initial: initial, size: size, theme: theme),
             )
           : _Initial(initial: initial, size: size, theme: theme),
+    );
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        avatar,
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: dotSize,
+            height: dotSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: estado.color,
+              border: Border.all(color: theme.micaBackgroundColor, width: 1.5),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

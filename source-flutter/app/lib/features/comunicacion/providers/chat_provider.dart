@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/providers/presencia_provider.dart' show EstadoPresencia, estadoPresenciaProvider;
 import '../../../core/providers/usuario_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -15,8 +16,9 @@ final canalSeleccionadoProvider = StateProvider<String?>((ref) => null);
 // Presencia online
 // ---------------------------------------------------------------------------
 
-/// Set de user_id de usuarios actualmente online en el canal seleccionado.
-final presenciaProvider = StateProvider<Set<String>>((ref) => const {});
+/// Mapa user_id → EstadoPresencia de usuarios online en el canal seleccionado.
+/// Solo incluye usuarios con estado visible (excluye [EstadoPresencia.noComunicar]).
+final presenciaProvider = StateProvider<Map<String, EstadoPresencia>>((ref) => const {});
 
 // ---------------------------------------------------------------------------
 // empresaMiembrosProvider — usuarios activos de la empresa (para DM picker)
@@ -100,27 +102,53 @@ final chatMensajesProvider =
 
 /// Gestiona el canal de Presencia Supabase para el canal de chat seleccionado.
 ///
-/// Cuando el canal seleccionado cambia, cancela el anterior y suscribe al nuevo.
-/// Actualiza [presenciaProvider] con el set de usuarios online.
+/// - Cuando el canal seleccionado cambia → re-suscribe al nuevo canal Realtime.
+/// - Cuando solo cambia el estado (online/ausente/ocupado/noComunicar) →
+///   re-trackea sobre el canal existente sin desconectarse.
+/// - Actualiza [presenciaProvider] con el mapa userId → EstadoPresencia.
 class PresenceNotifier extends Notifier<void> {
   RealtimeChannel? _presenceChannel;
+  String? _activeCanalId;
+  String? _activeEmpresaId;
 
   @override
   void build() {
     final canalId = ref.watch(canalSeleccionadoProvider);
     final empresaId = ref.watch(empresaActivaIdProvider);
+    final estado = ref.watch(estadoPresenciaProvider);
 
     if (canalId == null || empresaId == null) {
       _limpiar();
       return;
     }
 
-    _suscribir(empresaId, canalId);
+    // Solo re-suscribir si cambia el canal o la empresa.
+    // Si solo cambia el estado, re-trackear en el canal ya abierto.
+    if (canalId != _activeCanalId || empresaId != _activeEmpresaId) {
+      _suscribir(empresaId, canalId, estado);
+    } else {
+      _retrackear(estado);
+    }
     ref.onDispose(_limpiar);
   }
 
-  void _suscribir(String empresaId, String canalId) {
+  /// Actualiza el payload de presencia sin reconectar el canal.
+  void _retrackear(EstadoPresencia estado) {
+    final ch = _presenceChannel;
+    if (ch == null) return;
+    final usuarioId = ref.read(usuarioActualProvider)?.id;
+    if (usuarioId == null) return;
+    ch.track({
+      'user_id': usuarioId,
+      'online_at': DateTime.now().toIso8601String(),
+      'estado': estado.name,
+    });
+  }
+
+  void _suscribir(String empresaId, String canalId, EstadoPresencia estado) {
     _limpiar();
+    _activeCanalId = canalId;
+    _activeEmpresaId = empresaId;
 
     final usuarioId = ref.read(usuarioActualProvider)?.id;
     if (usuarioId == null) return;
@@ -128,15 +156,21 @@ class PresenceNotifier extends Notifier<void> {
     final ch = Supabase.instance.client.channel('presence:$empresaId:$canalId');
 
     ch.onPresenceSync((_) {
-      // presenceState() → List<SinglePresenceState>
-      // Each .presences → List<Presence>, each .payload → Map<String, dynamic>
-      final online = ch
-          .presenceState()
-          .expand((s) => s.presences)
-          .map((p) => p.payload['user_id'] as String? ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
-      ref.read(presenciaProvider.notifier).state = online;
+      final mapa = <String, EstadoPresencia>{};
+      for (final p in ch.presenceState().expand((s) => s.presences)) {
+        final userId = p.payload['user_id'] as String? ?? '';
+        if (userId.isEmpty) continue;
+        final estadoStr = p.payload['estado'] as String? ?? 'online';
+        final e = EstadoPresencia.values.firstWhere(
+          (e) => e.name == estadoStr,
+          orElse: () => EstadoPresencia.online,
+        );
+        // Excluir usuarios en modo "No molestar" — no son visibles para otros
+        if (e != EstadoPresencia.noComunicar) {
+          mapa[userId] = e;
+        }
+      }
+      ref.read(presenciaProvider.notifier).state = mapa;
     });
 
     ch.subscribe((status, [_]) async {
@@ -144,6 +178,7 @@ class PresenceNotifier extends Notifier<void> {
         await ch.track({
           'user_id': usuarioId,
           'online_at': DateTime.now().toIso8601String(),
+          'estado': estado.name,
         });
       }
     });
@@ -155,9 +190,10 @@ class PresenceNotifier extends Notifier<void> {
     _presenceChannel?.untrack();
     _presenceChannel?.unsubscribe();
     _presenceChannel = null;
-    // Reset presence solo si el ref todavía está activo
+    _activeCanalId = null;
+    _activeEmpresaId = null;
     try {
-      ref.read(presenciaProvider.notifier).state = const {};
+      ref.read(presenciaProvider.notifier).state = const <String, EstadoPresencia>{};
     } catch (_) {}
   }
 }

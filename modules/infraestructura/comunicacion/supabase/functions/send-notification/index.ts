@@ -40,8 +40,9 @@
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { renderTemplate, htmlToPlainText } from '../_shared/notification-templates.ts';
+import { corsHeaders, handleCors } from './cors.ts';
+import { renderTemplate, htmlToPlainText } from './notification-templates.ts';
+import { type WaAccount, waSend, formatWaNumber } from './whatsapp-api.ts';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -175,7 +176,7 @@ async function sendEmail(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Canal WHATSAPP vía Meta Cloud API
+// Canal WHATSAPP vía Meta Cloud API (usa shared helper whatsapp-api.ts v23.0)
 //
 // NOTA: La API de WhatsApp Business Cloud requiere que el número receptor haya
 // enviado un mensaje en las últimas 24h (ventana de conversación activa).
@@ -191,36 +192,27 @@ async function sendWhatsApp(params: {
   text: string;
 }): Promise<ResultadoCanal> {
   try {
-    const url = `https://graph.facebook.com/v21.0/${params.phoneNumberId}/messages`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${params.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: params.to.replace('+', ''),
-        type: 'text',
-        text: { body: params.text, preview_url: false },
-      }),
+    // Build minimal WaAccount from system config credentials
+    const acct: WaAccount = {
+      app_uid: '',
+      account_uid: '',
+      phone_uid: params.phoneNumberId,
+      phone_number: '',
+      token: params.accessToken,
+      app_secret: '',
+      webhook_verify_token: '',
+    };
+
+    const messageId = await waSend(acct, formatWaNumber(params.to), {
+      type: 'text',
+      text: { body: params.text, preview_url: false },
     });
 
-    const data = await response.json();
-    const messageId: string | undefined = data.messages?.[0]?.id;
-
-    if (messageId) {
-      console.log(`[send-notification] WHATSAPP → ENVIADO: ${messageId}`);
-      return { estado: 'ENVIADO', message_id: messageId };
-    }
-
-    const errMsg = data.error?.message ?? `HTTP ${response.status}`;
-    console.warn(`[send-notification] WHATSAPP → FALLIDO: ${errMsg}`);
-    return { estado: 'FALLIDO', error: errMsg };
+    console.log(`[send-notification] WHATSAPP → ENVIADO: ${messageId}`);
+    return { estado: 'ENVIADO', message_id: messageId };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    console.warn(`[send-notification] WHATSAPP → FALLIDO (excepción): ${errMsg}`);
+    console.warn(`[send-notification] WHATSAPP → FALLIDO: ${errMsg}`);
     return { estado: 'FALLIDO', error: errMsg };
   }
 }
