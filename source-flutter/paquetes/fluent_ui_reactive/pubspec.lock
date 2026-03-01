@@ -60,9 +60,10 @@ packages:
   fluent_ui:
     dependency: "direct main"
     description:
-      path: "../fluent_ui"
-      relative: true
-    source: path
+      name: fluent_ui
+      sha256: "3fe3b66351e0c47b778e9778c4c1b9c9086515d0d61ea9be3010a9de23cdf28b"
+      url: "https://pub.dev"
+    source: hosted
     version: "4.14.0"
   flutter:
     dependency: "direct main"

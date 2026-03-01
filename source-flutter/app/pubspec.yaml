@@ -51,6 +51,9 @@ dependencies:
   # === SVG ===
   flutter_svg: ^2.0.10+1
 
+  # === App info ===
+  package_info_plus: ^8.1.3
+
   # === Utilities ===
   decimal: ^2.3.3
   intl: ^0.20.2

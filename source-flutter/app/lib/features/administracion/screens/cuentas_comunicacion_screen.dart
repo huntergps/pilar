@@ -429,7 +429,7 @@ class _CuentasComunicacionScreenState
       BuildContext context, CuentaItem cuenta) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => ContentDialog(
+      builder: (dialogCtx) => ContentDialog(
         title: const Text('Eliminar cuenta'),
         content: Text(
           '¿Eliminar "${cuenta.nombre}"?\n\n'
@@ -438,14 +438,14 @@ class _CuentasComunicacionScreenState
         actions: [
           Button(
             child: const Text('Cancelar'),
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
           ),
           FilledButton(
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.all(Colors.red),
             ),
             child: const Text('Eliminar'),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
           ),
         ],
       ),
@@ -492,13 +492,13 @@ class _CuentasComunicacionScreenState
   void _showError(BuildContext context, String msg) {
     showDialog<void>(
       context: context,
-      builder: (_) => ContentDialog(
+      builder: (dialogCtx) => ContentDialog(
         title: const Text('Error'),
         content: Text(msg),
         actions: [
           FilledButton(
             child: const Text('OK'),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
           ),
         ],
       ),
@@ -1096,7 +1096,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           // Mostramos advertencia y dejamos al usuario decidir.
           final continuar = await showDialog<bool>(
             context: context,
-            builder: (_) => ContentDialog(
+            builder: (dialogCtx) => ContentDialog(
               title: const Text('Cuenta guardada — webhook pendiente'),
               content: Text(
                 'La cuenta fue guardada correctamente, pero el registro '
@@ -1106,7 +1106,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
               actions: [
                 FilledButton(
                   child: const Text('Entendido'),
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () => Navigator.of(dialogCtx).pop(true),
                 ),
               ],
             ),
@@ -1122,13 +1122,13 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
       if (mounted) {
         showDialog<void>(
           context: context,
-          builder: (_) => ContentDialog(
+          builder: (dialogCtx) => ContentDialog(
             title: const Text('Error'),
             content: Text(e.toString()),
             actions: [
               FilledButton(
                 child: const Text('OK'),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.of(dialogCtx).pop(),
               ),
             ],
           ),

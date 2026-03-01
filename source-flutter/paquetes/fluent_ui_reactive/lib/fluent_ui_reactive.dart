@@ -48,3 +48,11 @@ export 'src/form/pilar_date_field.dart';
 export 'src/feedback/pilar_copy_button.dart';
 export 'src/feedback/pilar_notification.dart';
 export 'src/feedback/pilar_error_registry.dart';
+
+// Workspace — dynamic tab management
+export 'src/workspace/workspace_tabs.dart';
+
+// CRUD scaffolds — generic list + form screens
+export 'src/crud/form_section.dart';
+export 'src/crud/form_scaffold.dart';
+export 'src/crud/crud_scaffold.dart';

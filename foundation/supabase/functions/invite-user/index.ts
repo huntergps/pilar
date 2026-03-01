@@ -25,6 +25,12 @@
  * Auth:     Authorization: Bearer <JWT_del_usuario> (rol con administracion.usuarios.crear)
  * Body:     { email: string, rol_id: string, dias_vigencia?: number }
  *
+ * IMPORTANTE: deployada con --no-verify-jwt porque custom_access_token_hook
+ * modifica el JWT (añade empresa_id + permisos) y el Edge Runtime Gateway con
+ * verify_jwt=true rechaza estos tokens modificados. La seguridad se mantiene
+ * intacta: el JWT se valida al crear userClient → RLS policies en las RPCs
+ * aplican normalmente. Ver foundation/gestor_permisos.md.
+ *
  * Respuestas:
  *   { ok: true,  tipo: 'USUARIO_EXISTENTE',   email }
  *   { ok: true,  tipo: 'INVITACION_ENVIADA',  email, invitacion_id, vence_en }
