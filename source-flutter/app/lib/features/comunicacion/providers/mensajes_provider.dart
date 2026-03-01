@@ -15,7 +15,14 @@ import '../models/com_mensaje.dart';
 ///  RETURNS SETOF com_mensajes`
 final mensajesProvider = FutureProvider.autoDispose
     .family<List<ComMensaje>, String>((ref, convId) async {
+  // Flag para distinguir suscripción inicial de reconexión.
+  // El callback 'subscribed' se dispara en AMBOS casos; solo en reconexión
+  // hay que re-fetch (la suscripción inicial ya ejecuta el rpc() abajo).
+  var _suscripcionInicial = true;
+
   // Suscripción Realtime para esta conversación específica.
+  // NOTA: REPLICA IDENTITY FULL en com_mensajes permite que el servidor
+  // Realtime evalúe el filtro conversacion_id en UPDATE/DELETE además de INSERT.
   final channel = Supabase.instance.client
       .channel('com_msgs_$convId')
       .onPostgresChanges(
@@ -30,9 +37,14 @@ final mensajesProvider = FutureProvider.autoDispose
         callback: (_) => ref.invalidateSelf(),
       )
       .subscribe((status, [_]) {
-        // Reconexión iOS/Android → re-fetch para no perder mensajes del background.
         if (status == RealtimeSubscribeStatus.subscribed) {
-          ref.invalidateSelf();
+          if (_suscripcionInicial) {
+            // Primera suscripción: la carga inicial la hace el rpc() abajo.
+            _suscripcionInicial = false;
+          } else {
+            // Reconexión (ej. iOS resume): re-fetch para no perder mensajes.
+            ref.invalidateSelf();
+          }
         }
       });
 
