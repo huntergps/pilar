@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
@@ -646,13 +647,35 @@ class _MensajeBubble extends StatelessWidget {
               if (msg.asunto != null && msg.asunto!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    msg.asunto!,
-                    style: theme.typography.bodyStrong,
-                  ),
+                  child: Text(msg.asunto!, style: theme.typography.bodyStrong),
                 ),
-              // Cuerpo
-              Text(msg.cuerpo ?? ''),
+              // Media adjuntos
+              if (msg.tieneMedia)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _MediaWidget(adjunto: msg.adjuntos.first),
+                ),
+              // Cuerpo (texto o caption)
+              if (msg.cuerpo != null && msg.cuerpo!.isNotEmpty &&
+                  !msg.cuerpo!.startsWith('📷') &&
+                  !msg.cuerpo!.startsWith('🎥') &&
+                  !msg.cuerpo!.startsWith('🎵') &&
+                  !msg.cuerpo!.startsWith('🎤') &&
+                  !msg.cuerpo!.startsWith('📎') &&
+                  !msg.cuerpo!.startsWith('⭕') &&
+                  !msg.cuerpo!.startsWith('🎭') &&
+                  !msg.tieneMedia)
+                Text(msg.cuerpo!),
+              // Caption + texto cuando hay media
+              if (msg.tieneMedia && msg.cuerpo != null && msg.cuerpo!.isNotEmpty)
+                Text(msg.cuerpo!, style: theme.typography.caption),
+              // Solo emoji/texto de display cuando no hay media real
+              if (!msg.tieneMedia && (msg.cuerpo == null || msg.cuerpo!.isEmpty ||
+                  msg.cuerpo!.startsWith('📷') || msg.cuerpo!.startsWith('🎥') ||
+                  msg.cuerpo!.startsWith('🎵') || msg.cuerpo!.startsWith('🎤') ||
+                  msg.cuerpo!.startsWith('📎') || msg.cuerpo!.startsWith('⭕') ||
+                  msg.cuerpo!.startsWith('🎭')))
+                Text(msg.cuerpo ?? '', style: theme.typography.body),
               const SizedBox(height: 4),
               // Footer: timestamp + estado
               Row(
@@ -671,6 +694,101 @@ class _MensajeBubble extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Widget de media (imagen, video, audio, documento)
+// ---------------------------------------------------------------------------
+
+class _MediaWidget extends StatelessWidget {
+  final ComAdjunto adjunto;
+  const _MediaWidget({required this.adjunto});
+
+  @override
+  Widget build(BuildContext context) {
+    if (adjunto.esImagen) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          adjunto.url,
+          width: 220,
+          fit: BoxFit.cover,
+          loadingBuilder: (_, child, progress) => progress == null
+              ? child
+              : const SizedBox(
+                  width: 220, height: 140,
+                  child: Center(child: ProgressRing()),
+                ),
+          errorBuilder: (_, __, ___) => const SizedBox(
+            width: 220, height: 100,
+            child: Center(child: Icon(FluentIcons.image_pixel, size: 40)),
+          ),
+        ),
+      );
+    }
+
+    if (adjunto.esVideo) {
+      return _MediaTile(
+        icon: FluentIcons.my_movies_t_v,
+        label: adjunto.nombre,
+        url: adjunto.url,
+      );
+    }
+
+    if (adjunto.esAudio) {
+      return _MediaTile(
+        icon: FluentIcons.volume3,
+        label: adjunto.tipo == 'voz' ? 'Nota de voz' : adjunto.nombre,
+        url: adjunto.url,
+      );
+    }
+
+    // documento / sticker / otros
+    return _MediaTile(
+      icon: FluentIcons.page,
+      label: adjunto.nombre,
+      url: adjunto.url,
+    );
+  }
+}
+
+class _MediaTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String url;
+  const _MediaTile({required this.icon, required this.label, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.resources.subtleFillColorSecondary,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.resources.controlStrokeColorDefault),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: theme.typography.caption,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(FluentIcons.download, size: 14),
+          ],
         ),
       ),
     );

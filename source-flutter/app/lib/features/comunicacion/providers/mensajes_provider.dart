@@ -18,7 +18,7 @@ final mensajesProvider = FutureProvider.autoDispose
   // Flag para distinguir suscripción inicial de reconexión.
   // El callback 'subscribed' se dispara en AMBOS casos; solo en reconexión
   // hay que re-fetch (la suscripción inicial ya ejecuta el rpc() abajo).
-  var _suscripcionInicial = true;
+  var suscripcionInicial = true;
 
   // Suscripción Realtime para esta conversación específica.
   // NOTA: REPLICA IDENTITY FULL en com_mensajes permite que el servidor
@@ -38,9 +38,9 @@ final mensajesProvider = FutureProvider.autoDispose
       )
       .subscribe((status, [_]) {
         if (status == RealtimeSubscribeStatus.subscribed) {
-          if (_suscripcionInicial) {
+          if (suscripcionInicial) {
             // Primera suscripción: la carga inicial la hace el rpc() abajo.
-            _suscripcionInicial = false;
+            suscripcionInicial = false;
           } else {
             // Reconexión (ej. iOS resume): re-fetch para no perder mensajes.
             ref.invalidateSelf();
