@@ -48,6 +48,9 @@ dependencies:
   syncfusion_flutter_datagrid: ^32.2.5
   syncfusion_flutter_pdfviewer: ^32.2.5
 
+  # === QR code (MFA enrollment) ===
+  qr_flutter: ^4.1.0
+
   # === SVG ===
   flutter_svg: ^2.0.10+1
 

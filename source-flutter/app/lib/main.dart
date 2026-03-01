@@ -217,6 +217,9 @@ Future<void> main() async {
           url: config.url,
           anonKey: config.anonKey,
           httpClient: offlineClient,
+          authOptions: const FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.pkce,
+          ),
         );
         PilarRepository.configure(
           supabaseClient: Supabase.instance.client,
@@ -237,7 +240,13 @@ Future<void> main() async {
       splash,
       'Conectando a Supabase…',
       0.62,
-      () => Supabase.initialize(url: config.url, anonKey: config.anonKey),
+      () => Supabase.initialize(
+        url: config.url,
+        anonKey: config.anonKey,
+        authOptions: const FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.pkce,
+        ),
+      ),
     );
   }
 

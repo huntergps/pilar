@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/auth_provider.dart';
 import '../shell/pilar_shell.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/mfa_challenge_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/onboarding/screens/onboarding_wizard.dart';
@@ -50,6 +51,7 @@ final supabaseUrlProvider = StateProvider<String>((ref) => '');
 abstract final class PilarRoutes {
   static const String setup = '/setup';
   static const String login = '/auth/login';
+  static const String mfaChallenge = '/auth/mfa';
   static const String resetPassword = '/auth/reset-password';
   static const String onboarding = '/onboarding';
   static const String selectEmpresa = '/select-empresa';
@@ -115,7 +117,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isLoggedIn && !isAuthRoute) return PilarRoutes.login;
 
       // 3. Authenticated on auth screen → into the app.
-      if (isLoggedIn && isAuthRoute) {
+      //    Exception: /auth/mfa must stay accessible for the MFA challenge.
+      if (isLoggedIn && isAuthRoute && loc != PilarRoutes.mfaChallenge) {
         final empresaId = session.user.appMetadata['empresa_id'] as String?;
         return empresaId != null
             ? PilarRoutes.dashboard
@@ -152,10 +155,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const SupabaseSetupScreen(),
       ),
 
+      // ---- Auth callback (PKCE deep link — supabase_flutter handles session) ----
+      GoRoute(
+        path: '/auth/callback',
+        builder: (_, __) => const SizedBox.shrink(),
+      ),
+
       // ---- Public auth routes (no shell) ----
       GoRoute(
         path: PilarRoutes.login,
         builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: PilarRoutes.mfaChallenge,
+        builder: (_, __) => const MfaChallengeScreen(),
       ),
       GoRoute(
         path: PilarRoutes.resetPassword,

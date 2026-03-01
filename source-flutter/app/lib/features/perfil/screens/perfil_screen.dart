@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/providers/mfa_provider.dart';
 import '../../../core/providers/perfil_provider.dart';
 
 // Zonas horarias comunes (América Latina + globales)
@@ -968,6 +970,10 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                             onDismissError: () {},
                             theme: theme,
                           ),
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 24),
+                    _SecuritySection(theme: theme),
                   ],
                 ),
               );
@@ -975,6 +981,389 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
           );
         },
       ),
+    );
+  }
+}
+
+// ===========================================================================
+// Seccion Seguridad — 2FA / TOTP
+// ===========================================================================
+
+class _SecuritySection extends ConsumerWidget {
+  final FluentThemeData theme;
+  const _SecuritySection({required this.theme});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final factorsAsync = ref.watch(mfaFactorsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Seguridad', style: theme.typography.subtitle),
+        const SizedBox(height: 16),
+        factorsAsync.when(
+          loading: () => const Row(
+            children: [
+              SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2)),
+              SizedBox(width: 8),
+              Text('Cargando estado 2FA...'),
+            ],
+          ),
+          error: (e, _) => InfoBar(
+            title: const Text('Error'),
+            content: Text('No se pudo cargar el estado 2FA: $e'),
+            severity: InfoBarSeverity.error,
+          ),
+          data: (factors) {
+            final isEnabled = factors.isNotEmpty;
+            return Card(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    FluentIcons.lock,
+                    size: 24,
+                    color: isEnabled ? theme.accentColor : theme.inactiveColor,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Autenticacion de dos factores (2FA)',
+                          style: theme.typography.bodyStrong,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isEnabled
+                              ? 'Protegida con app autenticadora (TOTP)'
+                              : 'Agrega una capa extra de seguridad a tu cuenta',
+                          style: theme.typography.caption
+                              ?.copyWith(color: theme.inactiveColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  if (isEnabled)
+                    Button(
+                      onPressed: () => _confirmDisable2FA(context, ref, factors.first),
+                      child: const Text('Desactivar'),
+                    )
+                  else
+                    FilledButton(
+                      onPressed: () => _showEnrollDialog(context, ref),
+                      child: const Text('Activar 2FA'),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showEnrollDialog(BuildContext context, WidgetRef ref) {
+    showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => _EnrollTotpDialog(
+        onComplete: () {
+          ref.invalidate(mfaFactorsProvider);
+          Navigator.of(dialogCtx).pop(true);
+        },
+      ),
+    );
+  }
+
+  void _confirmDisable2FA(BuildContext context, WidgetRef ref, Factor factor) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => _DisableTotpDialog(
+        factor: factor,
+        onComplete: () {
+          ref.invalidate(mfaFactorsProvider);
+          Navigator.of(dialogCtx).pop();
+        },
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Dialog — Activar 2FA (Enroll TOTP)
+// ===========================================================================
+
+class _EnrollTotpDialog extends StatefulWidget {
+  final VoidCallback onComplete;
+  const _EnrollTotpDialog({required this.onComplete});
+
+  @override
+  State<_EnrollTotpDialog> createState() => _EnrollTotpDialogState();
+}
+
+class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
+  final _codeCtrl = TextEditingController();
+  bool _loading = true;
+  bool _verifying = false;
+  String? _error;
+  String? _factorId;
+  String? _qrUri;
+  String? _secret;
+
+  @override
+  void initState() {
+    super.initState();
+    _enroll();
+  }
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _enroll() async {
+    try {
+      final res = await Supabase.instance.client.auth.mfa.enroll(
+        factorType: FactorType.totp,
+        issuer: 'PILAR ERP',
+        friendlyName: 'PILAR ERP TOTP',
+      );
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _factorId = res.id;
+          _qrUri = res.totp?.uri;
+          _secret = res.totp?.secret;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Error al registrar el factor: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _verify() async {
+    final code = _codeCtrl.text.trim();
+    if (code.length != 6) {
+      setState(() => _error = 'Ingresa un codigo de 6 digitos');
+      return;
+    }
+
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
+
+    try {
+      final auth = Supabase.instance.client.auth;
+      final challenge = await auth.mfa.challenge(factorId: _factorId!);
+      await auth.mfa.verify(
+        factorId: _factorId!,
+        challengeId: challenge.id,
+        code: code,
+      );
+      widget.onComplete();
+    } on AuthException catch (e) {
+      if (mounted) setState(() { _verifying = false; _error = e.message; });
+    } catch (e) {
+      if (mounted) setState(() { _verifying = false; _error = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+
+    return ContentDialog(
+      constraints: const BoxConstraints(maxWidth: 420),
+      title: const Text('Activar autenticacion de dos factores'),
+      content: _loading
+          ? const SizedBox(
+              height: 200,
+              child: Center(child: ProgressRing()),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Escanea este codigo QR con tu app autenticadora '
+                  '(Google Authenticator, Authy, etc.):',
+                  style: theme.typography.body,
+                ),
+                const SizedBox(height: 16),
+                if (_qrUri != null)
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: QrImageView(
+                        data: _qrUri!,
+                        version: QrVersions.auto,
+                        size: 200,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                if (_secret != null) ...[
+                  Text(
+                    'O ingresa este codigo manualmente:',
+                    style: theme.typography.caption
+                        ?.copyWith(color: theme.inactiveColor),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    _secret!,
+                    style: theme.typography.bodyStrong?.copyWith(
+                      fontFamily: 'monospace',
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                InfoLabel(
+                  label: 'Codigo de verificacion',
+                  child: TextBox(
+                    controller: _codeCtrl,
+                    placeholder: '000000',
+                    enabled: !_verifying,
+                    maxLength: 6,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    onSubmitted: (_) => _verify(),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  InfoBar(
+                    title: const Text('Error'),
+                    content: Text(_error!),
+                    severity: InfoBarSeverity.error,
+                    onClose: () => setState(() => _error = null),
+                  ),
+                ],
+              ],
+            ),
+      actions: [
+        Button(
+          onPressed: _verifying ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        if (!_loading)
+          FilledButton(
+            onPressed: _verifying ? null : _verify,
+            child: _verifying
+                ? const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: ProgressRing(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 8),
+                      Text('Verificando...'),
+                    ],
+                  )
+                : const Text('Verificar y activar'),
+          ),
+      ],
+    );
+  }
+}
+
+// ===========================================================================
+// Dialog — Desactivar 2FA
+// ===========================================================================
+
+class _DisableTotpDialog extends StatefulWidget {
+  final Factor factor;
+  final VoidCallback onComplete;
+  const _DisableTotpDialog({required this.factor, required this.onComplete});
+
+  @override
+  State<_DisableTotpDialog> createState() => _DisableTotpDialogState();
+}
+
+class _DisableTotpDialogState extends State<_DisableTotpDialog> {
+  bool _removing = false;
+  String? _error;
+
+  Future<void> _unenroll() async {
+    setState(() {
+      _removing = true;
+      _error = null;
+    });
+
+    try {
+      await Supabase.instance.client.auth.mfa.unenroll(widget.factor.id);
+      widget.onComplete();
+    } on AuthException catch (e) {
+      if (mounted) setState(() { _removing = false; _error = e.message; });
+    } catch (e) {
+      if (mounted) setState(() { _removing = false; _error = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ContentDialog(
+      constraints: const BoxConstraints(maxWidth: 400),
+      title: const Text('Desactivar autenticacion de dos factores'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Al desactivar 2FA, tu cuenta sera menos segura. '
+            'Solo necesitaras tu correo y contrasena para iniciar sesion.',
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            InfoBar(
+              title: const Text('Error'),
+              content: Text(_error!),
+              severity: InfoBarSeverity.error,
+              onClose: () => setState(() => _error = null),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        Button(
+          onPressed: _removing ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _removing ? null : _unenroll,
+          child: _removing
+              ? const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: ProgressRing(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text('Desactivando...'),
+                  ],
+                )
+              : const Text('Desactivar 2FA'),
+        ),
+      ],
     );
   }
 }
