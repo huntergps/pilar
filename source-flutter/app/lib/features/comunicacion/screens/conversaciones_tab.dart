@@ -745,7 +745,9 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
         'estado': 'pendiente',
       });
       _ctrl.clear();
-      ref.invalidate(mensajesProvider(conv.id));
+      // Invocar el sender inmediatamente para envío en tiempo real.
+      // Fire-and-forget: el cron es el fallback; no bloqueamos la UI.
+      _invocarSender(conv.canal);
     } on Exception catch (e) {
       if (mounted) {
         await displayInfoBar(
@@ -761,6 +763,20 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
+  }
+
+  /// Invoca el Edge Function sender del canal para envío inmediato.
+  /// Fire-and-forget — errores se ignoran (el cron actúa como fallback).
+  void _invocarSender(String canal) {
+    final fnName = switch (canal) {
+      'telegram' => 'com-telegram-sender',
+      'whatsapp' => 'com-whatsapp-sender',
+      _ => null,
+    };
+    if (fnName == null) return;
+    Supabase.instance.client.functions
+        .invoke(fnName, body: {})
+        .ignore();
   }
 
   @override
