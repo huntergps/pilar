@@ -475,7 +475,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
             } else {
               final modIdx = index - modulosBase;
               if (modIdx >= 0 && modIdx < list.length) {
-                context.go(PilarRoutes.dashboard);
+                context.go('/${list[modIdx].id}');
               } else if (index == list.length + modulosBase) {
                 context.go(PilarRoutes.perfil);
               } else if (index == list.length + modulosBase + 1) {
