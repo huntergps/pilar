@@ -1133,6 +1133,8 @@ Editor de plantillas con previsualización en tiempo real. Las variables `{{nomb
 | `com-wa-templates` | `modules/infraestructura/comunicacion/supabase/functions/com-wa-templates/` | ✅ | Sincroniza templates Meta → `com_wa_templates`; dispara envíos |
 | `com-telegram-webhook` | `modules/infraestructura/comunicacion/supabase/functions/com-telegram-webhook/` | ✅ | Procesa updates Telegram inbound |
 | `send-notification` | `modules/infraestructura/comunicacion/supabase/functions/send-notification/` | ✅ | Dispatcher central (multicanal) |
+| `com-email-sender` | `foundation/supabase/functions/com-email-sender/` | ✅ | Procesador de cola SMTP/API. Invocado por pg_cron cada 2 min. Soporta Resend, ElasticMail, SendGrid y SMTP (nodemailer). Body opcional: `{ empresa_id?, mensaje_id? }`. |
+| `com-email-receiver` | `foundation/supabase/functions/com-email-receiver/` | ✅ | Polling IMAP cada 5 min. Descarga mensajes no leídos via IMAP (imapflow + mailparser). UID-based: guarda último UID procesado en `com_cuentas.meta_json`. |
 
 ### Shared helpers (`foundation/supabase/functions/_shared/`)
 
@@ -1148,4 +1150,87 @@ Editor de plantillas con previsualización en tiempo real. Las variables `{{nomb
 |----------|------|---------|--------|
 | Cuentas de Comunicación | `/admin/comunicacion` | `lib/features/administracion/screens/cuentas_comunicacion_screen.dart` | ✅ |
 
-**`CuentasComunicacionScreen`**: CRUD sobre `com_cuentas`. Provider `comCuentasProvider` (`FutureProvider.autoDispose`) — lista cuentas agrupadas por tipo (WhatsApp / Email API / Email SMTP / Telegram). Accesible desde el panel de Administración → sección "Comunicación".
+---
+
+### `CuentasComunicacionScreen` — Detalle
+
+**Ruta**: `/admin/comunicacion`
+**Archivo**: `lib/features/administracion/screens/cuentas_comunicacion_screen.dart`
+**Permiso**: `administracion.comunicacion.menu`
+
+#### Qué hace
+
+CRUD completo sobre `com_cuentas`. Permite al administrador registrar y gestionar los canales de comunicación de la empresa (WhatsApp Business, Email SMTP, Email API, Telegram) desde los que se envían mensajes automáticos y manuales.
+
+#### Tipos de cuenta soportados (`com_cuentas.tipo`)
+
+| Tipo | Label UI | Proveedor | Uso |
+|------|----------|-----------|-----|
+| `whatsapp` | WhatsApp Business | Meta Cloud API | Mensajes WA + plantillas |
+| `email_api` | Email (API) | Resend / ElasticMail / SendGrid | Emails transaccionales vía REST |
+| `email_smtp` | Email (SMTP) | Cualquier servidor SMTP | Envío SMTP + recepción IMAP |
+| `telegram` | Telegram | Telegram Bot API | Mensajes y documentos Telegram |
+
+#### Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  [+ Nueva cuenta]                                               │
+├──────────────────────────────────┬──────────────────────────────┤
+│  WhatsApp                        │  Email API                   │
+│  ┌────────────────────────────┐  │  ┌──────────────────────────┐│
+│  │ 🟢 Cuenta Principal  ⋯    │  │  │ 🟢 Resend Principal   ⋯  ││
+│  │    ✅ predeterminada        │  │  │    ✅ predeterminada      ││
+│  └────────────────────────────┘  │  └──────────────────────────┘│
+├──────────────────────────────────┼──────────────────────────────┤
+│  Email SMTP                      │  Telegram                    │
+│  ┌────────────────────────────┐  │  ┌──────────────────────────┐│
+│  │ 🟢 Gmail Empresa       ⋯  │  │  │ 🔴 Bot Soporte       ⋯   ││
+│  └────────────────────────────┘  │  └──────────────────────────┘│
+└──────────────────────────────────┴──────────────────────────────┘
+```
+
+Responsive: `≥ 600px` → grid 2 columnas por tipo | `< 600px` → lista vertical.
+
+#### Acciones por cuenta
+
+| Acción | Descripción |
+|--------|-------------|
+| **Activar / Desactivar** | Toggle `com_cuentas.activo`. |
+| **Marcar como predeterminada** | Establece `com_cuentas.es_defecto = true`, quita el flag de las demás del mismo tipo. |
+| **Cambiar propietario** | Asigna/desasigna `com_cuentas.usuario_id` (cuenta personal vs empresa). RPC `com_set_cuenta_usuario`. |
+| **Gestionar roles** | Abre `_CuentaRolesDialog` — asigna roles que pueden usar esta cuenta vía `com_cuentas_roles`. |
+| **Editar** | Abre `_CuentaFormDialog` con campos específicos por tipo. |
+| **Eliminar** | DELETE con confirmación en `ContentDialog`. |
+
+#### Formulario por tipo (`_CuentaFormDialog`)
+
+**WhatsApp**: `phone_number_id`, `waba_id`, `app_secret`, `webhook_verify_token` en `config_json`.
+
+**Email API**: `proveedor` (combobox: Resend / ElasticMail / SendGrid), `api_key`, `from_email`, `from_nombre`.
+
+**Email SMTP**: `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_secure` (TLS/SSL), `from_email`, `from_nombre`, `imap_host`, `imap_port`, `imap_user`, `imap_password` (para recepción).
+
+**Telegram**: `bot_token`, `webhook_secret`.
+
+Todos los campos sensibles (`api_key`, `smtp_password`, `bot_token`) se almacenan como texto cifrado en `com_cuentas.config_json` (el cifrado en tránsito es HTTPS; el cifrado en reposo aplica el mecanismo de Supabase Storage).
+
+#### Providers
+
+| Provider | Tipo | Descripción |
+|----------|------|-------------|
+| `comCuentasProvider` | `FutureProvider.autoDispose<List<CuentaItem>>` | Lista todas las cuentas de la empresa via RPC `com_get_todas_cuentas`. |
+| `cuentaRolesProvider(cuentaId)` | `FutureProvider.autoDispose.family` | Roles asignados a una cuenta via `com_cuentas_roles`. |
+| `rolesEmpresaProvider` | `FutureProvider.autoDispose` | Roles disponibles para asignar (tabla `roles` filtrada por empresa). |
+
+#### RPCs y tablas
+
+| Operación | Mecanismo |
+|-----------|-----------|
+| Listar cuentas | `rpc('com_get_todas_cuentas')` |
+| Crear cuenta | `from('com_cuentas').insert(payload)` |
+| Actualizar cuenta | `from('com_cuentas').update(payload).eq('id', id)` |
+| Toggle activo | `from('com_cuentas').update({'activo': v}).eq('id', id)` |
+| Marcar predeterminada | `from('com_cuentas').update({'es_defecto': false})` + `update({'es_defecto': true})` |
+| Cambiar propietario | `rpc('com_set_cuenta_usuario', {p_cuenta_id, p_usuario_id})` |
+| Gestionar roles | `from('com_cuentas_roles').insert/delete` |

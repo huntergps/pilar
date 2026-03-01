@@ -19,12 +19,15 @@ import '../../features/administracion/screens/archivos_screen.dart';
 import '../../features/administracion/screens/cuentas_comunicacion_screen.dart';
 import '../../features/administracion/screens/gestor_permisos_screen.dart';
 import '../../features/administracion/screens/impresoras_screen.dart';
+import '../../features/administracion/screens/sync_log_screen.dart';
 import '../../features/comunicacion/screens/chat_tab.dart'
     show ChatScope, ChatTab;
 import '../../features/comunicacion/screens/conversaciones_tab.dart';
 import '../../features/comunicacion/screens/email_tab.dart';
 import '../../features/comunicacion/screens/historial_tab.dart';
 import '../../features/perfil/screens/perfil_screen.dart';
+import '../../features/entidades/screens/contactos_screen.dart';
+import '../../features/entidades/screens/productos_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -59,7 +62,10 @@ abstract final class PilarRoutes {
   static const String adminComunicacion = '/admin/comunicacion';
   static const String adminPermisos = '/admin/permisos';
   static const String adminImpresoras = '/admin/impresoras';
+  static const String adminSyncLog = '/admin/sync-log';
   static const String adminConfiguracion = '/admin/configuracion';
+  static const String entidadesContactos = '/entidades/contactos';
+  static const String entidadesProductos = '/entidades/productos';
   static const String perfil = '/perfil';
   static const String configuracion = '/configuracion';
   static const String comunicacion = '/comunicacion';
@@ -235,8 +241,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const ImpresorasScreen(),
           ),
           GoRoute(
+            path: PilarRoutes.adminSyncLog,
+            builder: (_, __) => const SyncLogScreen(),
+          ),
+          GoRoute(
             path: PilarRoutes.adminConfiguracion,
             redirect: (_, __) => PilarRoutes.configuracion,
+          ),
+          GoRoute(
+            path: PilarRoutes.entidadesContactos,
+            builder: (_, __) => const ContactosScreen(),
+          ),
+          GoRoute(
+            path: PilarRoutes.entidadesProductos,
+            builder: (_, __) => const ProductosScreen(),
           ),
           GoRoute(
             path: PilarRoutes.perfil,

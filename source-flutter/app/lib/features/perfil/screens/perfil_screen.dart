@@ -28,184 +28,31 @@ const _zonasHorarias = [
   'UTC',
 ];
 
-class PerfilDialog extends ConsumerStatefulWidget {
-  /// Callback opcional: navega a la pantalla completa de perfil.
-  /// Si se pasa, se muestra el botón "Ver perfil completo" en las acciones.
+/// Diálogo de perfil — solo lectura.
+///
+/// Muestra los datos del perfil del usuario en la empresa activa.
+/// Para editar, navegar a la pantalla completa via [onVerPerfilCompleto].
+class PerfilDialog extends ConsumerWidget {
+  /// Callback: navega a la pantalla completa de perfil para editar.
   final VoidCallback? onVerPerfilCompleto;
 
   const PerfilDialog({super.key, this.onVerPerfilCompleto});
 
   @override
-  ConsumerState<PerfilDialog> createState() => _PerfilDialogState();
-}
-
-class _PerfilDialogState extends ConsumerState<PerfilDialog> {
-  final _nombreCtrl = TextEditingController();
-  final _telefonoCtrl = TextEditingController();
-  final _emailLoginCtrl = TextEditingController();
-
-  bool _initialized = false;
-  bool _saving = false;
-  bool _uploadingAvatar = false;
-  String? _errorMsg;
-  String? _zonaHoraria;
-  String? _originalEmailLogin;
-
-  @override
-  void dispose() {
-    _nombreCtrl.dispose();
-    _telefonoCtrl.dispose();
-    _emailLoginCtrl.dispose();
-    super.dispose();
-  }
-
-  void _initFields(PerfilUsuario perfil) {
-    if (_initialized) return;
-    _initialized = true;
-    _nombreCtrl.text = perfil.nombreDisplay ?? '';
-    _telefonoCtrl.text = perfil.telefono ?? '';
-    _zonaHoraria = perfil.zonaHoraria;
-    _emailLoginCtrl.text = perfil.emailLogin;
-    _originalEmailLogin = perfil.emailLogin;
-  }
-
-  String _errorLabel(String? code) => switch (code) {
-        'EMAIL_EXISTS' => 'Este email ya está en uso por otro usuario.',
-        'INVALID_EMAIL' => 'El email ingresado no es válido.',
-        'PERMISSION_DENIED' => 'Sin permiso para realizar esta acción.',
-        _ => code ?? 'Error desconocido',
-      };
-
-  Future<void> _pickAndUploadAvatar(PerfilUsuario perfil) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
-    if (bytes == null || bytes.isEmpty) return;
-
-    setState(() {
-      _uploadingAvatar = true;
-      _errorMsg = null;
-    });
-
-    try {
-      final path = '${perfil.usuarioId}/${perfil.empresaId}/avatar.jpg';
-      await Supabase.instance.client.storage.from('avatares').uploadBinary(
-            path,
-            Uint8List.fromList(bytes),
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
-          );
-      final url = Supabase.instance.client.storage
-          .from('avatares')
-          .getPublicUrl(path);
-      final urlBust = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
-      final error = await ref
-          .read(perfilUsuarioProvider.notifier)
-          .saveChanges(avatarUrl: urlBust);
-      if (mounted) {
-        setState(() {
-          _uploadingAvatar = false;
-          if (error != null) _errorMsg = error;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _uploadingAvatar = false;
-          _errorMsg = 'Error subiendo la imagen: $e';
-        });
-      }
-    }
-  }
-
-  Future<void> _save(PerfilUsuario perfil) async {
-    setState(() {
-      _saving = true;
-      _errorMsg = null;
-    });
-
-    // 1. Guardar campos de perfil
-    final error = await ref.read(perfilUsuarioProvider.notifier).saveChanges(
-          nombreDisplay: _nombreCtrl.text.trim().isEmpty
-              ? null
-              : _nombreCtrl.text.trim(),
-          telefono: _telefonoCtrl.text.trim().isEmpty
-              ? null
-              : _telefonoCtrl.text.trim(),
-          zonaHoraria: _zonaHoraria,
-        );
-
-    if (error != null) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _errorMsg = error;
-        });
-      }
-      return;
-    }
-
-    // 2. Cambiar email de acceso si fue modificado
-    final newEmail = _emailLoginCtrl.text.trim().toLowerCase();
-    final currentEmail = (_originalEmailLogin ?? '').toLowerCase();
-    if (newEmail.isNotEmpty && newEmail != currentEmail) {
-      try {
-        final result = await Supabase.instance.client.rpc(
-          'change_email_usuario',
-          params: {
-            'p_usuario_id': perfil.usuarioId,
-            'p_new_email': newEmail,
-          },
-        );
-        final map = Map<String, dynamic>.from(result as Map);
-        if (map['ok'] != true) {
-          if (mounted) {
-            setState(() {
-              _saving = false;
-              _errorMsg = _errorLabel(map['error']?.toString());
-            });
-          }
-          return;
-        }
-        _originalEmailLogin = newEmail;
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _saving = false;
-            _errorMsg = e.toString();
-          });
-        }
-        return;
-      }
-    }
-
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = FluentTheme.of(context);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWide = screenWidth >= 600;
     final perfilAsync = ref.watch(perfilUsuarioProvider);
 
     return ContentDialog(
-      constraints: BoxConstraints(
-        maxWidth: isWide ? 680 : 440,
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      constraints: const BoxConstraints(maxWidth: 360),
       title: const Tooltip(
         message:
-            'Datos visibles solo en esta empresa. Cada empresa tiene un perfil independiente.',
+            'Datos visibles solo en esta empresa. Para editar, usa "Editar perfil".',
         child: Text('Mi perfil'),
       ),
       content: perfilAsync.when(
         loading: () => const SizedBox(
-          height: 120,
+          height: 100,
           child: Center(child: ProgressRing()),
         ),
         error: (e, _) => Text(
@@ -213,74 +60,110 @@ class _PerfilDialogState extends ConsumerState<PerfilDialog> {
           style: TextStyle(color: theme.resources.systemFillColorCritical),
         ),
         data: (perfil) {
-          if (perfil == null) {
-            return const Text('No se encontró el perfil.');
-          }
-          _initFields(perfil);
-          return isWide
-              ? _WideContent(
-                  perfil: perfil,
-                  nombreCtrl: _nombreCtrl,
-                  telefonoCtrl: _telefonoCtrl,
-                  emailLoginCtrl: _emailLoginCtrl,
-                  zonaHoraria: _zonaHoraria,
-                  saving: _saving,
-                  uploadingAvatar: _uploadingAvatar,
-                  errorMsg: _errorMsg,
-                  onUpload: () => _pickAndUploadAvatar(perfil),
-                  onZonaChanged: (v) => setState(() => _zonaHoraria = v),
-                  onDismissError: () => setState(() => _errorMsg = null),
-                  theme: theme,
-                )
-              : _NarrowContent(
-                  perfil: perfil,
-                  nombreCtrl: _nombreCtrl,
-                  telefonoCtrl: _telefonoCtrl,
-                  emailLoginCtrl: _emailLoginCtrl,
-                  zonaHoraria: _zonaHoraria,
-                  saving: _saving,
-                  uploadingAvatar: _uploadingAvatar,
-                  errorMsg: _errorMsg,
-                  onUpload: () => _pickAndUploadAvatar(perfil),
-                  onZonaChanged: (v) => setState(() => _zonaHoraria = v),
-                  onDismissError: () => setState(() => _errorMsg = null),
-                  theme: theme,
-                );
+          if (perfil == null) return const Text('No se encontró el perfil.');
+          return _ReadOnlyPerfilContent(perfil: perfil, theme: theme);
         },
       ),
       actions: [
-        if (widget.onVerPerfilCompleto != null)
-          Button(
-            onPressed: _saving
-                ? null
-                : () {
-                    Navigator.of(context).pop();
-                    widget.onVerPerfilCompleto!();
-                  },
-            child: const Text('Ver perfil completo'),
+        if (onVerPerfilCompleto != null)
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              onVerPerfilCompleto!();
+            },
+            child: const Text('Editar perfil'),
           ),
         Button(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
         ),
-        FilledButton(
-          onPressed: _saving || perfilAsync.valueOrNull == null
-              ? null
-              : () => _save(perfilAsync.value!),
-          child: _saving
-              ? const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: ProgressRing(strokeWidth: 2)),
-                    SizedBox(width: 8),
-                    Text('Guardando…'),
-                  ],
-                )
-              : const Text('Guardar cambios'),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Contenido de solo lectura (PerfilDialog)
+// ---------------------------------------------------------------------------
+
+class _ReadOnlyPerfilContent extends StatelessWidget {
+  final PerfilUsuario perfil;
+  final FluentThemeData theme;
+  const _ReadOnlyPerfilContent({required this.perfil, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: theme.accentColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: perfil.avatarUrl != null
+                ? Image.network(
+                    perfil.avatarUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _Initial(initial: perfil.initial, size: 80, theme: theme),
+                  )
+                : _Initial(initial: perfil.initial, size: 80, theme: theme),
+          ),
         ),
+        const SizedBox(height: 10),
+        Center(
+          child: Text(
+            perfil.displayName,
+            style: theme.typography.bodyStrong,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 12),
+        _InfoFila(label: 'Email', value: perfil.emailLogin, theme: theme),
+        if (perfil.telefono?.isNotEmpty == true) ...[
+          const SizedBox(height: 8),
+          _InfoFila(label: 'Teléfono', value: perfil.telefono!, theme: theme),
+        ],
+        const SizedBox(height: 8),
+        _InfoFila(
+          label: 'Zona horaria',
+          value: perfil.zonaHoraria,
+          theme: theme,
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoFila extends StatelessWidget {
+  final String label;
+  final String value;
+  final FluentThemeData theme;
+  const _InfoFila(
+      {required this.label, required this.value, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: theme.typography.caption
+                ?.copyWith(color: theme.inactiveColor),
+          ),
+        ),
+        Expanded(child: Text(value, style: theme.typography.body)),
       ],
     );
   }
@@ -371,17 +254,23 @@ class _WideContent extends StatelessWidget {
 
             // ── Columna formulario ──
             Expanded(
-              child: _FormFields(
-                perfil: perfil,
-                nombreCtrl: nombreCtrl,
-                telefonoCtrl: telefonoCtrl,
-                emailLoginCtrl: emailLoginCtrl,
-                zonaHoraria: zonaHoraria,
-                saving: saving,
-                errorMsg: errorMsg,
-                onZonaChanged: onZonaChanged,
-                onDismissError: onDismissError,
-                theme: theme,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _FormFields(
+                    perfil: perfil,
+                    nombreCtrl: nombreCtrl,
+                    telefonoCtrl: telefonoCtrl,
+                    emailLoginCtrl: emailLoginCtrl,
+                    zonaHoraria: zonaHoraria,
+                    saving: saving,
+                    errorMsg: errorMsg,
+                    onZonaChanged: onZonaChanged,
+                    onDismissError: onDismissError,
+                    theme: theme,
+                  ),
+                ],
               ),
             ),
           ],
@@ -564,6 +453,173 @@ class _FormFields extends StatelessWidget {
             onClose: onDismissError,
           ),
         ],
+      ],
+    );
+  }
+}
+
+// ===========================================================================
+// Diálogo de cambiar contraseña — accesible desde el menú del header
+// ===========================================================================
+
+/// Diálogo de cambio de contraseña.
+///
+/// Supabase permite cambiar la contraseña desde una sesión activa con
+/// [auth.updateUser] sin requerir la contraseña actual.
+class CambiarContrasenaDialog extends ConsumerStatefulWidget {
+  const CambiarContrasenaDialog({super.key});
+
+  @override
+  ConsumerState<CambiarContrasenaDialog> createState() =>
+      _CambiarContrasenaDialogState();
+}
+
+class _CambiarContrasenaDialogState
+    extends ConsumerState<CambiarContrasenaDialog> {
+  final _nuevaCtrl = TextEditingController();
+  final _confirmarCtrl = TextEditingController();
+  bool _obscureNueva = true;
+  bool _obscureConfirmar = true;
+  bool _changing = false;
+  String? _error;
+  bool _success = false;
+
+  @override
+  void dispose() {
+    _nuevaCtrl.dispose();
+    _confirmarCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cambiar() async {
+    final nueva = _nuevaCtrl.text;
+    final confirmar = _confirmarCtrl.text;
+
+    if (nueva.isEmpty) {
+      setState(() => _error = 'Ingresa la nueva contraseña');
+      return;
+    }
+    if (nueva.length < 8) {
+      setState(() => _error = 'Mínimo 8 caracteres');
+      return;
+    }
+    if (nueva != confirmar) {
+      setState(() => _error = 'Las contraseñas no coinciden');
+      return;
+    }
+
+    setState(() {
+      _changing = true;
+      _error = null;
+      _success = false;
+    });
+
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: nueva),
+      );
+      if (mounted) {
+        setState(() {
+          _changing = false;
+          _success = true;
+          _nuevaCtrl.clear();
+          _confirmarCtrl.clear();
+        });
+      }
+    } on AuthException catch (e) {
+      if (mounted) setState(() { _changing = false; _error = e.message; });
+    } catch (e) {
+      if (mounted) setState(() { _changing = false; _error = e.toString(); });
+    }
+  }
+
+  Widget _eyeButton(bool obscure, VoidCallback onTap) => Button(
+        style: ButtonStyle(
+          padding: WidgetStateProperty.all(
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+        ),
+        onPressed: _changing ? null : onTap,
+        child: Icon(
+          obscure ? FluentIcons.red_eye : FluentIcons.hide,
+          size: 14,
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return ContentDialog(
+      constraints: const BoxConstraints(maxWidth: 400),
+      title: const Text('Cambiar contraseña'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InfoLabel(
+            label: 'Nueva contraseña',
+            child: TextBox(
+              controller: _nuevaCtrl,
+              obscureText: _obscureNueva,
+              enabled: !_changing,
+              placeholder: 'Mínimo 8 caracteres',
+              suffix: _eyeButton(
+                  _obscureNueva,
+                  () => setState(() => _obscureNueva = !_obscureNueva)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          InfoLabel(
+            label: 'Confirmar contraseña',
+            child: TextBox(
+              controller: _confirmarCtrl,
+              obscureText: _obscureConfirmar,
+              enabled: !_changing,
+              placeholder: 'Repite la nueva contraseña',
+              suffix: _eyeButton(
+                  _obscureConfirmar,
+                  () => setState(() => _obscureConfirmar = !_obscureConfirmar)),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            InfoBar(
+              title: const Text('Error'),
+              content: Text(_error!),
+              severity: InfoBarSeverity.error,
+              onClose: () => setState(() => _error = null),
+            ),
+          ],
+          if (_success) ...[
+            const SizedBox(height: 12),
+            InfoBar(
+              title: const Text('Contraseña actualizada'),
+              content: const Text('Tu contraseña fue cambiada correctamente.'),
+              severity: InfoBarSeverity.success,
+              onClose: () => setState(() => _success = false),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        Button(
+          onPressed: _changing ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
+        ),
+        FilledButton(
+          onPressed: _changing ? null : _cambiar,
+          child: _changing
+              ? const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: ProgressRing(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Actualizando…'),
+                  ],
+                )
+              : const Text('Actualizar contraseña'),
+        ),
       ],
     );
   }

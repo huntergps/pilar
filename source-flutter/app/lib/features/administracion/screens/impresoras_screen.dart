@@ -13,7 +13,12 @@ import '../../../core/providers/usuario_provider.dart';
 // ---------------------------------------------------------------------------
 
 /// Lista de impresoras virtuales de la empresa (reloadable).
-final _impresorasProvider =
+///
+/// Provider público para poder hacer override en tests:
+/// ```dart
+/// impresorasScreenProvider.overrideWith((_) async => [...]);
+/// ```
+final impresorasScreenProvider =
     FutureProvider.autoDispose<List<ImpresoraVirtual>>((ref) async {
   final rows = await Supabase.instance.client
       .rpc('impresoras_get_catalogo')
@@ -38,7 +43,7 @@ class ImpresorasScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tieneAdmin =
         ref.watch(hasPermissionProvider('administracion.empresa.menu'));
-    final impresorasAsync = ref.watch(_impresorasProvider);
+    final impresorasAsync = ref.watch(impresorasScreenProvider);
 
     return ScaffoldPage(
       header: PageHeader(
@@ -75,7 +80,7 @@ class ImpresorasScreen extends ConsumerWidget {
       context: context,
       builder: (_) => _CrearImpresoraDialog(ref: ref),
     );
-    if (result == true) ref.invalidate(_impresorasProvider);
+    if (result == true) ref.invalidate(impresorasScreenProvider);
   }
 }
 
@@ -102,7 +107,7 @@ class _ImpresorasList extends ConsumerWidget {
           (imp) => _ImpresoraCard(
             impresora: imp,
             tieneAdmin: tieneAdmin,
-            onDeleted: () => ref.invalidate(_impresorasProvider),
+            onDeleted: () => ref.invalidate(impresorasScreenProvider),
           ),
         ),
       ],
@@ -227,8 +232,8 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
 
   Future<void> _probar() async {
     // Asegura que PrintService tiene el catálogo — usa los datos ya cargados
-    // por _impresorasProvider (que ya resolvió para mostrar esta pantalla).
-    final impresoras = ref.read(_impresorasProvider).valueOrNull ?? [];
+    // por impresorasScreenProvider (que ya resolvió para mostrar esta pantalla).
+    final impresoras = ref.read(impresorasScreenProvider).valueOrNull ?? [];
     PrintService.instance.configure(impresoras);
 
     // Leer config guardada

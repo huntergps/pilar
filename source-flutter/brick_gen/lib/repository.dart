@@ -51,6 +51,26 @@ class PilarRepository extends OfflineFirstWithSupabaseRepository {
   static bool get isInitialized => _instance != null;
 
   /// Configure and initialize the repository after Supabase.initialize().
+  // ── Cola offline pública ─────────────────────────────────────────────────
+
+  /// Devuelve todos los requests pendientes en la cola offline de Brick.
+  ///
+  /// Cada mapa incluye: `id`, `request_method`, `url`, `attempts`,
+  /// `locked`, `created_at`, `updated_at`.
+  Future<List<Map<String, dynamic>>> getOfflineQueueItems() {
+    return offlineRequestQueue.client.requestManager.unprocessedRequests();
+  }
+
+  /// Elimina un request de la cola por su [id].
+  ///
+  /// Retorna `true` si fue encontrado y eliminado, `false` si no existía.
+  Future<bool> deleteOfflineQueueItem(int id) {
+    return offlineRequestQueue.client.requestManager
+        .deleteUnprocessedRequest(id);
+  }
+
+  // ── Static configure ─────────────────────────────────────────────────────
+
   static void configure({
     required SupabaseClient supabaseClient,
     required RestOfflineRequestQueue offlineQueue,

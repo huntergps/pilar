@@ -13,7 +13,8 @@ import '../router/app_router.dart';
 import '../../features/alertas/widgets/alertas_panel.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
 import '../../features/notificaciones/widgets/notificaciones_dialog.dart';
-import '../../features/perfil/screens/perfil_screen.dart';
+import '../../features/perfil/screens/perfil_screen.dart'
+    show PerfilDialog, CambiarContrasenaDialog;
 import '../widgets/user_card.dart';
 
 /// The right-hand side of the [TitleBar] inside [PilarShell].
@@ -175,7 +176,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
           ),
         ),
 
-        // ---- User avatar + name ----
+        // ---- User avatar + estado + chevron ----
         if (usuario != null)
           Padding(
             padding: const EdgeInsetsDirectional.only(end: 8),
@@ -183,34 +184,52 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
               controller: _userMenuController,
               child: HoverButton(
                 onPressed: () => _openUserMenu(context),
-                builder: (context, states) => Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Avatar con punto de estado de presencia.
-                      _HeaderAvatar(
-                        avatarUrl: perfil?.avatarUrl,
-                        initial: perfil?.initial ??
-                            (usuario.email.isNotEmpty
-                                ? usuario.email[0].toUpperCase()
-                                : '?'),
-                        size: 28,
-                        theme: theme,
-                        estado: ref.watch(estadoPresenciaProvider),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        FluentIcons.chevron_down,
-                        size: 8,
-                        color: theme.resources.textFillColorSecondary,
-                      ),
-                    ],
-                  ),
-                ),
+                builder: (context, states) {
+                  final estado = ref.watch(estadoPresenciaProvider);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: states.isHovered
+                          ? theme.resources.subtleFillColorSecondary
+                          : null,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _HeaderAvatar(
+                          avatarUrl: perfil?.avatarUrl,
+                          initial: perfil?.initial ??
+                              (usuario.email.isNotEmpty
+                                  ? usuario.email[0].toUpperCase()
+                                  : '?'),
+                          size: 28,
+                          theme: theme,
+                          estado: estado,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          perfil != null && perfil.displayName.isNotEmpty
+                              ? perfil.displayName
+                              : usuario.email,
+                          style: theme.typography.caption?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          FluentIcons.chevron_down,
+                          size: 8,
+                          color: theme.resources.textFillColorSecondary,
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -305,6 +324,16 @@ class _UserMenuFlyout extends ConsumerWidget {
       }
     }
 
+    void changePassword() {
+      Navigator.of(flyoutCtx).maybePop();
+      if (context.mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (_) => const CambiarContrasenaDialog(),
+        );
+      }
+    }
+
     return FlyoutContent(
       padding: EdgeInsets.zero,
       child: SizedBox(
@@ -334,6 +363,7 @@ class _UserMenuFlyout extends ConsumerWidget {
                   return HoverButton(
                     onPressed: () {
                       ref.read(estadoPresenciaProvider.notifier).state = estado;
+                      Navigator.of(flyoutCtx).maybePop();
                     },
                     builder: (ctx, states) => Container(
                       padding: const EdgeInsets.symmetric(
@@ -377,6 +407,27 @@ class _UserMenuFlyout extends ConsumerWidget {
               ),
             ),
             const Divider(),
+
+            // ---- Cambiar contraseña ----
+            HoverButton(
+              onPressed: changePassword,
+              builder: (ctx, states) => Container(
+                color: states.isHovered
+                    ? theme.resources.subtleFillColorSecondary
+                    : null,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(FluentIcons.lock,
+                        size: 16, color: theme.inactiveColor),
+                    const SizedBox(width: 10),
+                    Text('Cambiar contraseña',
+                        style: theme.typography.body),
+                  ],
+                ),
+              ),
+            ),
 
             // ---- Mi perfil ----
             HoverButton(
@@ -475,7 +526,11 @@ class _HeaderAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dotSize = size * 0.38;
+    // Dot ocupa ~35% del avatar, con margen para borde blanco.
+    final dotSize = (size * 0.35).clamp(8.0, 14.0);
+    // SizedBox ligeramente mayor para que el dot no quede recortado.
+    final totalSize = size + dotSize * 0.5;
+
     final avatar = Container(
       width: size,
       height: size,
@@ -494,24 +549,30 @@ class _HeaderAvatar extends StatelessWidget {
           : _Initial(initial: initial, size: size, theme: theme),
     );
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        avatar,
-        Positioned(
-          right: -1,
-          bottom: -1,
-          child: Container(
-            width: dotSize,
-            height: dotSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: estado.color,
-              border: Border.all(color: theme.micaBackgroundColor, width: 1.5),
+    return SizedBox(
+      width: totalSize,
+      height: totalSize,
+      child: Stack(
+        children: [
+          Positioned(top: 0, left: 0, child: avatar),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: dotSize,
+              height: dotSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: estado.color,
+                border: Border.all(
+                  color: theme.micaBackgroundColor,
+                  width: 1.5,
+                ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

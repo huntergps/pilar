@@ -239,9 +239,17 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
           );
 
       final url = client.storage.from('logos').getPublicUrl(path);
-      setState(() => _logoUrl = url);
 
-      // Persist immediately
+      // Limpiar caché de imágenes de Flutter (la URL es idéntica tras upsert,
+      // sin esto todas las pantallas siguen mostrando el logo anterior).
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+
+      // Cache-buster para forzar recarga en Image.network (no se guarda en BD)
+      final bustUrl = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+      setState(() => _logoUrl = bustUrl);
+
+      // Persist clean URL (sin cache-buster) en BD
       await client.rpc('admin_update_empresa',
           params: {'p_data': {'logo_url': url}});
       ref.invalidate(empresaConfigProvider);
@@ -274,7 +282,21 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
     final theme = FluentTheme.of(context);
 
     return ScaffoldPage(
-      header: const PageHeader(title: Text('Empresa')),
+      header: PageHeader(
+        title: const Text('Empresa'),
+        commandBar: puedeEditar
+            ? CommandBar(
+                mainAxisAlignment: MainAxisAlignment.end,
+                primaryItems: [
+                  CommandBarButton(
+                    icon: const Icon(FluentIcons.save),
+                    label: const Text('Guardar'),
+                    onPressed: _handleSave,
+                  ),
+                ],
+              )
+            : null,
+      ),
       content: PilarAsyncBuilder<EmpresaConfig?>(
         value: empresaAsync,
         builder: (context, empresa) {
@@ -300,8 +322,18 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   .toList()
                 ..sort((a, b) => a.$2.compareTo(b.$2));
 
-          final formChildren = <Widget>[
-              // ---- Datos fiscales ----
+          // --- Form sections using FormSection ---
+          final datosEmpresaSection = FormSection(
+            title: 'Datos de la empresa',
+            children: [
+              if (!puedeEditar) ...[
+                const InfoBar(
+                  title: Text('Solo lectura'),
+                  content: Text(
+                      'Solo los administradores pueden editar los datos de la empresa.'),
+                  severity: InfoBarSeverity.info,
+                ),
+              ],
               PilarTextField(
                 name: 'nombre',
                 label: 'Nombre de empresa',
@@ -310,7 +342,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: !puedeEditar,
                 onSaved: (v) => _nombre = v,
               ),
-              const SizedBox(height: 12),
               PilarTextField(
                 name: 'nombre_comercial',
                 label: 'Nombre comercial',
@@ -318,7 +349,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: !puedeEditar,
                 onSaved: (v) => _nombreComercial = v,
               ),
-              const SizedBox(height: 12),
               PilarTextField(
                 name: 'ruc',
                 label: 'RUC / Cédula',
@@ -326,9 +356,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: true,
                 infoMessage: 'El RUC no puede modificarse una vez registrado.',
               ),
-              const SizedBox(height: 12),
-
-              // ---- Tipo RUC ----
               InfoLabel(
                 label: 'Tipo de contribuyente',
                 child: RadioGroup<String>(
@@ -353,19 +380,20 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+            ],
+          );
 
+          final ubicacionSection = FormSection(
+            title: 'Ubicacion',
+            children: [
               PilarTextField(
                 name: 'direccion',
-                label: 'Dirección',
+                label: 'Direccion',
                 initialValue: empresa.direccion,
                 maxLines: 2,
                 readOnly: !puedeEditar,
                 onSaved: (v) => _direccion = v,
               ),
-              const SizedBox(height: 12),
-
-              // ---- Provincia + Ciudad ----
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -418,18 +446,14 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-
-              // ---- Contacto ----
               PilarTextField(
                 name: 'telefono',
-                label: 'Teléfono',
+                label: 'Telefono',
                 initialValue: empresa.telefono,
                 keyboardType: TextInputType.phone,
                 readOnly: !puedeEditar,
                 onSaved: (v) => _telefono = v,
               ),
-              const SizedBox(height: 12),
               PilarTextField(
                 name: 'email',
                 label: 'Email',
@@ -440,7 +464,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: !puedeEditar,
                 onSaved: (v) => _email = v,
               ),
-              const SizedBox(height: 12),
               PilarTextField(
                 name: 'web',
                 label: 'Sitio web',
@@ -449,27 +472,8 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: !puedeEditar,
                 onSaved: (v) => _web = v,
               ),
-            ];
-
-          final Widget form = puedeEditar
-              ? PilarForm(
-                  onSave: _handleSave,
-                  padding: EdgeInsets.zero,
-                  children: formChildren,
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const InfoBar(
-                      title: Text('Solo lectura'),
-                      content: Text(
-                          'Solo los administradores pueden editar los datos de la empresa.'),
-                      severity: InfoBarSeverity.info,
-                    ),
-                    const SizedBox(height: 16),
-                    ...formChildren,
-                  ],
-                );
+            ],
+          );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -478,6 +482,15 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
+                    final formSections = Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        datosEmpresaSection,
+                        const SizedBox(height: 24),
+                        ubicacionSection,
+                      ],
+                    );
+
                     // ---- Mobile (< 600 px): logo arriba, formulario abajo ----
                     if (constraints.maxWidth < 600) {
                       return Column(
@@ -485,12 +498,12 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                         children: [
                           _buildLogoMobile(theme, empresa.empresaId, puedeEditar),
                           const SizedBox(height: 24),
-                          form,
+                          formSections,
                         ],
                       );
                     }
 
-                    // ---- Desktop / tablet (≥ 600 px): logo izquierda, form derecha ----
+                    // ---- Desktop / tablet (>= 600 px): logo izquierda, form derecha ----
                     return ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
                       child: Row(
@@ -502,14 +515,14 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                                 theme, empresa.empresaId, puedeEditar),
                           ),
                           const SizedBox(width: 28),
-                          Expanded(child: form),
+                          Expanded(child: formSections),
                         ],
                       ),
                     );
                   },
                 ),
 
-                // ---- Sección de branding (solo admins) ----
+                // ---- Seccion de branding (solo admins) ----
                 if (puedeEditar) ...[
                   const SizedBox(height: 32),
                   _EmpresaBrandingSection(

@@ -20,6 +20,7 @@ import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
 import '../services/window_service.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
+import 'pilar_footer.dart';
 import 'pilar_header.dart';
 
 /// The main authenticated navigation shell for PILAR ERP.
@@ -220,38 +221,27 @@ class _PilarShellState extends ConsumerState<PilarShell>
   ///   Mis mensajes expander children:
   ///     5 → /mis-mensajes/email (Mi Email)
   ///     6 → /mis-mensajes/chat (Mis DMs)
-  ///   Administración expander children:
-  ///     7 → /admin/empresa
-  ///     8 → /admin/usuarios
-  ///     9 → /admin/modulos
-  ///     10 → /admin/archivos
-  ///     11 → /admin/comunicacion
-  ///     12 → /admin/permisos
-  ///   13..12+N → Dynamic modules
-  ///   13+N → Perfil (footer PaneItem)
-  ///   14+N → Configuración (footer PaneItem)
+  ///   Administración expander children (adminBase=7), 8 children:
+  ///     7 → /admin/empresa      8 → /admin/usuarios    9 → /admin/modulos
+  ///     10 → /admin/archivos    11 → /admin/comunicacion
+  ///     12 → /admin/permisos    13 → /admin/impresoras
+  ///     14 → /admin/sync-log
+  ///   Entidades expander children (entidadesBase=15):
+  ///     15 → /entidades/contactos
+  ///     16 → /entidades/productos
+  ///   modulosBase=17..16+N → Dynamic modules
+  ///   17+N → Perfil (footer PaneItem)
+  ///   18+N → Configuración (footer PaneItem)
   ///
-  /// When [tieneHistorial] is false, Historial item is absent from the pane,
-  /// so indices 4+ shift down by 1:
-  ///     3 → /comunicacion/chat (Canales)
-  ///     4 → /mis-mensajes/email (Mi Email)
-  ///     5 → /mis-mensajes/chat (Mis DMs)
-  ///   (admin items and modules shift down by 1 accordingly)
-  ///
-  /// When [tieneAdmin] is false (Administración hidden):
-  ///   0 → Dashboard
-  ///   1..3 (or 1..4) → Empresa expander children
-  ///   5..6 (or 4..5) → Mis mensajes expander children
-  ///   7+N (or 6+N) → Perfil (footer PaneItem)
-  ///   8+N (or 7+N) → Configuración (footer PaneItem)
+  /// When [tieneHistorial] is false, indices 4+ shift down by 1.
+  /// When [tieneAdmin] is false (Administración hidden), its 8 children disappear.
   int _indexForRoute(
       String location, List<ModuloItem> modulos, bool tieneAdmin,
       bool tieneHistorial) {
     if (location.startsWith('/dashboard')) return 0;
 
     // ---- Empresa expander ----
-    // Sub-rutas específicas van ANTES que la ruta padre /comunicacion
-    if (location.startsWith('/comunicacion/chat')) return tieneHistorial ? 3 : 3;
+    if (location.startsWith('/comunicacion/chat')) return 3;
     if (location.startsWith('/comunicacion/historial')) {
       return tieneHistorial ? 4 : 3; // fallback a chat si no tiene permiso
     }
@@ -272,13 +262,20 @@ class _PilarShellState extends ConsumerState<PilarShell>
       if (location.startsWith('/admin/comunicacion')) return adminBase + 4;
       if (location.startsWith('/admin/permisos')) return adminBase + 5;
       if (location.startsWith('/admin/impresoras')) return adminBase + 6;
+      if (location.startsWith('/admin/sync-log')) return adminBase + 7;
       if (location.startsWith('/admin')) return adminBase;
     }
 
-    final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
-    final modulosBase = tieneAdmin
-        ? (tieneHistorial ? 14 : 13)
+    // ---- Entidades expander ----
+    // entidadesBase = adminBase+8 (if admin) or misMensajesBase+2 (if no admin)
+    final entidadesBase = tieneAdmin
+        ? (tieneHistorial ? 15 : 14)
         : (tieneHistorial ? 7 : 6);
+    if (location.startsWith('/entidades/contactos')) return entidadesBase;
+    if (location.startsWith('/entidades/productos')) return entidadesBase + 1;
+
+    final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
+    final modulosBase = entidadesBase + 2;
     int idx = modulosBase;
     for (final m in coreModulos) {
       if (location.startsWith('/${m.id}')) return idx;
@@ -428,14 +425,12 @@ class _PilarShellState extends ConsumerState<PilarShell>
           ),
           onChanged: (index) {
             final list = dynamicModulos.toList();
-            // Indices shift based on whether Historial is visible.
-            // Historial (index 4) disappears when tieneHistorial=false,
-            // so indices 4+ shift down by 1.
             final misMensajesBase = tieneHistorial ? 5 : 4;
             final adminBase = tieneHistorial ? 7 : 6;
-            final modulosBase = tieneAdmin
-                ? (tieneHistorial ? 14 : 13)
+            final entidadesBase = tieneAdmin
+                ? (tieneHistorial ? 15 : 14)
                 : (tieneHistorial ? 7 : 6);
+            final modulosBase = entidadesBase + 2;
 
             if (index == 0) {
               context.go(PilarRoutes.dashboard);
@@ -444,7 +439,6 @@ class _PilarShellState extends ConsumerState<PilarShell>
             } else if (index == 2) {
               context.go(PilarRoutes.comunicacionEmail);
             } else if (index == 3) {
-              // index 3 = Canales (always present)
               context.go(PilarRoutes.comunicacionChat);
             } else if (tieneHistorial && index == 4) {
               context.go(PilarRoutes.comunicacionHistorial);
@@ -466,6 +460,12 @@ class _PilarShellState extends ConsumerState<PilarShell>
               context.go(PilarRoutes.adminPermisos);
             } else if (tieneAdmin && index == adminBase + 6) {
               context.go(PilarRoutes.adminImpresoras);
+            } else if (tieneAdmin && index == adminBase + 7) {
+              context.go(PilarRoutes.adminSyncLog);
+            } else if (index == entidadesBase) {
+              context.go(PilarRoutes.entidadesContactos);
+            } else if (index == entidadesBase + 1) {
+              context.go(PilarRoutes.entidadesProductos);
             } else {
               final modIdx = index - modulosBase;
               if (modIdx >= 0 && modIdx < list.length) {
@@ -584,8 +584,34 @@ class _PilarShellState extends ConsumerState<PilarShell>
                     title: const Text('Impresoras'),
                     body: const SizedBox.shrink(),
                   ),
+                  PaneItem(
+                    icon: const Icon(FluentIcons.sync_status),
+                    title: const Text('Cola de Sincronización'),
+                    body: const SizedBox.shrink(),
+                  ),
                 ],
               ),
+
+            // ---- Entidades (siempre visible — contactos y productos básicos) ----
+            PaneItemExpander(
+              key: ValueKey(
+                  'entidades_expander_${location.startsWith('/entidades')}'),
+              icon: const Icon(FluentIcons.people_add),
+              title: const Text('Entidades'),
+              initiallyExpanded: location.startsWith('/entidades'),
+              items: [
+                PaneItem(
+                  icon: const Icon(FluentIcons.contact),
+                  title: const Text('Contactos'),
+                  body: const SizedBox.shrink(),
+                ),
+                PaneItem(
+                  icon: const Icon(FluentIcons.product_list),
+                  title: const Text('Productos'),
+                  body: const SizedBox.shrink(),
+                ),
+              ],
+            ),
 
             // ---- Dynamic module items ----
             ...dynamicModulos.map(
@@ -624,6 +650,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
           children: [
             const OfflineStatusBar(),
             Expanded(child: widget.child),
+            const PilarFooter(),
           ],
         ),
       ),

@@ -28,6 +28,7 @@ Esta carpeta contiene la capa base del sistema: patterns, decisiones técnicas y
 | [Centro de Notificaciones](notification-center.md) | Notificaciones in-app con Supabase Realtime, `crear_notificacion()`, widget `NotificationBell`, pg_cron cleanup |
 | [Workflows de Aprobación](approval-workflows.md) | Reglas configurables por módulo/recurso, modos simple y consenso, notificaciones automáticas, integración en módulos |
 | [Importador CSV/Excel](data-importer.md) | Templates data-driven, validación por campo, Edge Function `import-data`, templates seed (contactos, productos, saldos) |
+| [Gestor de Roles y Permisos](gestor_permisos.md) | RBAC 3 niveles, roles globales vs empresa, jerarquía permisos (`nivel` 0/1/2), RPCs `admin_get_roles` / `admin_get_permisos_rol` / `admin_toggle_permiso_rol`, JWT claims, `GestorPermisosScreen` |
 
 ### Guías de Implementación
 
@@ -179,4 +180,5 @@ Seed data fiscal y tributaria. Se carga como migraciones SQL.
 | Provincias/ciudades de Ecuador | Tablas `provincias`, `ciudades` — ver [008_catalogo_geografico.sql](supabase/migrations/008_catalogo_geografico.sql) |
 | Sistema de diseño UI (fluent_ui) | [ADR-004](adrs/ADR-004_flutter-single-codebase.md) — NavigationView, TabView, FluentThemeData, integración Syncfusion |
 | Paquetes Flutter y versiones | [pubspec-referencia.md](pubspec-referencia.md) |
+| Gestionar roles y permisos de empresa | RPCs `admin_get_roles()`, `admin_toggle_permiso_rol()`, `admin_toggle_usuario_rol()` — ver [gestor_permisos.md](gestor_permisos.md) |
 | Documentación de un módulo específico | Directorio del módulo correspondiente |

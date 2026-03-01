@@ -685,12 +685,20 @@ class _CanalTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final id = canal['canal_id'] as String? ?? '';
-    final nombre = canal['nombre'] as String? ?? 'Canal';
     final tipo = canal['tipo'] as String? ?? 'group';
     final noLeidos = canal['no_leidos'] as int? ?? 0;
+    final esDirecto = tipo == 'directo';
     final canalSel = ref.watch(canalSeleccionadoProvider);
     final seleccionado = canalSel == id;
     final theme = FluentTheme.of(context);
+
+    // Para DM: usar datos del otro usuario; para grupos: nombre del canal
+    final otroNombre = canal['otro_usuario_nombre'] as String?;
+    final otroAvatar = canal['otro_usuario_avatar'] as String?;
+    final nombreGrupo = canal['nombre'] as String? ?? '';
+    final displayName = esDirecto
+        ? (otroNombre ?? 'Directo')
+        : (nombreGrupo.isEmpty ? 'Canal' : nombreGrupo);
 
     return ListTile.selectable(
       selected: seleccionado,
@@ -705,18 +713,49 @@ class _CanalTile extends ConsumerWidget {
           ref.invalidate(chatCanalesProvider);
         }
       },
-      leading: Icon(
-        tipo == 'directo' ? FluentIcons.contact : FluentIcons.people,
-        size: 16,
-      ),
+      leading: esDirecto
+          ? _AvatarMini(nombre: displayName, avatarUrl: otroAvatar)
+          : const Icon(FluentIcons.people, size: 16),
       title: Text(
-        tipo == 'group' ? '# $nombre' : nombre,
+        esDirecto ? displayName : '# $displayName',
         overflow: TextOverflow.ellipsis,
         style: theme.typography.body,
       ),
       trailing: noLeidos > 0
           ? InfoBadge(source: Text('$noLeidos'))
           : null,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Avatar pequeño para tiles y headers de DM
+// ---------------------------------------------------------------------------
+
+class _AvatarMini extends StatelessWidget {
+  final String nombre;
+  final String? avatarUrl;
+  final double radius;
+
+  const _AvatarMini({required this.nombre, this.avatarUrl, this.radius = 12});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(avatarUrl!),
+        backgroundColor: theme.accentColor.withValues(alpha: 0.2),
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: theme.accentColor.withValues(alpha: 0.2),
+      child: Text(
+        nombre.isNotEmpty ? nombre[0].toUpperCase() : '?',
+        style: TextStyle(fontSize: radius * 0.8, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }
@@ -800,9 +839,14 @@ class _CanalMensajesView extends ConsumerWidget {
       (c) => c['canal_id'] == canalId,
       orElse: () => const {},
     );
-    final nombre = canalInfo?['nombre'] as String? ?? 'Canal';
     final tipo = canalInfo?['tipo'] as String? ?? 'group';
     final esDirecto = tipo == 'directo';
+    final otroNombre = canalInfo?['otro_usuario_nombre'] as String?;
+    final otroAvatar = canalInfo?['otro_usuario_avatar'] as String?;
+    final nombreGrupo = canalInfo?['nombre'] as String? ?? '';
+    final nombre = esDirecto
+        ? (otroNombre ?? 'Directo')
+        : (nombreGrupo.isEmpty ? 'Canal' : nombreGrupo);
 
     return Column(
       children: [
@@ -812,10 +856,10 @@ class _CanalMensajesView extends ConsumerWidget {
           color: theme.micaBackgroundColor,
           child: Row(
             children: [
-              Icon(
-                esDirecto ? FluentIcons.contact : FluentIcons.people,
-                size: 18,
-              ),
+              if (esDirecto)
+                _AvatarMini(nombre: nombre, avatarUrl: otroAvatar, radius: 14)
+              else
+                const Icon(FluentIcons.people, size: 18),
               const SizedBox(width: 8),
               Text(
                 esDirecto ? nombre : '# $nombre',
