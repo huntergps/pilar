@@ -669,27 +669,17 @@ class _PilarShellState extends ConsumerState<PilarShell>
 // ---------------------------------------------------------------------------
 
 /// Botón en el pane header que muestra la empresa activa (logo + nombre + ▾).
-/// Al pulsarlo abre un flyout con la lista de empresas para cambio silencioso.
-class _EmpresaSwitcherWidget extends ConsumerStatefulWidget {
+/// Al pulsarlo abre un ContentDialog con la lista de empresas.
+///
+/// Usamos ContentDialog en lugar de Flyout porque el NavigationPane.header
+/// se reconstruye cuando providers cambian (empresaConfigProvider emite 2 veces:
+/// local→remote), lo que invalida el FlyoutController y provoca auto-cierre
+/// y freeze en el segundo intento.
+class _EmpresaSwitcherWidget extends ConsumerWidget {
   const _EmpresaSwitcherWidget();
 
   @override
-  ConsumerState<_EmpresaSwitcherWidget> createState() =>
-      _EmpresaSwitcherWidgetState();
-}
-
-class _EmpresaSwitcherWidgetState
-    extends ConsumerState<_EmpresaSwitcherWidget> {
-  final FlyoutController _ctrl = FlyoutController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = FluentTheme.of(context);
     final empresaConfig = ref.watch(empresaConfigProvider).valueOrNull;
     final nombre = empresaConfig?.nombre ?? '—';
@@ -697,49 +687,44 @@ class _EmpresaSwitcherWidgetState
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
-      child: FlyoutTarget(
-        controller: _ctrl,
-        child: HoverButton(
-          onPressed: () {
-            _ctrl.showFlyout(
-              builder: (flyoutCtx) =>
-                  _EmpresaFlyoutContent(shellContext: context),
-            );
-          },
-          builder: (ctx, states) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
+      child: HoverButton(
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (_) => _EmpresaSwitcherDialog(shellContext: context),
+        ),
+        builder: (ctx, states) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: states.isHovered
+                ? theme.resources.subtleFillColorSecondary
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
               color: states.isHovered
-                  ? theme.resources.subtleFillColorSecondary
+                  ? theme.resources.controlStrokeColorDefault
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: states.isHovered
-                    ? theme.resources.controlStrokeColorDefault
-                    : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              _CompanyAvatar(logoUrl: logoUrl, nombre: nombre, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  nombre,
+                  style: theme.typography.caption
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                _CompanyAvatar(logoUrl: logoUrl, nombre: nombre, size: 22),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    nombre,
-                    style: theme.typography.caption
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  FluentIcons.chevron_unfold10,
-                  size: 10,
-                  color: theme.resources.textFillColorSecondary,
-                ),
-              ],
-            ),
+              const SizedBox(width: 2),
+              Icon(
+                FluentIcons.chevron_unfold10,
+                size: 10,
+                color: theme.resources.textFillColorSecondary,
+              ),
+            ],
           ),
         ),
       ),
@@ -748,32 +733,30 @@ class _EmpresaSwitcherWidgetState
 }
 
 // ---------------------------------------------------------------------------
-// Flyout content — lista de empresas con cambio silencioso
+// Dialog de selección de empresa (ContentDialog — robusto ante rebuilds)
 // ---------------------------------------------------------------------------
 
-class _EmpresaFlyoutContent extends ConsumerStatefulWidget {
-  /// Context del shell — para navegar al dashboard tras el switch.
+class _EmpresaSwitcherDialog extends ConsumerStatefulWidget {
+  /// Context del shell — usado para navegar al dashboard tras el switch.
   final BuildContext shellContext;
 
-  const _EmpresaFlyoutContent({required this.shellContext});
+  const _EmpresaSwitcherDialog({required this.shellContext});
 
   @override
-  ConsumerState<_EmpresaFlyoutContent> createState() =>
-      _EmpresaFlyoutContentState();
+  ConsumerState<_EmpresaSwitcherDialog> createState() =>
+      _EmpresaSwitcherDialogState();
 }
 
-class _EmpresaFlyoutContentState
-    extends ConsumerState<_EmpresaFlyoutContent> {
+class _EmpresaSwitcherDialogState
+    extends ConsumerState<_EmpresaSwitcherDialog> {
   String? _switchingId;
 
-  Future<void> _switch(BuildContext flyoutCtx, String empresaId) async {
-    // Capturar el navigator ANTES del gap async para satisfacer lint
-    final nav = Navigator.of(flyoutCtx);
+  Future<void> _switch(String empresaId) async {
     setState(() => _switchingId = empresaId);
     try {
       await ref.read(switchEmpresaProvider)(empresaId);
       if (!mounted) return;
-      nav.maybePop();
+      Navigator.of(context).pop();
       if (widget.shellContext.mounted) {
         widget.shellContext.go(PilarRoutes.dashboard);
       }
@@ -788,122 +771,122 @@ class _EmpresaFlyoutContentState
     final empresaActualId = ref.watch(empresaActivaIdProvider);
     final theme = FluentTheme.of(context);
 
-    return FlyoutContent(
-      padding: EdgeInsets.zero,
-      child: SizedBox(
-        width: 268,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-              child: Text('Mis empresas', style: theme.typography.bodyStrong),
-            ),
-            const Divider(),
-            empresasAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: ProgressRing()),
-              ),
-              error: (e, _) => Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(e.toString()),
-              ),
-              data: (empresas) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: empresas.map((e) {
-                  final isActive = e.empresaId == empresaActualId;
-                  final isSwitching = _switchingId == e.empresaId;
-                  return HoverButton(
-                    onPressed: (isActive || _switchingId != null)
-                        ? null
-                        : () => _switch(context, e.empresaId),
-                    builder: (ctx, states) => Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+    return ContentDialog(
+      title: const Text('Mis empresas'),
+      content: SizedBox(
+        width: 340,
+        child: empresasAsync.when(
+          loading: () => const SizedBox(
+            height: 80,
+            child: Center(child: ProgressRing()),
+          ),
+          error: (e, _) => Text(e.toString()),
+          data: (empresas) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...empresas.map((e) {
+                final isActive = e.empresaId == empresaActualId;
+                final isSwitching = _switchingId == e.empresaId;
+                return HoverButton(
+                  onPressed: (isActive || _switchingId != null)
+                      ? null
+                      : () => _switch(e.empresaId),
+                  builder: (ctx, states) => Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 8),
+                    decoration: BoxDecoration(
                       color: isActive
                           ? theme.accentColor.withValues(alpha: 0.08)
                           : (states.isHovered
                               ? theme.resources.subtleFillColorSecondary
                               : null),
-                      child: Row(
-                        children: [
-                          _CompanyAvatar(
-                              logoUrl: e.logoUrl, nombre: e.nombre, size: 30),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  e.nombre,
-                                  style: theme.typography.body?.copyWith(
-                                    fontWeight: isActive
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        _CompanyAvatar(
+                            logoUrl: e.logoUrl, nombre: e.nombre, size: 32),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                e.nombre,
+                                style: theme.typography.body?.copyWith(
+                                  fontWeight: isActive
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
                                 ),
-                                Text(
-                                  e.rolNombre,
-                                  style: theme.typography.caption
-                                      ?.copyWith(color: theme.inactiveColor),
-                                ),
-                              ],
-                            ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                e.rolNombre,
+                                style: theme.typography.caption
+                                    ?.copyWith(color: theme.inactiveColor),
+                              ),
+                            ],
                           ),
-                          if (isSwitching)
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: ProgressRing(strokeWidth: 2),
-                            )
-                          else if (isActive)
-                            Icon(FluentIcons.check_mark,
-                                size: 14, color: theme.accentColor),
-                        ],
+                        ),
+                        if (isSwitching)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: ProgressRing(strokeWidth: 2),
+                          )
+                        else if (isActive)
+                          Icon(FluentIcons.check_mark,
+                              size: 14, color: theme.accentColor),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const Divider(),
+              HoverButton(
+                onPressed: _switchingId != null
+                    ? null
+                    : () {
+                        Navigator.of(context).pop();
+                        if (widget.shellContext.mounted) {
+                          widget.shellContext.go(PilarRoutes.onboarding);
+                        }
+                      },
+                builder: (ctx, states) => Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: states.isHovered
+                        ? theme.resources.subtleFillColorSecondary
+                        : null,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(FluentIcons.add,
+                          size: 14, color: theme.accentColor),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Nueva empresa',
+                        style: theme.typography.body
+                            ?.copyWith(color: theme.accentColor),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const Divider(),
-            // Nueva empresa
-            HoverButton(
-              onPressed: _switchingId != null
-                  ? null
-                  : () {
-                      Navigator.of(context).maybePop();
-                      if (widget.shellContext.mounted) {
-                        widget.shellContext.go(PilarRoutes.onboarding);
-                      }
-                    },
-              builder: (ctx, states) => Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                color: states.isHovered
-                    ? theme.resources.subtleFillColorSecondary
-                    : null,
-                child: Row(
-                  children: [
-                    Icon(FluentIcons.add, size: 14, color: theme.accentColor),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Nueva empresa',
-                      style: theme.typography.body
-                          ?.copyWith(color: theme.accentColor),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
-          ],
+            ],
+          ),
         ),
       ),
+      actions: [
+        Button(
+          onPressed:
+              _switchingId != null ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
     );
   }
 }
