@@ -1,4 +1,5 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // ---------------------------------------------------------------------------
@@ -179,6 +180,22 @@ final workspaceTabsProvider =
 );
 
 // ---------------------------------------------------------------------------
+// Intents para keyboard shortcuts
+// ---------------------------------------------------------------------------
+
+class _CloseTabIntent extends Intent {
+  const _CloseTabIntent();
+}
+
+class _NextTabIntent extends Intent {
+  const _NextTabIntent();
+}
+
+class _PrevTabIntent extends Intent {
+  const _PrevTabIntent();
+}
+
+// ---------------------------------------------------------------------------
 // Widget
 // ---------------------------------------------------------------------------
 
@@ -188,23 +205,31 @@ final workspaceTabsProvider =
 /// [TabView] de fluent_ui. Soporta cierre de pestañas, indicador de cambios
 /// no guardados (punto azul) y un placeholder cuando no hay pestañas abiertas.
 ///
+/// ### Keyboard shortcuts
+/// - **Ctrl+W** — cierra la pestaña activa (si [closeable] = true).
+/// - **Ctrl+Tab** — activa la pestaña siguiente.
+/// - **Ctrl+Shift+Tab** — activa la pestaña anterior.
+///
 /// ### Ejemplo básico
 /// ```dart
 /// const WorkspaceTabs()
 /// ```
 ///
-/// ### Con placeholder personalizado
+/// ### Con nueva pestaña desde teclado
 /// ```dart
 /// WorkspaceTabs(
-///   emptyBuilder: (_) => const Text('Abre un registro para comenzar'),
+///   onNewTab: () => ref.read(workspaceTabsProvider.notifier).open(
+///     WorkspaceTab(id: 'nuevo', title: 'Nuevo', body: const NuevoScreen()),
+///   ),
 /// )
 /// ```
-class WorkspaceTabs extends ConsumerWidget {
+class WorkspaceTabs extends ConsumerStatefulWidget {
   const WorkspaceTabs({
     super.key,
     this.emptyBuilder,
     this.tabWidthBehavior = TabWidthBehavior.sizeToContent,
     this.showScrollButtons = true,
+    this.onNewTab,
   });
 
   /// Widget a mostrar cuando no hay pestañas abiertas.
@@ -216,42 +241,102 @@ class WorkspaceTabs extends ConsumerWidget {
   /// Si se muestran los botones de scroll cuando hay muchas pestañas.
   final bool showScrollButtons;
 
+  /// Callback opcional para Ctrl+T (nueva pestaña).
+  /// Si es null, Ctrl+T no tiene efecto.
+  final VoidCallback? onNewTab;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WorkspaceTabs> createState() => _WorkspaceTabsState();
+}
+
+class _WorkspaceTabsState extends ConsumerState<WorkspaceTabs> {
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(workspaceTabsProvider);
     final notifier = ref.read(workspaceTabsProvider.notifier);
 
     if (state.tabs.isEmpty) {
-      return emptyBuilder?.call(context) ?? const _DefaultEmptyState();
+      return widget.emptyBuilder?.call(context) ?? const _DefaultEmptyState();
     }
 
     final currentIndex =
         state.selectedIndex.clamp(0, state.tabs.length - 1);
 
-    return TabView(
-      currentIndex: currentIndex,
-      onChanged: notifier.select,
-      onNewPressed: null,
-      tabWidthBehavior: tabWidthBehavior,
-      showScrollButtons: showScrollButtons,
-      closeButtonVisibility: CloseButtonVisibilityMode.always,
-      tabs: state.tabs.map((tab) {
-        return Tab(
-          text: _TabTitle(tab: tab),
-          icon: tab.icon != null ? Icon(tab.icon, size: 14) : null,
-          body: tab.body,
-          semanticLabel: tab.title,
-          onClosed: tab.closeable
-              ? () {
-                  if (!tab.isDirty) {
-                    notifier.close(tab.id);
-                  } else {
-                    _confirmClose(context, tab, notifier);
-                  }
+    return Shortcuts(
+      shortcuts: {
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true):
+            const _CloseTabIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab, control: true):
+            const _NextTabIntent(),
+        const SingleActivator(
+          LogicalKeyboardKey.tab,
+          control: true,
+          shift: true,
+        ): const _PrevTabIntent(),
+      },
+      child: Actions(
+        actions: {
+          _CloseTabIntent: CallbackAction<_CloseTabIntent>(
+            onInvoke: (_) {
+              final tab = state.selectedTab;
+              if (tab != null && tab.closeable) {
+                if (!tab.isDirty) {
+                  notifier.close(tab.id);
+                } else {
+                  _confirmClose(context, tab, notifier);
                 }
-              : null,
-        );
-      }).toList(),
+              }
+              return null;
+            },
+          ),
+          _NextTabIntent: CallbackAction<_NextTabIntent>(
+            onInvoke: (_) {
+              if (state.tabs.length > 1) {
+                notifier.select((currentIndex + 1) % state.tabs.length);
+              }
+              return null;
+            },
+          ),
+          _PrevTabIntent: CallbackAction<_PrevTabIntent>(
+            onInvoke: (_) {
+              if (state.tabs.length > 1) {
+                notifier.select(
+                  (currentIndex - 1 + state.tabs.length) % state.tabs.length,
+                );
+              }
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: TabView(
+            currentIndex: currentIndex,
+            onChanged: notifier.select,
+            onNewPressed: widget.onNewTab,
+            tabWidthBehavior: widget.tabWidthBehavior,
+            showScrollButtons: widget.showScrollButtons,
+            closeButtonVisibility: CloseButtonVisibilityMode.always,
+            tabs: state.tabs.map((tab) {
+              return Tab(
+                text: _TabTitle(tab: tab),
+                icon: tab.icon != null ? Icon(tab.icon, size: 14) : null,
+                body: tab.body,
+                semanticLabel: tab.title,
+                onClosed: tab.closeable
+                    ? () {
+                        if (!tab.isDirty) {
+                          notifier.close(tab.id);
+                        } else {
+                          _confirmClose(context, tab, notifier);
+                        }
+                      }
+                    : null,
+              );
+            }).toList(),
+          ),
+        ),
+      ),
     );
   }
 
@@ -262,17 +347,17 @@ class WorkspaceTabs extends ConsumerWidget {
   ) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => ContentDialog(
+      builder: (dialogCtx) => ContentDialog(
         title: const Text('Cambios sin guardar'),
         content: Text(
             '"${tab.title}" tiene cambios sin guardar. ¿Cerrar de todas formas?'),
         actions: [
           Button(
             child: const Text('Cancelar'),
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             style: const ButtonStyle(
               backgroundColor: WidgetStatePropertyAll(Colors.errorPrimaryColor),
             ),
