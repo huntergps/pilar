@@ -734,15 +734,15 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
 
     setState(() => _enviando = true);
     try {
-      await Supabase.instance.client.from('cola_notificaciones').insert({
+      await Supabase.instance.client.from('com_mensajes').insert({
         'empresa_id': empresaId,
         'cuenta_id': conv.cuentaId,
         'conversacion_id': conv.id,
+        'tipo': 'outbound',
         'canal': conv.canal,
         'destinatario_ref': conv.destinatarioRef,
         'cuerpo': texto,
-        'prioridad': 5,
-        'tipo_notif': 'DIRECTO',
+        'estado': 'pendiente',
       });
       _ctrl.clear();
       ref.invalidate(mensajesProvider(conv.id));
