@@ -19,6 +19,7 @@ import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
 import '../services/window_service.dart';
+import '../../features/comunicacion/providers/com_unread_provider.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
 import 'pilar_footer.dart';
 import 'pilar_header.dart';
@@ -441,6 +442,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
             if (index == 0) {
               context.go(PilarRoutes.dashboard);
             } else if (index == 1) {
+              ref.read(comUnreadProvider.notifier).marcarLeidos();
               context.go(PilarRoutes.comunicacion);
             } else if (index == 2) {
               context.go(PilarRoutes.comunicacionEmail);
@@ -503,6 +505,14 @@ class _PilarShellState extends ConsumerState<PilarShell>
                   icon: const Icon(FluentIcons.chat),
                   title: const Text('Conversaciones'),
                   body: const SizedBox.shrink(),
+                  infoBadge: Consumer(
+                    builder: (ctx, r, _) {
+                      final n = r.watch(comUnreadProvider);
+                      if (n == 0) return const SizedBox.shrink();
+                      final label = n > 99 ? '99+' : '$n';
+                      return InfoBadge(source: Text(label));
+                    },
+                  ),
                 ),
                 PaneItem(
                   icon: const Icon(FluentIcons.mail),
