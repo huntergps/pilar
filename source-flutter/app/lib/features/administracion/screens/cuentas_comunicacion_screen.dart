@@ -729,8 +729,9 @@ class _CuentaCardState extends State<_CuentaCard> {
         final from = cfg['from_email'] as String? ?? '';
         subtitle = '$host · $from';
       case 'telegram':
-        final wh = cuenta.telegramWebhookOk ? ' · webhook ✓' : '';
-        subtitle = '@${cfg['bot_username'] ?? ''}$wh';
+        final username = cfg['bot_username'] as String? ?? '';
+        final wh = cuenta.telegramWebhookOk ? ' · webhook ✓' : ' · webhook pendiente';
+        subtitle = username.isNotEmpty ? '@$username$wh' : wh.trim();
     }
 
     return Padding(
@@ -782,6 +783,17 @@ class _CuentaCardState extends State<_CuentaCard> {
                   if (subtitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(subtitle, style: theme.typography.caption),
+                  ],
+                  // Link directo al bot de Telegram
+                  if (tipo == 'telegram') ...[
+                    const SizedBox(height: 2),
+                    SelectableText(
+                      't.me/${cfg['bot_username'] ?? ''}',
+                      style: theme.typography.caption?.copyWith(
+                        color: const Color(0xFF0088CC),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -1504,6 +1516,29 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
             placeholder: '123456:ABC-DEF...', obscure: true),
         _field('Username del bot', _tgUsernameCtrl,
             placeholder: 'mi_empresa_bot'),
+        // Link dinámico al bot en Telegram
+        ListenableBuilder(
+          listenable: _tgUsernameCtrl,
+          builder: (_, __) {
+            final username = _tgUsernameCtrl.text.trim();
+            if (username.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Icon(FluentIcons.link, size: 12,
+                      color: theme.inactiveColor),
+                  const SizedBox(width: 6),
+                  Text('t.me/$username',
+                      style: theme.typography.caption?.copyWith(
+                        color: theme.accentColor,
+                        fontStyle: FontStyle.italic,
+                      )),
+                ],
+              ),
+            );
+          },
+        ),
         // Webhook Secret con botón "Generar"
         Padding(
           padding: const EdgeInsets.only(bottom: 12),

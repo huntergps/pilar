@@ -245,6 +245,8 @@ class _ConvListTile extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 4),
+          _CanalBadge(canal: conv.canal, color: meta.color),
+          const SizedBox(width: 4),
           // Indicador ventana WA
           if (conv.canal == 'whatsapp')
             Container(
@@ -367,6 +369,26 @@ class _ThreadView extends ConsumerStatefulWidget {
 
 class _ThreadViewState extends ConsumerState<_ThreadView> {
   bool _desvinculando = false;
+  final _scrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients &&
+          _scrollCtrl.position.maxScrollExtent > 0) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   Future<void> _mostrarDialogVincular() async {
     await showDialog<void>(
@@ -421,6 +443,12 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
     final meta = _canalMeta(widget.conv.canal);
     final theme = FluentTheme.of(context);
     final conv = widget.conv;
+
+    // Auto-scroll al fondo cuando llegan mensajes nuevos vía Realtime.
+    ref.listen<AsyncValue<List<ComMensaje>>>(
+      mensajesProvider(widget.conv.id),
+      (_, next) { if (next.hasValue) _scrollToBottom(); },
+    );
 
     return Column(
       children: [
@@ -517,7 +545,7 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
                 );
               }
               return ListView.builder(
-                reverse: false,
+                controller: _scrollCtrl,
                 padding: const EdgeInsets.all(12),
                 itemCount: mensajes.length,
                 itemBuilder: (ctx, i) => _MensajeBubble(msg: mensajes[i]),
@@ -529,6 +557,43 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
         // ---- Barra de composición ----
         _ComposicionBar(conv: conv),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Badge de canal (WA / TG / Email)
+// ---------------------------------------------------------------------------
+
+class _CanalBadge extends StatelessWidget {
+  final String canal;
+  final Color color;
+
+  const _CanalBadge({required this.canal, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (canal) {
+      'whatsapp' => 'WA',
+      'telegram' => 'TG',
+      'email_api' || 'email_smtp' => 'Mail',
+      _ => canal.substring(0, 2).toUpperCase(),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          color: color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
     );
   }
 }
