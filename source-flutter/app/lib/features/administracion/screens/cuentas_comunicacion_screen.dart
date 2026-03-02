@@ -165,6 +165,13 @@ const _tipoIcons = {
 
 const _tipoOrden = ['whatsapp', 'email_api', 'email_smtp', 'telegram'];
 
+const _tipoColores = {
+  'whatsapp':   Color(0xFF25D366), // verde WhatsApp
+  'email_api':  Color(0xFFEA4335), // rojo Gmail/API
+  'email_smtp': Color(0xFFFF9800), // naranja SMTP
+  'telegram':   Color(0xFF2CA5E0), // azul Telegram
+};
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
@@ -275,6 +282,7 @@ class _CuentasComunicacionScreenState
                     _SectionHeader(
                       icon: _tipoIcons[tipo]!,
                       label: _tipoLabels[tipo]!,
+                      color: _tipoColores[tipo] ?? theme.accentColor,
                       onAdd: () =>
                           _showCuentaDialog(context, tipoInicial: tipo),
                     ),
@@ -323,6 +331,7 @@ class _CuentasComunicacionScreenState
                     _SectionHeader(
                       icon: _tipoIcons[tipo]!,
                       label: _tipoLabels[tipo]!,
+                      color: _tipoColores[tipo] ?? theme.accentColor,
                       onAdd: () =>
                           _showCuentaDialog(context, tipoInicial: tipo),
                     ),
@@ -575,28 +584,40 @@ class _GroupHeader extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color color;
   final VoidCallback onAdd;
 
   const _SectionHeader({
     required this.icon,
     required this.label,
+    required this.color,
     required this.onAdd,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: theme.accentColor),
-        const SizedBox(width: 8),
-        Text(label, style: theme.typography.bodyStrong),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(FluentIcons.add, size: 14),
-          onPressed: onAdd,
-        ),
-      ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border(left: BorderSide(color: color, width: 3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(label,
+              style: theme.typography.bodyStrong?.copyWith(color: color)),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(FluentIcons.add, size: 14),
+            onPressed: onAdd,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -740,13 +761,43 @@ class _CuentaCardState extends State<_CuentaCard> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            // Status indicator
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: activo ? Colors.green : Colors.grey[100],
+            // Canal icon con color de marca + status dot overlay
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: (_tipoColores[tipo] ?? const Color(0xFF808080))
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _tipoIcons[tipo] ?? FluentIcons.chat,
+                      size: 20,
+                      color: _tipoColores[tipo] ?? const Color(0xFF808080),
+                    ),
+                  ),
+                  Positioned(
+                    right: 1,
+                    bottom: 1,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: activo ? Colors.green : Colors.grey[100],
+                        border: Border.all(
+                          color: theme.micaBackgroundColor,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
@@ -757,8 +808,11 @@ class _CuentaCardState extends State<_CuentaCard> {
                 children: [
                   Row(
                     children: [
-                      Text(cuenta.nombre,
-                          style: theme.typography.bodyStrong),
+                      Flexible(
+                        child: Text(cuenta.nombre,
+                            style: theme.typography.bodyStrong,
+                            overflow: TextOverflow.ellipsis),
+                      ),
                       if (defecto) ...[
                         const SizedBox(width: 8),
                         Container(

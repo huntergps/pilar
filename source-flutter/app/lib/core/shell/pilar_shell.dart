@@ -310,6 +310,12 @@ class _PilarShellState extends ConsumerState<PilarShell>
     // esté listo antes de que cualquier módulo llame a ps.print().
     ref.watch(printCatalogoProvider);
 
+    // Inicializa el badge de mensajes no leídos y la suscripción Realtime
+    // para sonido/vibración. Se hace aquí (no solo en el Consumer del infoBadge)
+    // para garantizar que el provider exista aunque el PaneItemExpander esté
+    // colapsado y no renderice sus hijos.
+    ref.watch(comUnreadProvider);
+
     // Cuando cambia la empresa activa:
     // 1. Notificar a ConfigService para cargar el accentColor del usuario para esa empresa.
     // 2. Aplicar el color_primario de la empresa como color por defecto (si el usuario

@@ -11,7 +11,7 @@
  * Procesa hasta 50 mensajes por run para evitar timeouts.
  * Actualiza estado a 'enviado' o 'fallido' según el resultado.
  *
- * Auth: verify_jwt: true (invocada con service_role key desde pg_cron)
+ * Auth: verify_jwt: false — usa service_role internamente; no valida JWT del caller.
  */
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
