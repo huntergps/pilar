@@ -16,6 +16,7 @@ import 'core/config/supabase_config.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart'
     show routerProvider, supabaseConfiguredProvider, supabaseUrlProvider;
+import 'core/services/error_handler.dart';
 import 'core/services/window_service.dart';
 import 'features/splash/screens/splash_screen.dart';
 
@@ -127,6 +128,7 @@ class _SplashApp extends StatelessWidget {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  setupGlobalErrorHandling();
 
   // ── 0. Leer caché de inicio rápido — ANTES de cualquier UI ──────────────────
   // SharedPreferences no requiere Supabase. Tres claves fijas permiten

@@ -18,6 +18,8 @@ import '../../../core/router/app_router.dart';
 String? _routeForModulo(String id) {
   const routes = <String, String>{
     'administracion': PilarRoutes.adminEmpresa,
+    'comunicacion':   PilarRoutes.comunicacion,
+    'entidades':      PilarRoutes.entidadesContactos,
   };
   return routes[id];
 }
