@@ -5,6 +5,54 @@ import '../../../core/providers/empresa_provider.dart';
 import '../models/com_conversacion.dart';
 
 // ---------------------------------------------------------------------------
+// Cuentas outbound (para nueva conversación)
+// ---------------------------------------------------------------------------
+
+/// Registra un tipo de cuenta accesible para enviar mensajes.
+typedef CuentaOutbound = ({String id, String nombre, String tipo});
+
+/// Cuentas de WhatsApp y Telegram activas accesibles al usuario actual.
+/// Usado en el diálogo de nueva conversación outbound.
+final cuentasOutboundProvider =
+    FutureProvider.autoDispose<List<CuentaOutbound>>((ref) async {
+  final session = Supabase.instance.client.auth.currentSession;
+  final empresaId = session?.user.appMetadata['empresa_id'] as String?;
+  if (empresaId == null) return [];
+
+  try {
+    final data = await Supabase.instance.client
+        .rpc('com_get_todas_cuentas') as List;
+    return data
+        .cast<Map<String, dynamic>>()
+        .where((m) =>
+            (m['activo'] as bool? ?? false) &&
+            ['whatsapp', 'telegram'].contains(m['tipo']))
+        .map((m) => (
+              id: m['id'] as String,
+              nombre: m['nombre'] as String? ?? '',
+              tipo: m['tipo'] as String? ?? '',
+            ))
+        .toList();
+  } catch (_) {
+    final data = await Supabase.instance.client
+        .from('com_cuentas')
+        .select('id, nombre, tipo')
+        .eq('empresa_id', empresaId)
+        .eq('activo', true)
+        .inFilter('tipo', ['whatsapp', 'telegram'])
+        .order('nombre') as List;
+    return data
+        .cast<Map<String, dynamic>>()
+        .map((m) => (
+              id: m['id'] as String,
+              nombre: m['nombre'] as String? ?? '',
+              tipo: m['tipo'] as String? ?? '',
+            ))
+        .toList();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Conversación seleccionada
 // ---------------------------------------------------------------------------
 

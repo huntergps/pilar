@@ -9,6 +9,7 @@ import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
 import '../../../core/widgets/chatter_vincular_dialog.dart';
 import '../../../core/widgets/user_card.dart';
+import '../../entidades/widgets/contacto_picker.dart';
 import '../models/com_conversacion.dart';
 import '../models/com_mensaje.dart';
 import '../providers/conversaciones_provider.dart';
@@ -17,6 +18,18 @@ import '../providers/mensajes_provider.dart';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Invoca el Edge Function sender del canal para envío inmediato.
+/// Fire-and-forget — errores se ignoran (el cron actúa como fallback).
+void _invocarSender(String canal) {
+  final fnName = switch (canal) {
+    'telegram' => 'com-telegram-sender',
+    'whatsapp' => 'com-whatsapp-sender',
+    _ => null,
+  };
+  if (fnName == null) return;
+  Supabase.instance.client.functions.invoke(fnName, body: {}).ignore();
+}
 
 /// Retorna el ícono y color según el canal de comunicación.
 ({IconData icon, Color color}) _canalMeta(String canal) {
@@ -101,7 +114,7 @@ class _PanelLista extends ConsumerWidget {
       children: [
         // ---- Encabezado de scope ----
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Row(
             children: [
               Icon(
@@ -110,11 +123,26 @@ class _PanelLista extends ConsumerWidget {
                 color: theme.inactiveColor,
               ),
               const SizedBox(width: 6),
-              Text(
-                esEmpresa ? 'Mensajes de empresa' : 'Mis mensajes',
-                style: theme.typography.caption?.copyWith(
-                  color: theme.inactiveColor,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  esEmpresa ? 'Mensajes de empresa' : 'Mis mensajes',
+                  style: theme.typography.caption?.copyWith(
+                    color: theme.inactiveColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: 'Nueva conversación',
+                child: IconButton(
+                  icon: const Icon(FluentIcons.add, size: 14),
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (ctx) => UncontrolledProviderScope(
+                      container: ProviderScope.containerOf(context),
+                      child: const _NuevaConversacionDialog(),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -147,7 +175,7 @@ class _PanelLista extends ConsumerWidget {
                         style: FluentTheme.of(context).typography.subtitle,
                       ),
                       const SizedBox(height: 4),
-                      const Text('Los mensajes recibidos aparecerán aquí'),
+                      const Text('Pulsa + para iniciar una conversación'),
                     ],
                   ),
                 );
@@ -883,19 +911,6 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
     }
   }
 
-  /// Invoca el Edge Function sender del canal para envío inmediato.
-  /// Fire-and-forget — errores se ignoran (el cron actúa como fallback).
-  void _invocarSender(String canal) {
-    final fnName = switch (canal) {
-      'telegram' => 'com-telegram-sender',
-      'whatsapp' => 'com-whatsapp-sender',
-      _ => null,
-    };
-    if (fnName == null) return;
-    Supabase.instance.client.functions
-        .invoke(fnName, body: {})
-        .ignore();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -939,6 +954,305 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Diálogo: Nueva conversación outbound
+// ---------------------------------------------------------------------------
+
+class _NuevaConversacionDialog extends ConsumerStatefulWidget {
+  const _NuevaConversacionDialog();
+
+  @override
+  ConsumerState<_NuevaConversacionDialog> createState() =>
+      _NuevaConversacionDialogState();
+}
+
+class _NuevaConversacionDialogState
+    extends ConsumerState<_NuevaConversacionDialog> {
+  String _canal = 'whatsapp';
+  String? _cuentaId;
+  String? _contactoId;
+  final _destCtrl = TextEditingController();
+  final _nombreCtrl = TextEditingController();
+  final _mensajeCtrl = TextEditingController();
+  bool _enviando = false;
+
+  @override
+  void dispose() {
+    _destCtrl.dispose();
+    _nombreCtrl.dispose();
+    _mensajeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _enviar() async {
+    final dest = _destCtrl.text.trim();
+    final cuerpo = _mensajeCtrl.text.trim();
+    if (_cuentaId == null || dest.isEmpty || cuerpo.isEmpty) {
+      displayInfoBar(
+        context,
+        builder: (ctx, close) => InfoBar(
+          title: const Text('Completa los campos requeridos'),
+          content: const Text('Cuenta, destinatario y mensaje son obligatorios.'),
+          severity: InfoBarSeverity.warning,
+          action: IconButton(
+            icon: const Icon(FluentIcons.clear),
+            onPressed: close,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final empresaId = ref.read(empresaActivaIdProvider);
+    if (empresaId == null) return;
+
+    setState(() => _enviando = true);
+    try {
+      // 1. UPSERT conversación (crea o reutiliza si ya existe para ese canal+cuenta+dest)
+      final convData = await Supabase.instance.client
+          .from('com_conversaciones')
+          .upsert(
+            {
+              'empresa_id': empresaId,
+              'cuenta_id': _cuentaId,
+              'canal': _canal,
+              'destinatario_ref': dest,
+              if (_nombreCtrl.text.trim().isNotEmpty)
+                'destinatario_nombre': _nombreCtrl.text.trim(),
+              if (_contactoId != null) 'contacto_id': _contactoId,
+              'activo': true,
+              'ultimo_mensaje_en': DateTime.now().toIso8601String(),
+            },
+            onConflict: 'empresa_id,cuenta_id,destinatario_ref',
+          )
+          .select('id')
+          .single();
+
+      final convId = convData['id'] as String;
+
+      // 2. INSERT mensaje outbound (estado pendiente → cron/sender lo envía)
+      await Supabase.instance.client.from('com_mensajes').insert({
+        'empresa_id': empresaId,
+        'cuenta_id': _cuentaId,
+        'conversacion_id': convId,
+        'tipo': 'outbound',
+        'canal': _canal,
+        'destinatario_ref': dest,
+        'cuerpo': cuerpo,
+        'estado': 'pendiente',
+      });
+
+      // 3. Invocar sender inmediatamente (fire-and-forget)
+      _invocarSender(_canal);
+
+      // 4. Seleccionar la conversación recién creada
+      ref.read(convSeleccionadaProvider.notifier).state = convId;
+      ref.invalidate(conversacionesProvider);
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        displayInfoBar(
+          context,
+          builder: (ctx, close) => InfoBar(
+            title: const Text('Error al enviar'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            action: IconButton(
+              icon: const Icon(FluentIcons.clear),
+              onPressed: close,
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cuentasAsync = ref.watch(cuentasOutboundProvider);
+
+    return ContentDialog(
+      title: const Text('Nueva conversación'),
+      constraints: const BoxConstraints(maxWidth: 460),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ---- Canal ----
+            InfoLabel(
+              label: 'Canal',
+              child: Row(
+                children: [
+                  for (final c in [
+                    (value: 'whatsapp', label: 'WhatsApp', icon: FluentIcons.chat_bot),
+                    (value: 'telegram', label: 'Telegram', icon: FluentIcons.send),
+                  ]) ...[
+                    Button(
+                      style: ButtonStyle(
+                        backgroundColor: WidgetStateProperty.all(
+                          _canal == c.value
+                              ? FluentTheme.of(context).accentColor
+                              : null,
+                        ),
+                      ),
+                      onPressed: () => setState(() {
+                        _canal = c.value;
+                        _cuentaId = null;
+                      }),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(c.icon, size: 14,
+                              color: _canal == c.value ? Colors.white : null),
+                          const SizedBox(width: 4),
+                          Text(c.label,
+                              style: TextStyle(
+                                  color: _canal == c.value ? Colors.white : null)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- Cuenta ----
+            InfoLabel(
+              label: 'Cuenta *',
+              child: cuentasAsync.when(
+                loading: () => const SizedBox(
+                  height: 32,
+                  child: Center(child: ProgressRing(strokeWidth: 2)),
+                ),
+                error: (e, _) => Text('Error: $e'),
+                data: (cuentas) {
+                  final filtradas =
+                      cuentas.where((c) => c.tipo == _canal).toList();
+                  if (filtradas.isEmpty) {
+                    return Text(
+                      'No hay cuentas de ${_canal == 'whatsapp' ? 'WhatsApp' : 'Telegram'} configuradas.',
+                      style: TextStyle(
+                        color: FluentTheme.of(context).resources.systemFillColorCritical,
+                      ),
+                    );
+                  }
+                  // Auto-seleccionar si solo hay una
+                  if (_cuentaId == null && filtradas.length == 1) {
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => setState(() => _cuentaId = filtradas.first.id),
+                    );
+                  }
+                  return ComboBox<String>(
+                    value: _cuentaId,
+                    placeholder: const Text('Selecciona una cuenta'),
+                    isExpanded: true,
+                    onChanged: (v) => setState(() => _cuentaId = v),
+                    items: filtradas
+                        .map((c) => ComboBoxItem<String>(
+                              value: c.id,
+                              child: Text(c.nombre),
+                            ))
+                        .toList(),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- Contacto (opcional) ----
+            InfoLabel(
+              label: 'Contacto (opcional)',
+              child: ContactoPicker(
+                placeholder: 'Buscar en contactos...',
+                onSelected: (c) => setState(() {
+                  _contactoId = c['id'] as String?;
+                  _nombreCtrl.text = c['razon_social'] as String? ?? '';
+                }),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- Destinatario ----
+            InfoLabel(
+              label: _canal == 'whatsapp'
+                  ? 'Número WhatsApp (E.164) *'
+                  : 'Chat ID o @usuario *',
+              child: TextBox(
+                controller: _destCtrl,
+                placeholder: _canal == 'whatsapp'
+                    ? '+593XXXXXXXXX'
+                    : '@usuario o 123456789',
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- Nombre ----
+            InfoLabel(
+              label: 'Nombre del contacto',
+              child: TextBox(
+                controller: _nombreCtrl,
+                placeholder: 'Nombre para mostrar (opcional)',
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- Mensaje ----
+            InfoLabel(
+              label: 'Mensaje *',
+              child: SizedBox(
+                height: 88,
+                child: TextBox(
+                  controller: _mensajeCtrl,
+                  placeholder: 'Escribe el mensaje...',
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                ),
+              ),
+            ),
+
+            // ---- Aviso WhatsApp ----
+            if (_canal == 'whatsapp') ...[
+              const SizedBox(height: 8),
+              InfoBar(
+                title: const Text('WhatsApp Business'),
+                content: const Text(
+                  'Solo puedes iniciar conversaciones si el contacto te escribió en las últimas 24h, '
+                  'o usando una plantilla aprobada por Meta.',
+                ),
+                severity: InfoBarSeverity.info,
+                isLong: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        Button(
+          onPressed: _enviando ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _enviando ? null : _enviar,
+          child: _enviando
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: ProgressRing(strokeWidth: 2),
+                )
+              : const Text('Enviar'),
+        ),
+      ],
     );
   }
 }
