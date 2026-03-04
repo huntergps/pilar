@@ -5,6 +5,7 @@ import 'package:brick_gen/brick_gen.dart';
 import '../../../core/providers/presencia_provider.dart' show EstadoPresencia;
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
 import '../providers/chat_provider.dart';
@@ -341,7 +342,7 @@ class _NuevoCanalGrupalDialogState
               height: 220,
               child: miembrosAsync.when(
                 loading: () => const PilarLoadingCenter(),
-                error: (e, _) => Center(child: Text(e.toString())),
+                error: (e, _) => PilarErrorState(error: e),
                 data: (miembros) {
                   final filtrados = _busqueda.isEmpty
                       ? miembros

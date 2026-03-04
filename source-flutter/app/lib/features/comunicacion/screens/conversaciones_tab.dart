@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
 import '../../../core/widgets/chatter_vincular_dialog.dart';
+import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
 import '../../entidades/widgets/contacto_picker.dart';
@@ -1071,7 +1072,7 @@ class _NuevaConversacionDialogState
                   height: 32,
                   child: PilarLoadingCenter(),
                 ),
-                error: (e, _) => Text('Error: $e'),
+                error: (e, _) => PilarErrorState(error: e),
                 data: (cuentas) {
                   final filtradas =
                       cuentas.where((c) => c.tipo == _canal).toList();

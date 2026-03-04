@@ -52,16 +52,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     setState(() { _loading = true; _error = null; });
 
     try {
-      final response = await Supabase.instance.client.auth.updateUser(
-        UserAttributes(
-          password: pass,
-          data: {'needs_password': false},
-        ),
-      );
+      final user = await ref
+          .read(authActionsProvider.notifier)
+          .setInitialPassword(pass);
 
       if (!mounted) return;
 
-      if (response.user == null) {
+      if (user == null) {
         setState(() {
           _loading = false;
           _error = 'Error al guardar la contraseña. Intenta de nuevo.';

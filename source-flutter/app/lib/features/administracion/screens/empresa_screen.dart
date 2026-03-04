@@ -10,6 +10,7 @@ import '../../../core/theme/pilar_breakpoints.dart';
 import '../../../core/utils/ecuador_geo_provider.dart';
 import '../../../core/utils/timezones.dart';
 import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../providers/empresa_write_provider.dart';
 
@@ -246,7 +247,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
         value: empresaAsync,
         builder: (context, empresa) {
           if (empresa == null) {
-            return const Center(child: Text('Sin empresa activa'));
+            return const PilarEmptyState(message: 'Sin empresa activa', icon: FluentIcons.build);
           }
 
           // Initialize state once from loaded data

@@ -42,12 +42,6 @@ class AuthActionsNotifier extends AutoDisposeAsyncNotifier<void> {
   }
 
   /// Actualiza la contraseña del usuario autenticado.
-  ///
-  /// Llama a [updateUser] con los [UserAttributes] correspondientes.
-  /// Para actualizar campos adicionales de user_metadata junto con la
-  /// contraseña, el caller debe usar [Supabase.instance.client.auth.updateUser]
-  /// directamente (caso de set_password_screen que necesita borrar
-  /// el flag needs_password).
   Future<void> updatePassword(String newPassword) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
@@ -55,6 +49,28 @@ class AuthActionsNotifier extends AutoDisposeAsyncNotifier<void> {
         UserAttributes(password: newPassword),
       ),
     );
+  }
+
+  /// Establece la contraseña inicial y borra el flag [needs_password].
+  ///
+  /// Usado en [SetPasswordScreen] cuando el usuario accede por primera vez
+  /// via invitación. Combina la actualización de contraseña y metadata
+  /// en una sola llamada atómica.
+  ///
+  /// Retorna el [User] resultante o lanza [AuthException] en error.
+  Future<User?> setInitialPassword(String newPassword) async {
+    state = const AsyncLoading();
+    User? result;
+    state = await AsyncValue.guard(() async {
+      final response = await Supabase.instance.client.auth.updateUser(
+        UserAttributes(
+          password: newPassword,
+          data: {'needs_password': false},
+        ),
+      );
+      result = response.user;
+    });
+    return result;
   }
 }
 

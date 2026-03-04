@@ -12,6 +12,8 @@ import '../../../core/config/pilar_constants.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../../../core/utils/timezones.dart';
 import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../providers/perfil_write_provider.dart';
 
@@ -42,12 +44,9 @@ class PerfilDialog extends ConsumerWidget {
           height: 100,
           child: PilarLoadingCenter(),
         ),
-        error: (e, _) => Text(
-          'Error cargando perfil: $e',
-          style: TextStyle(color: theme.resources.systemFillColorCritical),
-        ),
+        error: (e, _) => PilarErrorState(error: e),
         data: (perfil) {
-          if (perfil == null) return const Text('No se encontró el perfil.');
+          if (perfil == null) return const PilarEmptyState(message: 'No se encontró el perfil.', icon: FluentIcons.contact);
           return _ReadOnlyPerfilContent(perfil: perfil, theme: theme);
         },
       ),
@@ -855,15 +854,10 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
       ),
       content: perfilAsync.when(
         loading: () => const PilarLoadingCenter(),
-        error: (e, _) => Center(
-          child: Text(
-            'Error cargando perfil: $e',
-            style: TextStyle(color: theme.resources.systemFillColorCritical),
-          ),
-        ),
+        error: (e, _) => PilarErrorState(error: e),
         data: (perfil) {
           if (perfil == null) {
-            return const Center(child: Text('No se encontró el perfil.'));
+            return const PilarEmptyState(message: 'No se encontró el perfil.', icon: FluentIcons.contact);
           }
           _initFields(perfil);
           return LayoutBuilder(
