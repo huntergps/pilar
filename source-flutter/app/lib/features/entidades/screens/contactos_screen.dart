@@ -1,16 +1,101 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+import 'package:brick_gen/brick_gen.dart';
 
 import '../providers/contactos_provider.dart';
 
 // ---------------------------------------------------------------------------
-// Pantalla principal
+// Pantalla principal — workspace con pestañas aislado por módulo
 // ---------------------------------------------------------------------------
 
-class ContactosScreen extends ConsumerWidget {
+class ContactosScreen extends StatelessWidget {
   const ContactosScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [
+        workspaceTabsProvider.overrideWith(WorkspaceTabsNotifier.new),
+      ],
+      child: const _ContactosWorkspace(),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace: gestiona las pestañas del módulo
+// ---------------------------------------------------------------------------
+
+class _ContactosWorkspace extends ConsumerStatefulWidget {
+  const _ContactosWorkspace();
+
+  @override
+  ConsumerState<_ContactosWorkspace> createState() =>
+      _ContactosWorkspaceState();
+}
+
+class _ContactosWorkspaceState extends ConsumerState<_ContactosWorkspace> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openListaTab());
+  }
+
+  void _openListaTab() {
+    ref.read(workspaceTabsProvider.notifier).open(
+          WorkspaceTab(
+            id: 'contactos-lista',
+            title: 'Contactos',
+            icon: FluentIcons.contact,
+            closeable: false,
+            body: _ContactosLista(onOpenTab: _openFormTab),
+          ),
+        );
+  }
+
+  void _openFormTab(Map<String, dynamic>? contacto) {
+    final tabs = ref.read(workspaceTabsProvider.notifier);
+    final isNew = contacto == null;
+    final id = isNew ? 'contacto-nuevo' : 'contacto-${contacto['id']}';
+    final title = isNew
+        ? 'Nuevo contacto'
+        : (contacto['razon_social'] as String? ??
+            contacto['numero_id'] as String? ??
+            'Editar');
+
+    tabs.open(WorkspaceTab(
+      id: id,
+      title: title,
+      icon: isNew ? FluentIcons.add : FluentIcons.edit,
+      body: _ContactoForm(
+        contacto: contacto,
+        onSaved: () {
+          ref.read(contactosProvider.notifier).refresh();
+          tabs.close(id);
+        },
+        onCancel: () => tabs.close(id),
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const WorkspaceTabs();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pestaña lista
+// ---------------------------------------------------------------------------
+
+class _ContactosLista extends ConsumerWidget {
+  const _ContactosLista({required this.onOpenTab, super.key});
+
+  final void Function(Map<String, dynamic>?) onOpenTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,6 +103,7 @@ class ContactosScreen extends ConsumerWidget {
       title: 'Contactos',
       value: ref.watch(contactosProvider),
       showSearch: true,
+      exportLabel: 'contactos',
       searchFields: (c) => [
         c['razon_social'] as String? ?? '',
         c['nombre_comercial'] as String? ?? '',
@@ -25,7 +111,8 @@ class ContactosScreen extends ConsumerWidget {
         c['email'] as String? ?? '',
       ],
       columns: const [
-        PilarColumn(field: 'razon_social', label: 'Nombre / Razón Social', width: 220),
+        PilarColumn(
+            field: 'razon_social', label: 'Nombre / Razón Social', width: 220),
         PilarColumn(field: 'numero_id', label: 'RUC / CI', width: 120),
         PilarColumn(field: 'tipo_entidad', label: 'Tipo', width: 100),
         PilarColumn(field: '_cliente', label: 'Cliente', width: 80),
@@ -42,14 +129,35 @@ class ContactosScreen extends ConsumerWidget {
         'email': c['email'] ?? '',
         'telefono': c['telefono'] ?? c['celular'] ?? '',
       },
-      onNew: () => _showDialog(context, ref, null),
-      onRowTap: (c) => _showDialog(context, ref, c),
+      onNew: () => onOpenTab(null),
+      onRowTap: onOpenTab,
       onDelete: (c) async {
-        await Supabase.instance.client
-            .from('contactos')
-            .update({'activo': false})
-            .eq('id', c['id'] as String);
-        ref.invalidate(contactosProvider);
+        if (!kIsWeb && PilarRepository.isInitialized) {
+          await PilarRepository.instance.upsert<Contacto>(Contacto(
+            id: c['id'] as String,
+            razonSocial: c['razon_social'] as String? ?? '',
+            nombreComercial: c['nombre_comercial'] as String?,
+            numeroId: c['numero_id'] as String?,
+            tipoEntidad: c['tipo_entidad'] as String? ?? 'PERSONA_NATURAL',
+            tipoIdentificacion: c['tipo_identificacion'] as String? ?? '05',
+            esCliente: c['es_cliente'] as bool? ?? false,
+            esProveedor: c['es_proveedor'] as bool? ?? false,
+            esEmpleado: c['es_empleado'] as bool? ?? false,
+            email: c['email'] as String?,
+            telefono: c['telefono'] as String?,
+            celular: c['celular'] as String?,
+            activo: false,
+          ));
+        } else {
+          await Supabase.instance.client.rpc(
+            'entidades_actualizar_contacto',
+            params: {
+              'p_id': c['id'] as String,
+              'p_data': {'activo': false},
+            },
+          );
+        }
+        ref.read(contactosProvider.notifier).refresh();
       },
       deleteConfirmText: (c) =>
           '¿Eliminar a "${c['razon_social']}"? Esta acción no se puede deshacer.',
@@ -62,37 +170,28 @@ class ContactosScreen extends ConsumerWidget {
         'GOBIERNO' => 'Gobierno',
         _ => tipo ?? '',
       };
-
-  void _showDialog(
-    BuildContext context,
-    WidgetRef ref,
-    Map<String, dynamic>? contacto,
-  ) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogCtx) => _ContactoDialog(
-        contacto: contacto,
-        onSaved: () => ref.invalidate(contactosProvider),
-      ),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Dialog: crear / editar contacto
+// Pestaña formulario: crear / editar contacto
 // ---------------------------------------------------------------------------
 
-class _ContactoDialog extends StatefulWidget {
+class _ContactoForm extends StatefulWidget {
   final Map<String, dynamic>? contacto;
   final VoidCallback onSaved;
+  final VoidCallback onCancel;
 
-  const _ContactoDialog({this.contacto, required this.onSaved});
+  const _ContactoForm({
+    this.contacto,
+    required this.onSaved,
+    required this.onCancel,
+  });
 
   @override
-  State<_ContactoDialog> createState() => _ContactoDialogState();
+  State<_ContactoForm> createState() => _ContactoFormState();
 }
 
-class _ContactoDialogState extends State<_ContactoDialog> {
+class _ContactoFormState extends State<_ContactoForm> {
   final _razonCtrl = TextEditingController();
   final _comercialCtrl = TextEditingController();
   final _idCtrl = TextEditingController();
@@ -101,11 +200,9 @@ class _ContactoDialogState extends State<_ContactoDialog> {
   final _celularCtrl = TextEditingController();
 
   String _tipoEntidad = 'PERSONA_NATURAL';
-  String _tipoIdSri = '05'; // Cédula por defecto
+  String _tipoIdentificacion = '05';
   bool _esCliente = false;
   bool _esProveedor = false;
-  bool _saving = false;
-  String? _error;
 
   @override
   void initState() {
@@ -119,7 +216,7 @@ class _ContactoDialogState extends State<_ContactoDialog> {
       _telefonoCtrl.text = c['telefono'] as String? ?? '';
       _celularCtrl.text = c['celular'] as String? ?? '';
       _tipoEntidad = c['tipo_entidad'] as String? ?? 'PERSONA_NATURAL';
-      _tipoIdSri = c['tipo_id_sri'] as String? ?? '05';
+      _tipoIdentificacion = c['tipo_identificacion'] as String? ?? '05';
       _esCliente = c['es_cliente'] as bool? ?? false;
       _esProveedor = c['es_proveedor'] as bool? ?? false;
     }
@@ -136,116 +233,131 @@ class _ContactoDialogState extends State<_ContactoDialog> {
     super.dispose();
   }
 
-  Future<void> _save(BuildContext ctx) async {
+  Future<void> _doSave() async {
     if (_razonCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'El nombre / razón social es requerido.');
-      return;
+      throw 'El nombre / razón social es requerido.';
     }
 
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    final id = widget.contacto?['id'] as String? ?? const Uuid().v4();
 
-    try {
+    if (!kIsWeb && PilarRepository.isInitialized) {
+      // Offline-first: escribe en SQLite primero, sincroniza con Supabase en background.
+      await PilarRepository.instance.upsert<Contacto>(Contacto(
+        id: id,
+        razonSocial: _razonCtrl.text.trim(),
+        nombreComercial: _comercialCtrl.text.trim().isNotEmpty
+            ? _comercialCtrl.text.trim()
+            : null,
+        numeroId:
+            _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
+        tipoEntidad: _tipoEntidad,
+        tipoIdentificacion: _tipoIdentificacion,
+        esCliente: _esCliente,
+        esProveedor: _esProveedor,
+        esEmpleado: widget.contacto?['es_empleado'] as bool? ?? false,
+        email:
+            _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+        telefono: _telefonoCtrl.text.trim().isNotEmpty
+            ? _telefonoCtrl.text.trim()
+            : null,
+        celular: _celularCtrl.text.trim().isNotEmpty
+            ? _celularCtrl.text.trim()
+            : null,
+        activo: true,
+      ));
+    } else {
+      // Web: llamada directa a Supabase (no hay SQLite en web).
       final data = {
         'razon_social': _razonCtrl.text.trim(),
         'nombre_comercial': _comercialCtrl.text.trim().isNotEmpty
             ? _comercialCtrl.text.trim()
             : null,
-        'numero_id': _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
+        'numero_id':
+            _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
         'tipo_entidad': _tipoEntidad,
-        'tipo_id_sri': _tipoIdSri,
+        'tipo_identificacion': _tipoIdentificacion,
         'es_cliente': _esCliente,
         'es_proveedor': _esProveedor,
-        'email': _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
-        'telefono':
-            _telefonoCtrl.text.trim().isNotEmpty ? _telefonoCtrl.text.trim() : null,
-        'celular':
-            _celularCtrl.text.trim().isNotEmpty ? _celularCtrl.text.trim() : null,
+        'email': _emailCtrl.text.trim().isNotEmpty
+            ? _emailCtrl.text.trim()
+            : null,
+        'telefono': _telefonoCtrl.text.trim().isNotEmpty
+            ? _telefonoCtrl.text.trim()
+            : null,
+        'celular': _celularCtrl.text.trim().isNotEmpty
+            ? _celularCtrl.text.trim()
+            : null,
       };
-
-      final id = widget.contacto?['id'] as String?;
-      if (id != null) {
-        await Supabase.instance.client
-            .from('contactos')
-            .update(data)
-            .eq('id', id);
+      if (widget.contacto != null) {
+        await Supabase.instance.client.rpc(
+          'entidades_actualizar_contacto',
+          params: {'p_id': id, 'p_data': data},
+        );
       } else {
-        await Supabase.instance.client.from('contactos').insert(data);
+        await Supabase.instance.client.rpc(
+          'entidades_crear_contacto',
+          params: {'p_data': data},
+        );
       }
-
-      widget.onSaved();
-      if (ctx.mounted) Navigator.of(ctx).pop();
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+
+    widget.onSaved();
   }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.contacto != null;
-    return ContentDialog(
-      constraints: const BoxConstraints(maxWidth: 680),
-      title: Text(isEdit ? 'Editar contacto' : 'Nuevo contacto'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return FormScaffold(
+      title: isEdit ? 'Editar contacto' : 'Nuevo contacto',
+      saveLabel: isEdit ? 'Guardar' : 'Crear',
+      onSave: _doSave,
+      onCancel: widget.onCancel,
+      sections: [
+        FormSection(
+          title: 'Identificación',
+          columns: 2,
           children: [
-            if (_error != null) ...[
-              InfoBar(
-                title: const Text('Error'),
-                content: Text(_error!),
-                severity: InfoBarSeverity.error,
-                onClose: () => setState(() => _error = null),
+            InfoLabel(
+              label: 'Tipo de entidad',
+              child: ComboBox<String>(
+                value: _tipoEntidad,
+                items: const [
+                  ComboBoxItem(
+                      value: 'PERSONA_NATURAL',
+                      child: Text('Persona Natural')),
+                  ComboBoxItem(value: 'SOCIEDAD', child: Text('Sociedad')),
+                  ComboBoxItem(value: 'GOBIERNO', child: Text('Gobierno')),
+                ],
+                onChanged: (v) => setState(() => _tipoEntidad = v!),
               ),
-              const SizedBox(height: 12),
-            ],
-            // Tipo entidad + tipo ID
-            Row(
-              children: [
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Tipo de entidad',
-                    child: ComboBox<String>(
-                      value: _tipoEntidad,
-                      items: const [
-                        ComboBoxItem(value: 'PERSONA_NATURAL', child: Text('Persona Natural')),
-                        ComboBoxItem(value: 'SOCIEDAD', child: Text('Sociedad')),
-                        ComboBoxItem(value: 'GOBIERNO', child: Text('Gobierno')),
-                      ],
-                      onChanged: (v) => setState(() => _tipoEntidad = v!),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Tipo de identificación',
-                    child: ComboBox<String>(
-                      value: _tipoIdSri,
-                      items: const [
-                        ComboBoxItem(value: '04', child: Text('RUC')),
-                        ComboBoxItem(value: '05', child: Text('Cédula')),
-                        ComboBoxItem(value: '06', child: Text('Pasaporte')),
-                        ComboBoxItem(value: '07', child: Text('Consumidor Final')),
-                        ComboBoxItem(value: '08', child: Text('Identificación exterior')),
-                      ],
-                      onChanged: (v) => setState(() => _tipoIdSri = v!),
-                    ),
-                  ),
-                ),
-              ],
             ),
-            const SizedBox(height: 12),
+            InfoLabel(
+              label: 'Tipo de identificación',
+              child: ComboBox<String>(
+                value: _tipoIdentificacion,
+                items: const [
+                  ComboBoxItem(value: '04', child: Text('RUC')),
+                  ComboBoxItem(value: '05', child: Text('Cédula')),
+                  ComboBoxItem(value: '06', child: Text('Pasaporte')),
+                  ComboBoxItem(value: '07', child: Text('Consumidor Final')),
+                  ComboBoxItem(
+                      value: '08', child: Text('Identificación exterior')),
+                ],
+                onChanged: (v) => setState(() => _tipoIdentificacion = v!),
+              ),
+            ),
             InfoLabel(
               label: 'No. de identificación',
-              child: TextBox(controller: _idCtrl, placeholder: 'RUC, cédula o pasaporte'),
+              child: TextBox(
+                controller: _idCtrl,
+                placeholder: 'RUC, cédula o pasaporte',
+              ),
             ),
-            const SizedBox(height: 12),
+          ],
+        ),
+        FormSection(
+          title: 'Información principal',
+          children: [
             InfoLabel(
               label: 'Razón social *',
               child: TextBox(
@@ -253,7 +365,6 @@ class _ContactoDialogState extends State<_ContactoDialog> {
                 placeholder: 'Nombre completo o razón social',
               ),
             ),
-            const SizedBox(height: 12),
             InfoLabel(
               label: 'Nombre comercial',
               child: TextBox(
@@ -261,32 +372,31 @@ class _ContactoDialogState extends State<_ContactoDialog> {
                 placeholder: 'Nombre comercial (opcional)',
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Email',
-                    child: TextBox(controller: _emailCtrl, placeholder: 'correo@ejemplo.com'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Teléfono',
-                    child: TextBox(controller: _telefonoCtrl, placeholder: '02-xxx-xxxx'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Celular',
-                    child: TextBox(controller: _celularCtrl, placeholder: '09x-xxx-xxxx'),
-                  ),
-                ),
-              ],
+          ],
+        ),
+        FormSection(
+          title: 'Contacto',
+          columns: 3,
+          children: [
+            InfoLabel(
+              label: 'Email',
+              child:
+                  TextBox(controller: _emailCtrl, placeholder: 'correo@ejemplo.com'),
             ),
-            const SizedBox(height: 16),
+            InfoLabel(
+              label: 'Teléfono',
+              child:
+                  TextBox(controller: _telefonoCtrl, placeholder: '02-xxx-xxxx'),
+            ),
+            InfoLabel(
+              label: 'Celular',
+              child: TextBox(
+                  controller: _celularCtrl, placeholder: '09x-xxx-xxxx'),
+            ),
+          ],
+        ),
+        FormSection(
+          children: [
             Row(
               children: [
                 Checkbox(
@@ -303,18 +413,6 @@ class _ContactoDialogState extends State<_ContactoDialog> {
               ],
             ),
           ],
-        ),
-      ),
-      actions: [
-        Button(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : () => _save(context),
-          child: _saving
-              ? const SizedBox.square(dimension: 16, child: ProgressRing())
-              : Text(isEdit ? 'Guardar' : 'Crear'),
         ),
       ],
     );

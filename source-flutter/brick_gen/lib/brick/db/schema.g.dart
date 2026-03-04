@@ -2,14 +2,17 @@
 // This file should be version controlled
 import 'package:brick_sqlite/db.dart';
 part '20260226174255.migration.dart';
+part '20260302004206.migration.dart';
 
 /// All intelligently-generated migrations from all `@Migratable` classes on disk
 final migrations = <Migration>{
-  const Migration20260226174255(),};
+  const Migration20260226174255(),
+  const Migration20260302004206(),
+};
 
 /// A consumable database structure including the latest generated migration.
 final schema = Schema(
-  0,
+  20260302004206,
   generatorVersion: 1,
   tables: <SchemaTable>{
     SchemaTable(
@@ -32,6 +35,32 @@ final schema = Schema(
         SchemaColumn('accion_url', Column.varchar),
         SchemaColumn('estado', Column.varchar),
         SchemaColumn('created_at', Column.datetime),
+      },
+      indices: <SchemaIndex>{},
+    ),
+    SchemaTable(
+      'Contacto',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('razon_social', Column.varchar),
+        SchemaColumn('nombre_comercial', Column.varchar),
+        SchemaColumn('numero_id', Column.varchar),
+        SchemaColumn('tipo_entidad', Column.varchar),
+        SchemaColumn('tipo_identificacion', Column.varchar),
+        SchemaColumn('es_cliente', Column.boolean),
+        SchemaColumn('es_proveedor', Column.boolean),
+        SchemaColumn('es_empleado', Column.boolean),
+        SchemaColumn('email', Column.varchar),
+        SchemaColumn('telefono', Column.varchar),
+        SchemaColumn('celular', Column.varchar),
+        SchemaColumn('activo', Column.boolean),
       },
       indices: <SchemaIndex>{},
     ),
@@ -113,6 +142,27 @@ final schema = Schema(
         SchemaColumn('accion_url', Column.varchar),
         SchemaColumn('leida', Column.boolean),
         SchemaColumn('created_at', Column.datetime),
+      },
+      indices: <SchemaIndex>{},
+    ),
+    SchemaTable(
+      'Producto',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('codigo', Column.varchar),
+        SchemaColumn('nombre', Column.varchar),
+        SchemaColumn('tipo', Column.varchar),
+        SchemaColumn('precio_venta', Column.Double),
+        SchemaColumn('precio_costo', Column.Double),
+        SchemaColumn('descripcion', Column.varchar),
+        SchemaColumn('activo', Column.boolean),
       },
       indices: <SchemaIndex>{},
     ),

@@ -33,7 +33,7 @@ void main() {
       expect(p.zonaHoraria, 'America/Guayaquil');
     });
 
-    test('usa zona_horaria Guayaquil por defecto', () {
+    test('usa zona_horaria UTC por defecto', () {
       final json = {
         'usuario_id': 'u-001',
         'empresa_id': 'e-001',
@@ -41,7 +41,7 @@ void main() {
       };
 
       final p = PerfilUsuario.fromJson(json);
-      expect(p.zonaHoraria, 'America/Guayaquil');
+      expect(p.zonaHoraria, 'UTC');
     });
 
     test('campos opcionales son null cuando no están en JSON', () {
