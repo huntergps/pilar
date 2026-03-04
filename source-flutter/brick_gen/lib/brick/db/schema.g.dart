@@ -3,16 +3,18 @@
 import 'package:brick_sqlite/db.dart';
 part '20260226174255.migration.dart';
 part '20260302004206.migration.dart';
+part '20260303000100.migration.dart';
 
 /// All intelligently-generated migrations from all `@Migratable` classes on disk
 final migrations = <Migration>{
   const Migration20260226174255(),
   const Migration20260302004206(),
+  const Migration20260303000100(),
 };
 
 /// A consumable database structure including the latest generated migration.
 final schema = Schema(
-  20260302004206,
+  20260303000100,
   generatorVersion: 1,
   tables: <SchemaTable>{
     SchemaTable(
@@ -60,6 +62,10 @@ final schema = Schema(
         SchemaColumn('email', Column.varchar),
         SchemaColumn('telefono', Column.varchar),
         SchemaColumn('celular', Column.varchar),
+        SchemaColumn('cargo', Column.varchar),
+        SchemaColumn('website', Column.varchar),
+        SchemaColumn('direccion', Column.varchar),
+        SchemaColumn('notas', Column.varchar),
         SchemaColumn('activo', Column.boolean),
       },
       indices: <SchemaIndex>{},
@@ -161,6 +167,24 @@ final schema = Schema(
         SchemaColumn('tipo', Column.varchar),
         SchemaColumn('precio_venta', Column.Double),
         SchemaColumn('precio_costo', Column.Double),
+        SchemaColumn('descripcion', Column.varchar),
+        SchemaColumn('codigo_principal_barras', Column.varchar),
+        SchemaColumn('activo', Column.boolean),
+      },
+      indices: <SchemaIndex>{},
+    ),
+    SchemaTable(
+      'ProductoFamilia',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('nombre', Column.varchar),
         SchemaColumn('descripcion', Column.varchar),
         SchemaColumn('activo', Column.boolean),
       },

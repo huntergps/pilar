@@ -197,6 +197,12 @@ void main() {
     });
 
     testWidgets('renderiza sección "Telegram" y bot', (tester) async {
+      // Telegram es la última sección; ampliar viewport (en píxeles lógicos)
+      // para que entre en el árbol de elementos (ListView usa lazy building).
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       await tester.pumpWidget(_buildScreen(AsyncData(_fakeCuentas())));
       await tester.pump();
 

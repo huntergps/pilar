@@ -45,6 +45,11 @@ final empresaMiembrosProvider =
 ///
 /// RPC: `comunicacion.get_unread_count(p_usuario_id UUID)`
 /// Retorna: `[{canal_id, nombre, tipo, no_leidos, ultimo_mensaje, ultimo_mensaje_en}]`
+///
+/// Reactividad:
+/// - Re-fetch al cambiar de canal (via [canalSeleccionadoProvider]).
+/// - Adicionalmente se suscribe al Broadcast del canal activo: cuando llega
+///   un nuevo mensaje al canal abierto, el badge lateral se actualiza.
 final chatCanalesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
@@ -52,6 +57,22 @@ final chatCanalesProvider =
 
   final usuario = ref.watch(usuarioActualProvider);
   if (usuario == null) return const [];
+
+  // Re-fetch al cambiar de canal: recalcula unread counts al navegar.
+  final canalActivo = ref.watch(canalSeleccionadoProvider);
+
+  // Si hay canal activo, suscribirse al mismo Broadcast que chatMensajesProvider
+  // para actualizar el badge sin esperar al próximo cambio de canal.
+  if (canalActivo != null) {
+    final channel = Supabase.instance.client
+        .channel('chat:$empresaId:$canalActivo')
+        .onBroadcast(
+          event: 'new_message',
+          callback: (_) => ref.invalidateSelf(),
+        )
+        .subscribe();
+    ref.onDispose(() => channel.unsubscribe());
+  }
 
   final rows = await Supabase.instance.client.rpc(
     'get_unread_count',

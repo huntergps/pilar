@@ -11,3 +11,6 @@ export 'models/modulo_empresa.model.dart';
 export 'models/notificacion.model.dart';
 export 'models/alerta_empresa.model.dart';
 export 'models/usuario_empresa_perfil.model.dart';
+export 'models/contacto.model.dart';
+export 'models/producto.model.dart';
+export 'models/producto_familia.model.dart';

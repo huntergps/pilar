@@ -249,6 +249,10 @@ class PilarStreamGrid<T> extends StatefulWidget {
   /// Defaults to a centered [ProgressRing].
   final Widget? loadingWidget;
 
+  /// Optional key passed to [SfDataGrid] to allow external access to its state
+  /// (e.g., for export via `syncfusion_flutter_datagrid_export`).
+  final GlobalKey<SfDataGridState>? dataGridKey;
+
   const PilarStreamGrid({
     super.key,
     required this.value,
@@ -259,6 +263,7 @@ class PilarStreamGrid<T> extends StatefulWidget {
     this.headerRowHeight = 56.0,
     this.emptyWidget,
     this.loadingWidget,
+    this.dataGridKey,
   });
 
   @override
@@ -304,6 +309,7 @@ class _PilarStreamGridState<T> extends State<PilarStreamGrid<T>> {
         return SfDataGridTheme(
           data: theme.sfDataGridTheme,
           child: SfDataGrid(
+            key: widget.dataGridKey,
             source: _dataSource,
             columnWidthMode: ColumnWidthMode.fill,
             rowHeight: widget.rowHeight,

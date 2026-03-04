@@ -1,8 +1,15 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart'
+    show DataGridCell, DataGridRow, SfDataGridState;
+import 'package:syncfusion_flutter_datagrid_export/export.dart';
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' show Workbook;
 import 'package:fluent_ui_reactive/src/display/pilar_stream_grid.dart';
 import 'package:fluent_ui_reactive/src/display/models.dart';
 import 'package:fluent_ui_reactive/src/core/pilar_async_builder.dart';
+import 'package:fluent_ui_reactive/src/crud/export_io.dart'
+    if (dart.library.js_interop) 'package:fluent_ui_reactive/src/crud/export_web.dart'
+    as platform_export;
 
 /// Scaffold de listado CRUD genérico para PILAR ERP.
 ///
@@ -57,6 +64,9 @@ class CrudScaffold<T> extends StatefulWidget {
     this.searchFields,
     this.searchPlaceholder = 'Buscar\u2026',
     this.emptyWidget,
+    this.showExport = true,
+    this.exportLabel,
+    this.pageSize = 50,
   });
 
   /// Título de la pantalla.
@@ -117,6 +127,15 @@ class CrudScaffold<T> extends StatefulWidget {
   /// Widget mostrado cuando la lista está vacía.
   final Widget? emptyWidget;
 
+  /// Si `true`, agrega un botón "Exportar" (CSV + Excel) en el [CommandBar].
+  final bool showExport;
+
+  /// Nombre base del archivo exportado (sin extensión). Por defecto usa [title].
+  final String? exportLabel;
+
+  /// Número de filas por página. Si es `null`, no hay paginación.
+  final int? pageSize;
+
   @override
   State<CrudScaffold<T>> createState() => _CrudScaffoldState<T>();
 }
@@ -127,6 +146,9 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
   String? _deleteError;
   String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
+  int _currentPage = 0;
+  bool _exporting = false;
+  final _dataGridKey = GlobalKey<SfDataGridState>();
 
   @override
   void dispose() {
@@ -145,6 +167,26 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
       final fields = widget.searchFields!(item);
       return fields.any((f) => f.toLowerCase().contains(query));
     }).toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pagination
+  // ---------------------------------------------------------------------------
+
+  int _totalPages(int total) {
+    final size = widget.pageSize;
+    if (size == null || size <= 0 || total == 0) return 1;
+    return (total / size).ceil();
+  }
+
+  List<T> _applyPage(List<T> items) {
+    final size = widget.pageSize;
+    if (size == null || size <= 0) return items;
+    final total = _totalPages(items.length);
+    final page = _currentPage.clamp(0, total - 1);
+    final start = page * size;
+    final end = (start + size).clamp(0, items.length);
+    return items.sublist(start, end);
   }
 
   // ---------------------------------------------------------------------------
@@ -225,6 +267,63 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
   }
 
   // ---------------------------------------------------------------------------
+  // Export
+  // ---------------------------------------------------------------------------
+
+  Future<void> _exportExcel(BuildContext context) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      // Build DataGridRows from ALL currently filtered items (ignores pagination).
+      final allData = widget.value.valueOrNull ?? <T>[];
+      final filtered = _applyFilter(allData);
+      final allRows = filtered.map((item) {
+        final map = widget.rowToMap(item);
+        return DataGridRow(
+          cells: widget.columns
+              .map((col) => DataGridCell<dynamic>(
+                    columnName: col.field,
+                    value: map[col.field],
+                  ))
+              .toList(),
+        );
+      }).toList();
+
+      final Workbook workbook =
+          _dataGridKey.currentState!.exportToExcelWorkbook(rows: allRows);
+      final bytes = workbook.saveAsStream();
+      workbook.dispose();
+
+      final fileName =
+          '${widget.exportLabel ?? widget.title.toLowerCase()}.xlsx';
+      await platform_export.saveFile(fileName, bytes);
+
+      if (mounted) {
+        displayInfoBar(context, builder: (ctx, close) {
+          return InfoBar(
+            title: Text('Exportado: $fileName'),
+            severity: InfoBarSeverity.success,
+            onClose: close,
+          );
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        displayInfoBar(context, builder: (ctx, close) {
+          return InfoBar(
+            title: const Text('Error al exportar'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            onClose: close,
+          );
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // CommandBar items
   // ---------------------------------------------------------------------------
 
@@ -244,7 +343,11 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
                 padding: EdgeInsets.only(left: 8),
                 child: Icon(FluentIcons.search, size: 14),
               ),
-              onChanged: (val) => setState(() => _searchQuery = val),
+              onChanged: (val) =>
+                  setState(() {
+                    _searchQuery = val;
+                    _currentPage = 0;
+                  }),
             ),
           ),
           wrappedItem: CommandBarButton(
@@ -292,6 +395,23 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
           onPressed: (_selectedItem != null && !_deleting)
               ? () => _handleDelete(context)
               : null,
+        ),
+      );
+    }
+
+    // Export
+    if (widget.showExport) {
+      items.add(
+        CommandBarBuilderItem(
+          builder: (ctx, displayMode, child) => _ExportCommandButton(
+            exporting: _exporting,
+            onExport: () => _exportExcel(ctx),
+          ),
+          wrappedItem: CommandBarButton(
+            icon: const Icon(FluentIcons.download),
+            label: const Text('Exportar'),
+            onPressed: () {},
+          ),
         ),
       );
     }
@@ -376,6 +496,7 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
         if (constraints.maxWidth >= 600) {
           // Desktop / tablet: PilarStreamGrid
           return PilarStreamGrid<T>(
+            dataGridKey: _dataGridKey,
             value: AsyncData(items),
             columns: widget.columns,
             rowToMap: widget.rowToMap,
@@ -410,6 +531,62 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
           },
         );
       },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pagination footer
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPaginationFooter(
+    BuildContext context,
+    int totalItems,
+    FluentThemeData theme,
+  ) {
+    final size = widget.pageSize!;
+    final totalPages = _totalPages(totalItems);
+    final page = _currentPage.clamp(0, totalPages - 1);
+    final start = totalItems == 0 ? 0 : page * size + 1;
+    final end = ((page + 1) * size).clamp(0, totalItems);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.resources.subtleFillColorSecondary,
+        border: Border(
+          top: BorderSide(color: theme.resources.controlStrokeColorDefault),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Text(
+            '$start–$end de $totalItems',
+            style: theme.typography.caption?.copyWith(
+              color: theme.inactiveColor,
+            ),
+          ),
+          const Spacer(),
+          Button(
+            onPressed: page > 0
+                ? () => setState(() => _currentPage = page - 1)
+                : null,
+            child: const Icon(FluentIcons.chevron_left, size: 12),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'Pág. ${page + 1} / $totalPages',
+              style: theme.typography.caption,
+            ),
+          ),
+          Button(
+            onPressed: page < totalPages - 1
+                ? () => setState(() => _currentPage = page + 1)
+                : null,
+            child: const Icon(FluentIcons.chevron_right, size: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -451,12 +628,56 @@ class _CrudScaffoldState<T> extends State<CrudScaffold<T>> {
               emptyWidget: _buildEmptyState(theme),
               builder: (ctx, data) {
                 final filtered = _applyFilter(data);
-                return _buildDataContent(ctx, filtered);
+                final paged = _applyPage(filtered);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _buildDataContent(ctx, paged)),
+                    if (widget.pageSize != null && filtered.isNotEmpty)
+                      _buildPaginationFooter(ctx, filtered.length, theme),
+                  ],
+                );
               },
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helper widget: export button in CommandBar
+// ---------------------------------------------------------------------------
+
+class _ExportCommandButton extends StatelessWidget {
+  const _ExportCommandButton({
+    required this.exporting,
+    required this.onExport,
+  });
+
+  final bool exporting;
+  final VoidCallback onExport;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (exporting)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: ProgressRing(strokeWidth: 2),
+            )
+          else
+            const Icon(FluentIcons.download, size: 16),
+          const SizedBox(width: 6),
+          const Text('Exportar'),
+        ],
+      ),
+      onPressed: exporting ? null : onExport,
     );
   }
 }

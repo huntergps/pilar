@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
@@ -74,27 +77,58 @@ class ModuloEstado {
 /// - Infraestructura: siempre visibles.
 /// - Core/auxiliar: solo si están habilitados para la empresa activa.
 ///
-/// Nota: el path Brick (SQLite) fue eliminado porque el generador de código
-/// producía `primaryKeyByUniqueColumns` incorrecto (devolvía instance.primaryKey
-/// en vez de hacer lookup por campo único), causando que cada sincronización
-/// insertara filas duplicadas en SQLite en vez de hacer upsert.
-final modulosActivosProvider = StreamProvider<List<ModuloItem>>((ref) async* {
+/// Suscripción Realtime a `modulo_empresas` para que la lista se actualice
+/// automáticamente cuando el admin activa o desactiva un módulo sin necesidad
+/// de que otros usuarios conectados recarguen la app.
+final modulosActivosProvider = StreamProvider.autoDispose<List<ModuloItem>>((ref) {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
 
   if (empresaId == null) {
-    yield const <ModuloItem>[];
-    return;
+    return Stream.value(const <ModuloItem>[]);
   }
 
-  try {
-    final data = await ref.read(supabaseClientProvider).rpc('get_modulos_activos');
-    yield (data as List)
-        .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
-        .toList();
-  } catch (_) {
-    yield const <ModuloItem>[];
+  final controller = StreamController<List<ModuloItem>>();
+
+  Future<void> fetch() async {
+    try {
+      final data =
+          await Supabase.instance.client.rpc('get_modulos_activos');
+      if (!controller.isClosed) {
+        controller.add((data as List)
+            .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
+            .toList());
+      }
+    } catch (_) {
+      if (!controller.isClosed) controller.add(const []);
+    }
   }
+
+  // Carga inicial
+  fetch();
+
+  // Realtime: re-fetch cuando se activa/desactiva un módulo para esta empresa
+  final channel = Supabase.instance.client
+      .channel('modulos_empresa_$empresaId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'modulo_empresas',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'empresa_id',
+          value: empresaId,
+        ),
+        callback: (_) => fetch(),
+      )
+      .subscribe();
+
+  ref.onDispose(() {
+    channel.unsubscribe();
+    controller.close();
+  });
+
+  return controller.stream;
 });
 
 /// Todos los modulos del sistema con estado de activacion.

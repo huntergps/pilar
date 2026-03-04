@@ -19,6 +19,7 @@ dependencies:
   syncfusion_flutter_datagrid: ^32.2.5
   syncfusion_flutter_charts: ^32.2.5
   syncfusion_flutter_xlsio: ^32.2.5
+  syncfusion_flutter_datagrid_export: ^32.1.23
   path_provider: ^2.1.0
   web: ^1.1.0
   decimal: ^2.3.3

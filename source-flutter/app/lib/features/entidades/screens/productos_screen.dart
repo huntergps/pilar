@@ -1,16 +1,101 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+import 'package:brick_gen/brick_gen.dart';
 
 import '../providers/productos_provider.dart';
 
 // ---------------------------------------------------------------------------
-// Pantalla principal
+// Pantalla principal — workspace con pestañas aislado por módulo
 // ---------------------------------------------------------------------------
 
-class ProductosScreen extends ConsumerWidget {
+class ProductosScreen extends StatelessWidget {
   const ProductosScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [
+        workspaceTabsProvider.overrideWith(WorkspaceTabsNotifier.new),
+      ],
+      child: const _ProductosWorkspace(),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace: gestiona las pestañas del módulo
+// ---------------------------------------------------------------------------
+
+class _ProductosWorkspace extends ConsumerStatefulWidget {
+  const _ProductosWorkspace();
+
+  @override
+  ConsumerState<_ProductosWorkspace> createState() =>
+      _ProductosWorkspaceState();
+}
+
+class _ProductosWorkspaceState extends ConsumerState<_ProductosWorkspace> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openListaTab());
+  }
+
+  void _openListaTab() {
+    ref.read(workspaceTabsProvider.notifier).open(
+          WorkspaceTab(
+            id: 'productos-lista',
+            title: 'Productos y Servicios',
+            icon: FluentIcons.product,
+            closeable: false,
+            body: _ProductosLista(onOpenTab: _openFormTab),
+          ),
+        );
+  }
+
+  void _openFormTab(Map<String, dynamic>? producto) {
+    final tabs = ref.read(workspaceTabsProvider.notifier);
+    final isNew = producto == null;
+    final id = isNew ? 'producto-nuevo' : 'producto-${producto['id']}';
+    final title = isNew
+        ? 'Nuevo producto/servicio'
+        : (producto['nombre'] as String? ??
+            producto['codigo'] as String? ??
+            'Editar');
+
+    tabs.open(WorkspaceTab(
+      id: id,
+      title: title,
+      icon: isNew ? FluentIcons.add : FluentIcons.edit,
+      body: _ProductoForm(
+        producto: producto,
+        onSaved: () {
+          ref.read(productosProvider.notifier).refresh();
+          tabs.close(id);
+        },
+        onCancel: () => tabs.close(id),
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const WorkspaceTabs();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pestaña lista
+// ---------------------------------------------------------------------------
+
+class _ProductosLista extends ConsumerWidget {
+  const _ProductosLista({required this.onOpenTab, super.key});
+
+  final void Function(Map<String, dynamic>?) onOpenTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,6 +103,7 @@ class ProductosScreen extends ConsumerWidget {
       title: 'Productos y Servicios',
       value: ref.watch(productosProvider),
       showSearch: true,
+      exportLabel: 'productos',
       searchFields: (p) => [
         p['codigo'] as String? ?? '',
         p['nombre'] as String? ?? '',
@@ -37,14 +123,30 @@ class ProductosScreen extends ConsumerWidget {
         '_pventa': _formatPrecio(p['precio_venta']),
         '_pcosto': _formatPrecio(p['precio_costo']),
       },
-      onNew: () => _showDialog(context, ref, null),
-      onRowTap: (p) => _showDialog(context, ref, p),
+      onNew: () => onOpenTab(null),
+      onRowTap: onOpenTab,
       onDelete: (p) async {
-        await Supabase.instance.client
-            .from('productos')
-            .update({'activo': false})
-            .eq('id', p['id'] as String);
-        ref.invalidate(productosProvider);
+        if (!kIsWeb && PilarRepository.isInitialized) {
+          await PilarRepository.instance.upsert<Producto>(Producto(
+            id: p['id'] as String,
+            codigo: p['codigo'] as String?,
+            nombre: p['nombre'] as String? ?? '',
+            tipo: p['tipo'] as String? ?? 'PRODUCTO',
+            precioVenta: (p['precio_venta'] as num?)?.toDouble(),
+            precioCosto: (p['precio_costo'] as num?)?.toDouble(),
+            descripcion: p['descripcion'] as String?,
+            activo: false,
+          ));
+        } else {
+          await Supabase.instance.client.rpc(
+            'entidades_actualizar_producto',
+            params: {
+              'p_id': p['id'] as String,
+              'p_data': {'activo': false},
+            },
+          );
+        }
+        ref.read(productosProvider.notifier).refresh();
       },
       deleteConfirmText: (p) =>
           '¿Eliminar "${p['nombre']}"? Esta acción no se puede deshacer.',
@@ -65,37 +167,28 @@ class ProductosScreen extends ConsumerWidget {
     if (d == null) return value.toString();
     return '\$${d.toStringAsFixed(2)}';
   }
-
-  void _showDialog(
-    BuildContext context,
-    WidgetRef ref,
-    Map<String, dynamic>? producto,
-  ) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogCtx) => _ProductoDialog(
-        producto: producto,
-        onSaved: () => ref.invalidate(productosProvider),
-      ),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Dialog: crear / editar producto
+// Pestaña formulario: crear / editar producto
 // ---------------------------------------------------------------------------
 
-class _ProductoDialog extends StatefulWidget {
+class _ProductoForm extends StatefulWidget {
   final Map<String, dynamic>? producto;
   final VoidCallback onSaved;
+  final VoidCallback onCancel;
 
-  const _ProductoDialog({this.producto, required this.onSaved});
+  const _ProductoForm({
+    this.producto,
+    required this.onSaved,
+    required this.onCancel,
+  });
 
   @override
-  State<_ProductoDialog> createState() => _ProductoDialogState();
+  State<_ProductoForm> createState() => _ProductoFormState();
 }
 
-class _ProductoDialogState extends State<_ProductoDialog> {
+class _ProductoFormState extends State<_ProductoForm> {
   final _codigoCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _ventaCtrl = TextEditingController();
@@ -103,8 +196,6 @@ class _ProductoDialogState extends State<_ProductoDialog> {
   final _descCtrl = TextEditingController();
 
   String _tipo = 'PRODUCTO';
-  bool _saving = false;
-  String? _error;
 
   @override
   void initState() {
@@ -132,66 +223,72 @@ class _ProductoDialogState extends State<_ProductoDialog> {
     super.dispose();
   }
 
-  Future<void> _save(BuildContext ctx) async {
+  Future<void> _doSave() async {
     if (_nombreCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'El nombre es requerido.');
-      return;
+      throw 'El nombre es requerido.';
     }
 
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    final pv = double.tryParse(_ventaCtrl.text.replaceAll(',', '.'));
+    final pc = double.tryParse(_costoCtrl.text.replaceAll(',', '.'));
+    final codigoVal = _codigoCtrl.text.trim().isNotEmpty
+        ? _codigoCtrl.text.trim()
+        : null;
+    final descVal = _descCtrl.text.trim().isNotEmpty
+        ? _descCtrl.text.trim()
+        : null;
 
-    try {
-      final pv = double.tryParse(_ventaCtrl.text.replaceAll(',', '.'));
-      final pc = double.tryParse(_costoCtrl.text.replaceAll(',', '.'));
+    final id = widget.producto?['id'] as String? ?? const Uuid().v4();
 
+    if (!kIsWeb && PilarRepository.isInitialized) {
+      // Offline-first: escribe en SQLite primero, sincroniza con Supabase en background.
+      await PilarRepository.instance.upsert<Producto>(Producto(
+        id: id,
+        codigo: codigoVal,
+        nombre: _nombreCtrl.text.trim(),
+        tipo: _tipo,
+        precioVenta: pv,
+        precioCosto: pc,
+        descripcion: descVal,
+        activo: true,
+      ));
+    } else {
+      // Web: llamada directa a Supabase (no hay SQLite en web).
       final data = {
-        'codigo': _codigoCtrl.text.trim().isNotEmpty ? _codigoCtrl.text.trim() : null,
+        'codigo': codigoVal,
         'nombre': _nombreCtrl.text.trim(),
         'tipo': _tipo,
         'precio_venta': pv,
         'precio_costo': pc,
-        'descripcion': _descCtrl.text.trim().isNotEmpty ? _descCtrl.text.trim() : null,
+        'descripcion': descVal,
       };
-
-      final id = widget.producto?['id'] as String?;
-      if (id != null) {
-        await Supabase.instance.client.from('productos').update(data).eq('id', id);
+      if (widget.producto != null) {
+        await Supabase.instance.client.rpc(
+          'entidades_actualizar_producto',
+          params: {'p_id': id, 'p_data': data},
+        );
       } else {
-        await Supabase.instance.client.from('productos').insert(data);
+        await Supabase.instance.client.rpc(
+          'entidades_crear_producto',
+          params: {'p_data': data},
+        );
       }
-
-      widget.onSaved();
-      if (ctx.mounted) Navigator.of(ctx).pop();
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+
+    widget.onSaved();
   }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.producto != null;
-    return ContentDialog(
-      constraints: const BoxConstraints(maxWidth: 480),
-      title: Text(isEdit ? 'Editar producto/servicio' : 'Nuevo producto/servicio'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return FormScaffold(
+      title: isEdit ? 'Editar producto/servicio' : 'Nuevo producto/servicio',
+      saveLabel: isEdit ? 'Guardar' : 'Crear',
+      onSave: _doSave,
+      onCancel: widget.onCancel,
+      sections: [
+        FormSection(
+          title: 'Información básica',
           children: [
-            if (_error != null) ...[
-              InfoBar(
-                title: const Text('Error'),
-                content: Text(_error!),
-                severity: InfoBarSeverity.error,
-                onClose: () => setState(() => _error = null),
-              ),
-              const SizedBox(height: 12),
-            ],
             InfoLabel(
               label: 'Tipo',
               child: ComboBox<String>(
@@ -205,14 +302,18 @@ class _ProductoDialogState extends State<_ProductoDialog> {
                 onChanged: (v) => setState(() => _tipo = v!),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   flex: 1,
                   child: InfoLabel(
                     label: 'Código',
-                    child: TextBox(controller: _codigoCtrl, placeholder: 'SKU o código'),
+                    child: TextBox(
+                      controller: _codigoCtrl,
+                      placeholder: 'SKU o código',
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -228,33 +329,34 @@ class _ProductoDialogState extends State<_ProductoDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Precio de venta',
-                    child: TextBox(
-                      controller: _ventaCtrl,
-                      placeholder: '0.00',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InfoLabel(
-                    label: 'Precio de costo',
-                    child: TextBox(
-                      controller: _costoCtrl,
-                      placeholder: '0.00',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                  ),
-                ),
-              ],
+          ],
+        ),
+        FormSection(
+          title: 'Precios',
+          columns: 2,
+          children: [
+            InfoLabel(
+              label: 'Precio de venta',
+              child: TextBox(
+                controller: _ventaCtrl,
+                placeholder: '0.00',
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
             ),
-            const SizedBox(height: 12),
+            InfoLabel(
+              label: 'Precio de costo',
+              child: TextBox(
+                controller: _costoCtrl,
+                placeholder: '0.00',
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
+            ),
+          ],
+        ),
+        FormSection(
+          children: [
             InfoLabel(
               label: 'Descripción',
               child: TextBox(
@@ -264,18 +366,6 @@ class _ProductoDialogState extends State<_ProductoDialog> {
               ),
             ),
           ],
-        ),
-      ),
-      actions: [
-        Button(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : () => _save(context),
-          child: _saving
-              ? const SizedBox.square(dimension: 16, child: ProgressRing())
-              : Text(isEdit ? 'Guardar' : 'Crear'),
         ),
       ],
     );

@@ -55,6 +55,7 @@ export 'src/workspace/workspace_tabs.dart';
 // CRUD scaffolds — generic list + form screens
 export 'src/crud/form_section.dart';
 export 'src/crud/form_scaffold.dart';
+export 'src/crud/pilar_form_dialog.dart';
 export 'src/crud/crud_scaffold.dart';
 export 'src/crud/filter_panel.dart';
 export 'src/crud/export_button.dart';

@@ -28,6 +28,7 @@ import '../../features/comunicacion/screens/email_tab.dart';
 import '../../features/comunicacion/screens/historial_tab.dart';
 import '../../features/perfil/screens/perfil_screen.dart';
 import '../../features/entidades/screens/contactos_screen.dart';
+import '../../features/entidades/screens/familias_screen.dart';
 import '../../features/entidades/screens/productos_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ abstract final class PilarRoutes {
   static const String adminConfiguracion = '/admin/configuracion';
   static const String entidadesContactos = '/entidades/contactos';
   static const String entidadesProductos = '/entidades/productos';
+  static const String entidadesFamilias = '/entidades/familias';
   static const String perfil = '/perfil';
   static const String configuracion = '/configuracion';
   static const String comunicacion = '/comunicacion';
@@ -268,6 +270,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: PilarRoutes.entidadesProductos,
             builder: (_, __) => const ProductosScreen(),
+          ),
+          GoRoute(
+            path: PilarRoutes.entidadesFamilias,
+            builder: (_, __) => const FamiliasScreen(),
           ),
           GoRoute(
             path: PilarRoutes.perfil,

@@ -230,7 +230,8 @@ class _PilarShellState extends ConsumerState<PilarShell>
   ///   Entidades expander children (entidadesBase=15):
   ///     15 → /entidades/contactos
   ///     16 → /entidades/productos
-  ///   modulosBase=17..16+N → Dynamic modules
+  ///     17 → /entidades/familias
+  ///   modulosBase=18..17+N → Dynamic modules
   ///   17+N → Perfil (footer PaneItem)
   ///   18+N → Configuración (footer PaneItem)
   ///
@@ -274,9 +275,10 @@ class _PilarShellState extends ConsumerState<PilarShell>
         : (tieneHistorial ? 7 : 6);
     if (location.startsWith('/entidades/contactos')) return entidadesBase;
     if (location.startsWith('/entidades/productos')) return entidadesBase + 1;
+    if (location.startsWith('/entidades/familias')) return entidadesBase + 2;
 
     final coreModulos = modulos.where((m) => m.tipo != 'infraestructura');
-    final modulosBase = entidadesBase + 2;
+    final modulosBase = entidadesBase + 3;
     int idx = modulosBase;
     for (final m in coreModulos) {
       if (location.startsWith('/${m.id}')) return idx;
@@ -443,7 +445,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
             final entidadesBase = tieneAdmin
                 ? (tieneHistorial ? 15 : 14)
                 : (tieneHistorial ? 7 : 6);
-            final modulosBase = entidadesBase + 2;
+            final modulosBase = entidadesBase + 3;
 
             if (index == 0) {
               context.go(PilarRoutes.dashboard);
@@ -480,6 +482,8 @@ class _PilarShellState extends ConsumerState<PilarShell>
               context.go(PilarRoutes.entidadesContactos);
             } else if (index == entidadesBase + 1) {
               context.go(PilarRoutes.entidadesProductos);
+            } else if (index == entidadesBase + 2) {
+              context.go(PilarRoutes.entidadesFamilias);
             } else {
               final modIdx = index - modulosBase;
               if (modIdx >= 0 && modIdx < list.length) {
@@ -630,6 +634,11 @@ class _PilarShellState extends ConsumerState<PilarShell>
                 PaneItem(
                   icon: const Icon(FluentIcons.product_list),
                   title: const Text('Productos'),
+                  body: const SizedBox.shrink(),
+                ),
+                PaneItem(
+                  icon: const Icon(FluentIcons.product_catalog),
+                  title: const Text('Familias'),
                   body: const SizedBox.shrink(),
                 ),
               ],

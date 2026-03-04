@@ -48,12 +48,31 @@ final emailBusquedaProvider = StateProvider<String?>((ref) => null);
 /// Hilos de email para la carpeta indicada.
 ///
 /// Llama a la RPC `com_get_email_threads` con los filtros activos.
+/// Suscripción Realtime en `com_conversaciones` para actualización automática
+/// cuando llegan nuevos emails o cambia el estado de los existentes.
 final emailThreadsProvider = FutureProvider.autoDispose
     .family<List<EmailThread>, EmailCarpeta>((ref, carpeta) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
   if (empresaId == null) return [];
 
   final busqueda = ref.watch(emailBusquedaProvider);
+
+  // Realtime: re-fetch cuando cambia cualquier conversación de la empresa.
+  final channel = Supabase.instance.client
+      .channel('email_threads_${empresaId}_${carpeta.rpcKey}')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'com_conversaciones',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'empresa_id',
+          value: empresaId,
+        ),
+        callback: (_) => ref.invalidateSelf(),
+      )
+      .subscribe();
+  ref.onDispose(() => channel.unsubscribe());
 
   final params = <String, dynamic>{
     'p_carpeta': carpeta.rpcKey,
@@ -72,11 +91,41 @@ final emailThreadsProvider = FutureProvider.autoDispose
       .toList();
 });
 
-/// Mensajes del hilo seleccionado (reutiliza la RPC existente).
+/// Mensajes del hilo seleccionado.
+///
+/// Suscripción Realtime a `com_mensajes` filtrada por `conversacion_id`
+/// para que el hilo de email se actualice cuando llegan respuestas.
+/// Incluye reconexión automática (iOS foreground resume).
 final emailMensajesProvider = FutureProvider.autoDispose
     .family<List<ComMensaje>, String>((ref, convId) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
   if (empresaId == null) return [];
+
+  var esInicial = true;
+
+  final channel = Supabase.instance.client
+      .channel('email_msgs_$convId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'com_mensajes',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'conversacion_id',
+          value: convId,
+        ),
+        callback: (_) => ref.invalidateSelf(),
+      )
+      .subscribe((status, [_]) {
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          if (esInicial) {
+            esInicial = false;
+          } else {
+            ref.invalidateSelf();
+          }
+        }
+      });
+  ref.onDispose(() => channel.unsubscribe());
 
   final data = await Supabase.instance.client.rpc(
     'com_get_mensajes_conversacion',
