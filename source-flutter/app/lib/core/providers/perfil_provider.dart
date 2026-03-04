@@ -34,7 +34,7 @@ class PerfilUsuario {
     this.emailContacto,
     required this.emailLogin,
     this.nombreGlobal,
-    this.zonaHoraria = 'America/Guayaquil',
+    this.zonaHoraria = 'UTC',
   });
 
   /// Nombre para mostrar en UI: override por empresa → nombre global → email.
@@ -53,7 +53,7 @@ class PerfilUsuario {
       emailContacto: json['email_contacto'] as String?,
       emailLogin: json['email_login'] as String? ?? '',
       nombreGlobal: json['nombre_global'] as String?,
-      zonaHoraria: json['zona_horaria'] as String? ?? 'America/Guayaquil',
+      zonaHoraria: json['zona_horaria'] as String? ?? 'UTC',
     );
   }
 
@@ -91,6 +91,24 @@ class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
     // donde build() capturaba un JWT transitorio sin empresa_id.
     final session = ref.watch(sessionProvider);
     if (session == null) return null;
+
+    // Realtime: re-cargar cuando el perfil del usuario se actualiza en su
+    // empresa (ej.: cambio desde otro tab, desde panel de admin).
+    final channel = Supabase.instance.client
+        .channel('perfil_usuario_${session.user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'usuarios_empresa',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'usuario_id',
+            value: session.user.id,
+          ),
+          callback: (_) => ref.invalidateSelf(),
+        )
+        .subscribe();
+    ref.onDispose(() => channel.unsubscribe());
 
     // Web: RPC directa, sin cache local
     if (kIsWeb) {
@@ -140,7 +158,7 @@ class PerfilUsuarioNotifier extends AsyncNotifier<PerfilUsuario?> {
         emailContacto: p.emailContacto,
         emailLogin: session.user.email ?? '',
         nombreGlobal: null,
-        zonaHoraria: p.zonaHoraria ?? 'America/Guayaquil',
+        zonaHoraria: p.zonaHoraria ?? 'UTC',
       );
     } catch (_) {
       return null;
