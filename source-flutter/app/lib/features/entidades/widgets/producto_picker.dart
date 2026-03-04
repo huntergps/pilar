@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,8 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // ---------------------------------------------------------------------------
 // ProductoPicker
 // ---------------------------------------------------------------------------
-// Widget de búsqueda y selección de productos.
-// Llama a la RPC entidades_buscar_productos con soporte pg_trgm.
+// Búsqueda y selección de productos via AutoSuggestBox (overlay).
+// Usa la RPC entidades_buscar_productos con soporte pg_trgm.
 //
 // Uso:
 //   ProductoPicker(
@@ -42,24 +44,21 @@ class ProductoPicker extends ConsumerStatefulWidget {
 
 class _ProductoPickerState extends ConsumerState<ProductoPicker> {
   final _ctrl = TextEditingController();
-  final _focusNode = FocusNode();
-  List<Map<String, dynamic>> _resultados = [];
-  bool _buscando = false;
-  Map<String, dynamic>? _seleccionado;
+  List<AutoSuggestBoxItem<Map<String, dynamic>>> _items = [];
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     if (widget.initialValue != null) {
-      _seleccionado = widget.initialValue;
       _ctrl.text = _labelProducto(widget.initialValue!);
     }
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _ctrl.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
@@ -69,118 +68,88 @@ class _ProductoPickerState extends ConsumerState<ProductoPicker> {
     return codigo != null ? '[$codigo] $nombre' : nombre;
   }
 
-  Future<void> _buscar(String query) async {
-    if (query.trim().length < 2) {
-      setState(() => _resultados = []);
+  void _onChanged(String text, TextChangedReason reason) {
+    if (reason == TextChangedReason.cleared) {
+      setState(() => _items = []);
       return;
     }
-    setState(() => _buscando = true);
+    if (reason != TextChangedReason.userInput) return;
+
+    _debounce?.cancel();
+    final query = text.trim();
+    if (query.length < 2) {
+      setState(() => _items = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _buscar(query));
+  }
+
+  Future<void> _buscar(String query) async {
     try {
       final params = <String, dynamic>{
-        'p_query': query.trim(),
-        'p_tipo': 'todos',
+        'p_query': query,
+        'p_tipo': widget.tipo ?? 'todos',
         'p_solo_activos': true,
         'p_limit': 20,
         'p_offset': 0,
       };
-      if (widget.tipo != null) params['p_tipo'] = widget.tipo!;
 
       final data = await Supabase.instance.client.rpc(
         'entidades_buscar_productos',
         params: params,
-      );
-      if (mounted) {
-        setState(() {
-          _resultados = List<Map<String, dynamic>>.from(data as List);
-          _buscando = false;
-        });
-      }
+      ) as List;
+
+      if (!mounted) return;
+      setState(() {
+        _items = data.cast<Map<String, dynamic>>().map((p) {
+          final codigo = p['codigo'] as String?;
+          final pv = p['precio_venta'];
+          final pvStr =
+              pv != null ? '\$${(pv as num).toStringAsFixed(2)}' : '';
+          final sub = [
+            if (codigo != null) codigo,
+            _labelTipo(p['tipo'] as String?),
+            pvStr,
+          ].where((s) => s.isNotEmpty).join(' · ');
+          return AutoSuggestBoxItem<Map<String, dynamic>>(
+            value: p,
+            label: _labelProducto(p),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  p['nombre'] as String? ?? '',
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sub.isNotEmpty)
+                  Text(
+                    sub,
+                    style: const TextStyle(fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          );
+        }).toList();
+      });
     } catch (_) {
-      if (mounted) setState(() => _buscando = false);
+      if (mounted) setState(() => _items = []);
     }
-  }
-
-  void _seleccionar(Map<String, dynamic> producto) {
-    setState(() {
-      _seleccionado = producto;
-      _resultados = [];
-      _ctrl.text = _labelProducto(producto);
-    });
-    widget.onSelected(producto);
-    _focusNode.unfocus();
-  }
-
-  void _limpiar() {
-    setState(() {
-      _seleccionado = null;
-      _resultados = [];
-      _ctrl.clear();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextBox(
-          controller: _ctrl,
-          focusNode: _focusNode,
-          placeholder: widget.placeholder,
-          suffix: _buscando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: ProgressRing(strokeWidth: 2),
-                )
-              : _seleccionado != null
-                  ? IconButton(
-                      icon: const Icon(FluentIcons.clear, size: 12),
-                      onPressed: _limpiar,
-                    )
-                  : null,
-          onChanged: _buscar,
-        ),
-        if (_resultados.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 200),
-            decoration: BoxDecoration(
-              color: FluentTheme.of(context).menuColor,
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _resultados.length,
-              itemBuilder: (context, i) {
-                final p = _resultados[i];
-                final codigo = p['codigo'] as String?;
-                final pv = p['precio_venta'];
-                final pvStr = pv != null
-                    ? '\$${(pv as num).toStringAsFixed(2)}'
-                    : '';
-                final sub = [
-                  if (codigo != null) codigo,
-                  _labelTipo(p['tipo'] as String?),
-                  pvStr,
-                ].where((s) => s.isNotEmpty).join(' · ');
-                return ListTile(
-                  title: Text(p['nombre'] as String? ?? ''),
-                  subtitle: sub.isNotEmpty ? Text(sub) : null,
-                  onPressed: () => _seleccionar(p),
-                );
-              },
-            ),
-          ),
-        ],
-      ],
+    return AutoSuggestBox<Map<String, dynamic>>(
+      controller: _ctrl,
+      items: _items,
+      placeholder: widget.placeholder,
+      // La API ya filtra — no filtrar localmente.
+      sorter: (text, items) => items,
+      onChanged: _onChanged,
+      onSelected: (item) {
+        if (item.value != null) widget.onSelected(item.value!);
+      },
     );
   }
 
