@@ -21,6 +21,7 @@ Future<Empresa> _$EmpresaFromSupabase(
         ? null
         : data['color_secundario'] as String?,
     estado: data['estado'] == null ? null : data['estado'] as String?,
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -38,6 +39,7 @@ Future<Map<String, dynamic>> _$EmpresaToSupabase(
     'color_primario': instance.colorPrimario,
     'color_secundario': instance.colorSecundario,
     'estado': instance.estado,
+    'version': instance.version,
   };
 }
 
@@ -61,6 +63,7 @@ Future<Empresa> _$EmpresaFromSqlite(
         ? null
         : data['color_secundario'] as String?,
     estado: data['estado'] == null ? null : data['estado'] as String?,
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -78,6 +81,7 @@ Future<Map<String, dynamic>> _$EmpresaToSqlite(
     'color_primario': instance.colorPrimario,
     'color_secundario': instance.colorSecundario,
     'estado': instance.estado,
+    'version': instance.version,
   };
 }
 
@@ -122,6 +126,10 @@ class EmpresaAdapter extends OfflineFirstWithSupabaseAdapter<Empresa> {
     'estado': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'estado',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -183,6 +191,12 @@ class EmpresaAdapter extends OfflineFirstWithSupabaseAdapter<Empresa> {
       columnName: 'estado',
       iterable: false,
       type: String,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

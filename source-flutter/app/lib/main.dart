@@ -12,6 +12,7 @@ import 'package:system_theme/system_theme.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/config/pilar_constants.dart';
 import 'core/config/supabase_config.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart'
@@ -292,7 +293,7 @@ class PilarApp extends ConsumerWidget {
     final empresaColor = ref.watch(empresaColorProvider);
 
     return FluentApp.router(
-      title: 'PILAR ERP',
+      title: kAppName,
       routerConfig: router,
       theme: PilarTheme.build(
         brightness: Brightness.light,

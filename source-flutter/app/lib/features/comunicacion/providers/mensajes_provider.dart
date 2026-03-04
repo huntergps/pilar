@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../models/com_mensaje.dart';
+import 'package:brick_gen/brick_gen.dart';
+
+import '../../../core/providers/empresa_provider.dart';
 
 // ---------------------------------------------------------------------------
 // mensajesProvider — mensajes de una conversación
@@ -56,6 +58,31 @@ final mensajesProvider = FutureProvider.autoDispose
     'com_get_mensajes_conversacion',
     params: {'p_conv_id': convId, 'p_limit': 100, 'p_offset': 0},
   ) as List;
+
+  return rows
+      .map((r) => ComMensaje.fromJson(r as Map<String, dynamic>))
+      .toList();
+});
+
+// ---------------------------------------------------------------------------
+// historialMensajesProvider — mensajes outbound de la empresa (para HistorialTab)
+// ---------------------------------------------------------------------------
+
+/// Carga los últimos 200 mensajes salientes de la empresa activa.
+/// Movido desde historial_tab.dart para cumplir la convención de no tener
+/// providers con acceso directo a Supabase dentro de los screens.
+final historialMensajesProvider =
+    FutureProvider.autoDispose<List<ComMensaje>>((ref) async {
+  final empresaId = ref.watch(empresaActivaIdProvider);
+  if (empresaId == null) return const [];
+
+  final rows = await Supabase.instance.client
+      .from('com_mensajes')
+      .select()
+      .eq('empresa_id', empresaId)
+      .eq('tipo', 'outbound')
+      .order('creado_en', ascending: false)
+      .limit(200) as List;
 
   return rows
       .map((r) => ComMensaje.fromJson(r as Map<String, dynamic>))

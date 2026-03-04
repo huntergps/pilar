@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/config/pilar_constants.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 /// Pantalla de selección de empresa mostrada al iniciar sesión cuando el usuario
 /// pertenece a más de una empresa (o cuando no hay empresa_id en el JWT).
@@ -54,7 +57,7 @@ class SelectEmpresaScreen extends ConsumerWidget {
       color: theme.scaffoldBackgroundColor,
       child: Center(
         child: misEmpresasAsync.when(
-          loading: () => const ProgressRing(),
+          loading: () => const PilarProgressRing(),
           error: (e, _) => SizedBox(
             width: 360,
             child: InfoBar(
@@ -66,7 +69,7 @@ class SelectEmpresaScreen extends ConsumerWidget {
           data: (empresas) {
             // Mostrar spinner mientras se hace auto-selección
             if (empresas.isEmpty || empresas.length == 1) {
-              return const ProgressRing();
+              return const PilarProgressRing();
             }
             return _PickerContent(empresas: empresas);
           },
@@ -117,7 +120,7 @@ class _PickerContentState extends State<_PickerContent> {
       ..sort((a, b) => (b.esActiva ? 1 : 0).compareTo(a.esActiva ? 1 : 0));
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xxl),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
@@ -127,14 +130,14 @@ class _PickerContentState extends State<_PickerContent> {
             children: [
               // ---- Branding ----
               Text(
-                'PILAR ERP',
+                kAppName,
                 style: theme.typography.display?.copyWith(
                   color: theme.accentColor,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: Spacing.sm),
               Text(
                 'Selecciona una empresa para continuar',
                 style: theme.typography.subtitle?.copyWith(
@@ -142,7 +145,7 @@ class _PickerContentState extends State<_PickerContent> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 36),
+              const SizedBox(height: Spacing.xl),
 
               // ---- Búsqueda (solo si > 4 empresas) ----
               if (mostrarSearch) ...[
@@ -150,12 +153,12 @@ class _PickerContentState extends State<_PickerContent> {
                   controller: _searchCtrl,
                   placeholder: 'Buscar por nombre o RUC...',
                   prefix: const Padding(
-                    padding: EdgeInsets.only(left: 8),
+                    padding: EdgeInsets.only(left: Spacing.sm),
                     child: Icon(FluentIcons.search, size: 14),
                   ),
                   suffix: _busqueda.isNotEmpty
                       ? Padding(
-                          padding: const EdgeInsets.only(right: 4),
+                          padding: const EdgeInsets.only(right: Spacing.xs),
                           child: IconButton(
                             icon: const Icon(FluentIcons.clear, size: 12),
                             onPressed: () {
@@ -167,13 +170,13 @@ class _PickerContentState extends State<_PickerContent> {
                       : null,
                   onChanged: (v) => setState(() => _busqueda = v),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: Spacing.ml),
               ],
 
               // ---- Grid de empresas ----
               if (ordenadas.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
                   child: Text(
                     'Sin resultados para "$_busqueda"',
                     style: theme.typography.body
@@ -202,7 +205,7 @@ class _PickerContentState extends State<_PickerContent> {
                   },
                 ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: Spacing.lg),
 
               // ---- Crear nueva empresa ----
               HyperlinkButton(
@@ -212,7 +215,7 @@ class _PickerContentState extends State<_PickerContent> {
                   children: [
                     Icon(FluentIcons.add,
                         size: 14, color: theme.accentColor),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: Spacing.sm),
                     const Text('Crear nueva empresa'),
                   ],
                 ),
@@ -279,7 +282,7 @@ class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
               width: esActiva ? 1.5 : 1,
             ),
           ),
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(Spacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -296,7 +299,7 @@ class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
                   if (esActiva)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                          horizontal: Spacing.sm, vertical: Spacing.xxs),
                       decoration: BoxDecoration(
                         color: theme.accentColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
@@ -311,14 +314,10 @@ class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
                       ),
                     ),
                   if (_loading)
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: ProgressRing(strokeWidth: 2),
-                    ),
+                    const PilarProgressRing.small(),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: Spacing.ms),
 
               // ---- Nombre ----
               Text(
@@ -330,7 +329,7 @@ class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
 
               // ---- RUC ----
               if (widget.empresa.ruc != null) ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: Spacing.xxs),
                 Text(
                   widget.empresa.ruc!,
                   style: theme.typography.caption,
@@ -338,7 +337,7 @@ class _EmpresaCardState extends ConsumerState<_EmpresaCard> {
                 ),
               ],
 
-              const SizedBox(height: 4),
+              const SizedBox(height: Spacing.xs),
 
               // ---- Rol ----
               Text(

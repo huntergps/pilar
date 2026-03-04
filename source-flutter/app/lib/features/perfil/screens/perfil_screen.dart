@@ -8,27 +8,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/mfa_provider.dart';
 import '../../../core/providers/perfil_provider.dart';
-
-// Zonas horarias comunes (América Latina + globales)
-const _zonasHorarias = [
-  'America/Guayaquil',
-  'America/Bogota',
-  'America/Lima',
-  'America/Santiago',
-  'America/Buenos_Aires',
-  'America/Caracas',
-  'America/La_Paz',
-  'America/Asuncion',
-  'America/Montevideo',
-  'America/Sao_Paulo',
-  'America/Mexico_City',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/Madrid',
-  'UTC',
-];
+import '../../../core/config/pilar_constants.dart';
+import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/utils/timezones.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../providers/perfil_write_provider.dart';
 
 /// Diálogo de perfil — solo lectura.
 ///
@@ -55,7 +40,7 @@ class PerfilDialog extends ConsumerWidget {
       content: perfilAsync.when(
         loading: () => const SizedBox(
           height: 100,
-          child: Center(child: ProgressRing()),
+          child: PilarLoadingCenter(),
         ),
         error: (e, _) => Text(
           'Error cargando perfil: $e',
@@ -118,7 +103,7 @@ class _ReadOnlyPerfilContent extends StatelessWidget {
                 : _Initial(initial: perfil.initial, size: 80, theme: theme),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         Center(
           child: Text(
             perfil.displayName,
@@ -126,15 +111,15 @@ class _ReadOnlyPerfilContent extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
         const Divider(),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         _InfoFila(label: 'Email', value: perfil.emailLogin, theme: theme),
         if (perfil.telefono?.isNotEmpty == true) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           _InfoFila(label: 'Teléfono', value: perfil.telefono!, theme: theme),
         ],
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         _InfoFila(
           label: 'Zona horaria',
           value: perfil.zonaHoraria,
@@ -224,7 +209,7 @@ class _WideContent extends StatelessWidget {
                     onTap: onUpload,
                     theme: theme,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: Spacing.ms),
                   uploadingAvatar
                       ? Text(
                           'Subiendo…',
@@ -241,7 +226,7 @@ class _WideContent extends StatelessWidget {
                             textAlign: TextAlign.center,
                           ),
                         ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Spacing.ms),
                   Text(
                     perfil.displayName,
                     style: theme.typography.bodyStrong,
@@ -252,7 +237,7 @@ class _WideContent extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: Spacing.lg),
 
             // ── Columna formulario ──
             Expanded(
@@ -283,7 +268,7 @@ class _WideContent extends StatelessWidget {
 }
 
 // ===========================================================================
-// Layout estrecho (< 600 px) — avatar arriba, formulario abajo
+// Layout estrecho (< PilarBreakpoints.mobile) — avatar arriba, formulario abajo
 // ===========================================================================
 
 class _NarrowContent extends StatelessWidget {
@@ -332,7 +317,7 @@ class _NarrowContent extends StatelessWidget {
               theme: theme,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: Spacing.sm),
           Center(
             child: uploadingAvatar
                 ? Text(
@@ -349,7 +334,7 @@ class _NarrowContent extends StatelessWidget {
                     ),
                   ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: Spacing.ml),
           _FormFields(
             perfil: perfil,
             nombreCtrl: nombreCtrl,
@@ -411,7 +396,7 @@ class _FormFields extends StatelessWidget {
             enabled: !saving,
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: Spacing.md),
         InfoLabel(
           label: 'Teléfono',
           child: TextBox(
@@ -421,7 +406,7 @@ class _FormFields extends StatelessWidget {
             keyboardType: TextInputType.phone,
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: Spacing.md),
         InfoLabel(
           label: 'Email de acceso',
           child: Tooltip(
@@ -434,20 +419,20 @@ class _FormFields extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: Spacing.md),
         InfoLabel(
           label: 'Zona horaria',
           child: ComboBox<String>(
             value: zonaHoraria,
             isExpanded: true,
-            items: _zonasHorarias
-                .map((z) => ComboBoxItem<String>(value: z, child: Text(z)))
+            items: kZonasHorarias
+                .map((z) => ComboBoxItem<String>(value: z.$1, child: Text(z.$2)))
                 .toList(),
             onChanged: saving ? null : onZonaChanged,
           ),
         ),
         if (errorMsg != null) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: Spacing.md),
           InfoBar(
             title: const Text('Error'),
             content: Text(errorMsg!),
@@ -517,9 +502,7 @@ class _CambiarContrasenaDialogState
     });
 
     try {
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: nueva),
-      );
+      await ref.read(perfilWriteProvider.notifier).updatePassword(nueva);
       if (mounted) {
         setState(() {
           _changing = false;
@@ -538,7 +521,7 @@ class _CambiarContrasenaDialogState
   Widget _eyeButton(bool obscure, VoidCallback onTap) => Button(
         style: ButtonStyle(
           padding: WidgetStateProperty.all(
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+              const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.sm)),
         ),
         onPressed: _changing ? null : onTap,
         child: Icon(
@@ -568,7 +551,7 @@ class _CambiarContrasenaDialogState
                   () => setState(() => _obscureNueva = !_obscureNueva)),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Confirmar contraseña',
             child: TextBox(
@@ -582,7 +565,7 @@ class _CambiarContrasenaDialogState
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Error'),
               content: Text(_error!),
@@ -591,7 +574,7 @@ class _CambiarContrasenaDialogState
             ),
           ],
           if (_success) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Contraseña actualizada'),
               content: const Text('Tu contraseña fue cambiada correctamente.'),
@@ -612,11 +595,8 @@ class _CambiarContrasenaDialogState
               ? const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: ProgressRing(strokeWidth: 2)),
-                    SizedBox(width: 8),
+                    const PilarProgressRing(size: 14),
+                    SizedBox(width: Spacing.sm),
                     Text('Actualizando…'),
                   ],
                 )
@@ -674,8 +654,8 @@ class _AvatarCircle extends StatelessWidget {
                     : _Initial(initial: initial, size: size, theme: theme),
           ),
           Positioned(
-            right: 0,
-            bottom: 0,
+            right: Spacing.none,
+            bottom: Spacing.none,
             child: Container(
               width: size * 0.28,
               height: size * 0.28,
@@ -786,23 +766,12 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
     });
 
     try {
-      final path = '${perfil.usuarioId}/${perfil.empresaId}/avatar.jpg';
-      await Supabase.instance.client.storage.from('avatares').uploadBinary(
-            path,
-            Uint8List.fromList(bytes),
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
-          );
-      final url = Supabase.instance.client.storage
-          .from('avatares')
-          .getPublicUrl(path);
-      final urlBust = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
-      final error = await ref
-          .read(perfilUsuarioProvider.notifier)
-          .saveChanges(avatarUrl: urlBust);
+      await ref
+          .read(perfilWriteProvider.notifier)
+          .uploadAvatar(Uint8List.fromList(bytes), 'jpg');
       if (mounted) {
         setState(() {
           _uploadingAvatar = false;
-          if (error != null) _errorMsg = error;
         });
       }
     } catch (e) {
@@ -841,26 +810,13 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
     final currentEmail = (_originalEmailLogin ?? '').toLowerCase();
     if (newEmail.isNotEmpty && newEmail != currentEmail) {
       try {
-        final result = await Supabase.instance.client.rpc(
-          'change_email_usuario',
-          params: {
-            'p_usuario_id': perfil.usuarioId,
-            'p_new_email': newEmail,
-          },
-        );
-        final map = Map<String, dynamic>.from(result as Map);
-        if (map['ok'] != true) {
-          if (mounted) {
-            setState(() {
-              _saving = false;
-              _errorMsg = _errorLabel(map['error']?.toString());
-            });
-          }
-          return;
-        }
+        await ref.read(perfilWriteProvider.notifier).changeEmail(
+              usuarioId: perfil.usuarioId,
+              newEmail: newEmail,
+            );
         _originalEmailLogin = newEmail;
       } catch (e) {
-        if (mounted) setState(() { _saving = false; _errorMsg = e.toString(); });
+        if (mounted) setState(() { _saving = false; _errorMsg = _errorLabel(e.toString()); });
         return;
       }
     }
@@ -888,11 +844,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                 primaryItems: [
                   CommandBarButton(
                     icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: ProgressRing(strokeWidth: 2),
-                          )
+                        ? const PilarProgressRing(size: 16)
                         : const Icon(FluentIcons.save),
                     label: const Text('Guardar cambios'),
                     onPressed: _saving ? null : () => _save(perfil),
@@ -902,7 +854,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
             : null,
       ),
       content: perfilAsync.when(
-        loading: () => const Center(child: ProgressRing()),
+        loading: () => const PilarLoadingCenter(),
         error: (e, _) => Center(
           child: Text(
             'Error cargando perfil: $e',
@@ -916,9 +868,9 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
           _initFields(perfil);
           return LayoutBuilder(
             builder: (ctx, constraints) {
-              final isWide = constraints.maxWidth >= 600;
+              final isWide = constraints.maxWidth >= PilarBreakpoints.mobile;
               return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(Spacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -930,7 +882,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                         severity: InfoBarSeverity.success,
                         onClose: () => setState(() => _successMsg = null),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: Spacing.md),
                     ],
                     if (_errorMsg != null) ...[
                       InfoBar(
@@ -939,7 +891,7 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                         severity: InfoBarSeverity.error,
                         onClose: () => setState(() => _errorMsg = null),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: Spacing.md),
                     ],
                     isWide
                         ? _WideContent(
@@ -970,9 +922,9 @@ class _PerfilPageState extends ConsumerState<PerfilPage> {
                             onDismissError: () {},
                             theme: theme,
                           ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: Spacing.xl),
                     const Divider(),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: Spacing.lg),
                     _SecuritySection(theme: theme),
                   ],
                 ),
@@ -1002,12 +954,12 @@ class _SecuritySection extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text('Seguridad', style: theme.typography.subtitle),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
         factorsAsync.when(
           loading: () => const Row(
             children: [
-              SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2)),
-              SizedBox(width: 8),
+              const PilarProgressRing(size: Spacing.md),
+              SizedBox(width: Spacing.sm),
               Text('Cargando estado 2FA...'),
             ],
           ),
@@ -1019,7 +971,7 @@ class _SecuritySection extends ConsumerWidget {
           data: (factors) {
             final isEnabled = factors.isNotEmpty;
             return Card(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
               child: Row(
                 children: [
                   Icon(
@@ -1027,7 +979,7 @@ class _SecuritySection extends ConsumerWidget {
                     size: 24,
                     color: isEnabled ? theme.accentColor : theme.inactiveColor,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1036,7 +988,7 @@ class _SecuritySection extends ConsumerWidget {
                           'Autenticacion de dos factores (2FA)',
                           style: theme.typography.bodyStrong,
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: Spacing.xs),
                         Text(
                           isEnabled
                               ? 'Protegida con app autenticadora (TOTP)'
@@ -1047,7 +999,7 @@ class _SecuritySection extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
                   if (isEnabled)
                     Button(
                       onPressed: () => _confirmDisable2FA(context, ref, factors.first),
@@ -1097,15 +1049,15 @@ class _SecuritySection extends ConsumerWidget {
 // Dialog — Activar 2FA (Enroll TOTP)
 // ===========================================================================
 
-class _EnrollTotpDialog extends StatefulWidget {
+class _EnrollTotpDialog extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
   const _EnrollTotpDialog({required this.onComplete});
 
   @override
-  State<_EnrollTotpDialog> createState() => _EnrollTotpDialogState();
+  ConsumerState<_EnrollTotpDialog> createState() => _EnrollTotpDialogState();
 }
 
-class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
+class _EnrollTotpDialogState extends ConsumerState<_EnrollTotpDialog> {
   final _codeCtrl = TextEditingController();
   bool _loading = true;
   bool _verifying = false;
@@ -1128,17 +1080,16 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
 
   Future<void> _enroll() async {
     try {
-      final res = await Supabase.instance.client.auth.mfa.enroll(
-        factorType: FactorType.totp,
-        issuer: 'PILAR ERP',
-        friendlyName: 'PILAR ERP TOTP',
-      );
+      final result = await ref.read(perfilWriteProvider.notifier).enrollMfa(
+            issuer: kAppName,
+            friendlyName: '$kAppName TOTP',
+          );
       if (mounted) {
         setState(() {
           _loading = false;
-          _factorId = res.id;
-          _qrUri = res.totp?.uri;
-          _secret = res.totp?.secret;
+          _factorId = result.factorId;
+          _qrUri = result.qrUri;
+          _secret = result.secret;
         });
       }
     } catch (e) {
@@ -1164,13 +1115,10 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
     });
 
     try {
-      final auth = Supabase.instance.client.auth;
-      final challenge = await auth.mfa.challenge(factorId: _factorId!);
-      await auth.mfa.verify(
-        factorId: _factorId!,
-        challengeId: challenge.id,
-        code: code,
-      );
+      await ref.read(perfilWriteProvider.notifier).verifyMfa(
+            factorId: _factorId!,
+            code: code,
+          );
       widget.onComplete();
     } on AuthException catch (e) {
       if (mounted) setState(() { _verifying = false; _error = e.message; });
@@ -1189,7 +1137,7 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
       content: _loading
           ? const SizedBox(
               height: 200,
-              child: Center(child: ProgressRing()),
+              child: PilarLoadingCenter(),
             )
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -1200,11 +1148,11 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
                   '(Google Authenticator, Authy, etc.):',
                   style: theme.typography.body,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: Spacing.md),
                 if (_qrUri != null)
                   Center(
                     child: Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(Spacing.ms),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
@@ -1216,14 +1164,14 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.ms),
                 if (_secret != null) ...[
                   Text(
                     'O ingresa este codigo manualmente:',
                     style: theme.typography.caption
                         ?.copyWith(color: theme.inactiveColor),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.xs),
                   SelectableText(
                     _secret!,
                     style: theme.typography.bodyStrong?.copyWith(
@@ -1232,7 +1180,7 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: Spacing.ml),
                 InfoLabel(
                   label: 'Codigo de verificacion',
                   child: TextBox(
@@ -1246,7 +1194,7 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
                   ),
                 ),
                 if (_error != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Spacing.ms),
                   InfoBar(
                     title: const Text('Error'),
                     content: Text(_error!),
@@ -1268,12 +1216,8 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: ProgressRing(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 8),
+                      const PilarProgressRing(size: 14),
+                      SizedBox(width: Spacing.sm),
                       Text('Verificando...'),
                     ],
                   )
@@ -1288,16 +1232,16 @@ class _EnrollTotpDialogState extends State<_EnrollTotpDialog> {
 // Dialog — Desactivar 2FA
 // ===========================================================================
 
-class _DisableTotpDialog extends StatefulWidget {
+class _DisableTotpDialog extends ConsumerStatefulWidget {
   final Factor factor;
   final VoidCallback onComplete;
   const _DisableTotpDialog({required this.factor, required this.onComplete});
 
   @override
-  State<_DisableTotpDialog> createState() => _DisableTotpDialogState();
+  ConsumerState<_DisableTotpDialog> createState() => _DisableTotpDialogState();
 }
 
-class _DisableTotpDialogState extends State<_DisableTotpDialog> {
+class _DisableTotpDialogState extends ConsumerState<_DisableTotpDialog> {
   bool _removing = false;
   String? _error;
 
@@ -1308,7 +1252,7 @@ class _DisableTotpDialogState extends State<_DisableTotpDialog> {
     });
 
     try {
-      await Supabase.instance.client.auth.mfa.unenroll(widget.factor.id);
+      await ref.read(perfilWriteProvider.notifier).unenrollMfa(widget.factor.id);
       widget.onComplete();
     } on AuthException catch (e) {
       if (mounted) setState(() { _removing = false; _error = e.message; });
@@ -1331,7 +1275,7 @@ class _DisableTotpDialogState extends State<_DisableTotpDialog> {
             'Solo necesitaras tu correo y contrasena para iniciar sesion.',
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Error'),
               content: Text(_error!),
@@ -1352,12 +1296,8 @@ class _DisableTotpDialogState extends State<_DisableTotpDialog> {
               ? const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: ProgressRing(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 8),
+                    const PilarProgressRing(size: 14),
+                    SizedBox(width: Spacing.sm),
                     Text('Desactivando...'),
                   ],
                 )

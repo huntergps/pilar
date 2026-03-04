@@ -1,33 +1,12 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
-import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
-import '../models/com_mensaje.dart';
-
-// ---------------------------------------------------------------------------
-// Provider de mensajes salientes
-// ---------------------------------------------------------------------------
-
-final _historialProvider =
-    FutureProvider.autoDispose<List<ComMensaje>>((ref) async {
-  final empresaId = ref.watch(empresaActivaIdProvider);
-  if (empresaId == null) return const [];
-
-  final rows = await Supabase.instance.client
-      .from('com_mensajes')
-      .select()
-      .eq('empresa_id', empresaId)
-      .eq('tipo', 'outbound')
-      .order('creado_en', ascending: false)
-      .limit(200) as List;
-
-  return rows
-      .map((r) => ComMensaje.fromJson(r as Map<String, dynamic>))
-      .toList();
-});
+import 'package:brick_gen/brick_gen.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../providers/mensajes_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Filtros locales
@@ -45,7 +24,7 @@ class HistorialTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final historialAsync = ref.watch(_historialProvider);
+    final historialAsync = ref.watch(historialMensajesProvider);
     final filtroCanal = ref.watch(_filtroCanalHistProvider);
     final filtroEstado = ref.watch(_filtroEstadoHistProvider);
 
@@ -64,7 +43,7 @@ class HistorialTab extends ConsumerWidget {
         // ---- Contenido ----
         Expanded(
           child: historialAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: const Text('Error cargando historial'),
@@ -95,10 +74,10 @@ class _FiltrosBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
+        spacing: Spacing.sm,
+        runSpacing: Spacing.xs,
         children: [
           // Filtro canal
           ComboBox<String?>(
@@ -218,7 +197,7 @@ class _ColHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       child: Text(
         label,
         style: FluentTheme.of(context).typography.bodyStrong,
@@ -259,19 +238,19 @@ class _HistorialDataSource extends DataGridSource {
         _CanalBadge(canal: cells[0].value as String),
         // Destinatario
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(Spacing.sm),
           child: Text(cells[1].value as String, overflow: TextOverflow.ellipsis),
         ),
         // Asunto/cuerpo
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(Spacing.sm),
           child: Text(cells[2].value as String, overflow: TextOverflow.ellipsis),
         ),
         // Estado chip
         _EstadoChip(estado: cells[3].value as String),
         // Fecha
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(Spacing.sm),
           child: Text(_formatFecha(cells[4].value as DateTime)),
         ),
       ],
@@ -304,9 +283,9 @@ class _CanalBadge extends StatelessWidget {
       _ => const Color(0xFF0078D4),
     };
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(4),
@@ -334,9 +313,9 @@ class _EstadoChip extends StatelessWidget {
       _ => const Color(0xFFF0A500), // pendiente/encolado → amarillo
     };
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(4),

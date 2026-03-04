@@ -1,4 +1,5 @@
 import 'package:brick_offline_first_with_supabase/brick_offline_first_with_supabase.dart';
+import 'package:brick_sqlite/brick_sqlite.dart';
 import 'package:brick_supabase/brick_supabase.dart';
 
 @ConnectOfflineFirstWithSupabase(
@@ -16,6 +17,12 @@ class Empresa extends OfflineFirstWithSupabaseModel {
   final String? colorSecundario;
   final String? estado;
 
+  /// Versión del registro — bloqueo optimista.
+  /// Se incrementa en la BD con cada UPDATE. Brick lo sincroniza en SQLite.
+  @Supabase(name: 'version', defaultValue: '1')
+  @Sqlite(defaultValue: '1')
+  final int version;
+
   Empresa({
     required this.id,
     required this.nombre,
@@ -25,5 +32,6 @@ class Empresa extends OfflineFirstWithSupabaseModel {
     this.colorPrimario,
     this.colorSecundario,
     this.estado,
+    this.version = 1,
   });
 }

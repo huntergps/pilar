@@ -25,6 +25,7 @@ Future<AlertaEmpresa> _$AlertaEmpresaFromSupabase(
         : data['created_at'] == null
         ? null
         : DateTime.tryParse(data['created_at'] as String),
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -44,6 +45,7 @@ Future<Map<String, dynamic>> _$AlertaEmpresaToSupabase(
     'accion_url': instance.accionUrl,
     'estado': instance.estado,
     'created_at': instance.createdAt?.toIso8601String(),
+    'version': instance.version,
   };
 }
 
@@ -71,6 +73,7 @@ Future<AlertaEmpresa> _$AlertaEmpresaFromSqlite(
         : data['created_at'] == null
         ? null
         : DateTime.tryParse(data['created_at'] as String),
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -90,6 +93,7 @@ Future<Map<String, dynamic>> _$AlertaEmpresaToSqlite(
     'accion_url': instance.accionUrl,
     'estado': instance.estado,
     'created_at': instance.createdAt?.toIso8601String(),
+    'version': instance.version,
   };
 }
 
@@ -143,6 +147,10 @@ class AlertaEmpresaAdapter
     'createdAt': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'created_at',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -216,6 +224,12 @@ class AlertaEmpresaAdapter
       columnName: 'created_at',
       iterable: false,
       type: DateTime,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

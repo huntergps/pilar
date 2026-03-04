@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../../core/providers/modulos_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/empty_state.dart';
 
 // ---------------------------------------------------------------------------
 // Route resolver (file-private)
@@ -27,10 +30,10 @@ String? _routeForModulo(String id) {
 /// Responsive Wrap grid of module tiles for the Dashboard App Launcher.
 ///
 /// Automatically adjusts the number of columns based on the available width:
-/// - > 1200 px → 5 columns
-/// - > 900 px  → 4 columns
-/// - > 600 px  → 3 columns
-/// - <= 600 px → 2 columns
+/// - > [PilarBreakpoints.desktop] → 5 columns
+/// - > [PilarBreakpoints.tablet]  → 4 columns
+/// - > [PilarBreakpoints.mobile]  → 3 columns
+/// - ≤ [PilarBreakpoints.mobile]  → 2 columns
 ///
 /// Each tile is a [_ModuleTile] that displays the module icon and name.
 class ModuleLauncherGrid extends ConsumerWidget {
@@ -44,12 +47,12 @@ class ModuleLauncherGrid extends ConsumerWidget {
         ref.watch(hasPermissionProvider('administracion.empresa.menu'));
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(Spacing.lg),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final cols =
-              width > 1200 ? 5 : width > 900 ? 4 : width > 600 ? 3 : 2;
+              width > PilarBreakpoints.desktop ? 5 : width > PilarBreakpoints.tablet ? 4 : width > PilarBreakpoints.mobile ? 3 : 2;
           // Subtract outer padding (48 total) + gaps between cols ((cols-1)*16)
           final itemSize =
               ((width - 48 - (cols - 1) * 16) / cols).clamp(100.0, 200.0);
@@ -62,12 +65,15 @@ class ModuleLauncherGrid extends ConsumerWidget {
               .toList();
 
           if (navigable.isEmpty) {
-            return const Center(child: Text('No hay módulos disponibles'));
+            return const PilarEmptyState(
+              message: 'No hay módulos disponibles',
+              icon: FluentIcons.app_icon_default,
+            );
           }
 
           return Wrap(
-            spacing: 16,
-            runSpacing: 16,
+            spacing: Spacing.md,
+            runSpacing: Spacing.md,
             children: navigable
                 .map((m) => _ModuleTile(modulo: m, size: itemSize))
                 .toList(),
@@ -108,7 +114,7 @@ class _ModuleTile extends StatelessWidget {
                   ? theme.accentColor.withValues(alpha: 0.08)
                   : null,
             ),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(Spacing.ms),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -125,7 +131,7 @@ class _ModuleTile extends StatelessWidget {
                     color: theme.accentColor,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: Spacing.ms),
                 Text(
                   modulo.nombre,
                   style: theme.typography.caption,

@@ -13,15 +13,19 @@ import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
-import '../models/adjunto_model.dart';
+import 'package:brick_gen/brick_gen.dart';
+
 import '../models/chatter_actividad.dart';
-import '../models/chatter_mensaje.dart';
+import '../providers/adjuntos_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/chatter_provider.dart';
+import '../providers/empresa_provider.dart';
 import '../services/upload_service.dart';
 import 'enviar_mensaje_externo_button.dart';
+import 'loading_spinner.dart';
+import '../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Widget principal
@@ -82,9 +86,9 @@ class _ChatterWidgetState extends ConsumerState<ChatterWidget> {
             children: [
               const Text('Actividades'),
               if (pendientesCount > 0) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: Spacing.sm),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.xxs),
                   decoration: BoxDecoration(
                     color: theme.accentColor,
                     borderRadius: BorderRadius.circular(8),
@@ -182,7 +186,7 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
         // Lista de mensajes
         Expanded(
           child: mensajesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: Text('Error al cargar: $e'),
@@ -200,7 +204,7 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
                         size: 32,
                         color: theme.resources.textFillColorSecondary,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                       Text(
                         'Sin mensajes aún',
                         style: theme.typography.body?.copyWith(
@@ -216,8 +220,8 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
               return ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+                  horizontal: Spacing.ms,
+                  vertical: Spacing.sm,
                 ),
                 reverse: true,
                 itemCount: mensajes.length,
@@ -232,7 +236,7 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
 
         // Botón de envío de mensaje externo (WhatsApp/Telegram/Email)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xs),
           child: Align(
             alignment: Alignment.centerRight,
             child: EnviarMensajeExternoButton(
@@ -294,9 +298,7 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
   // -------------------------------------------------------------------------
 
   Future<void> _adjuntar() async {
-    final empresaId =
-        Supabase.instance.client.auth.currentSession?.user.userMetadata?['empresa_id']
-            as String? ?? '';
+    final empresaId = ref.read(empresaActivaIdProvider) ?? '';
 
     _cancelToken = UploadCancelToken();
     final progressCtrl = StreamController<UploadProgress>();
@@ -327,8 +329,12 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
       await progressCtrl.close();
 
       // Registrar en tabla adjuntos con tag 'chatter'
-      final row = await Supabase.instance.client
-          .rpc('registrar_adjunto', params: {
+      final adjuntoId = await ref
+          .read(
+            adjuntosNotifierProvider((widget.entidadTipo, widget.entidadId))
+                .notifier,
+          )
+          .registrarAdjunto({
         'p_empresa_id': empresaId,
         'p_entidad_tipo': widget.entidadTipo,
         'p_entidad_id': widget.entidadId,
@@ -339,13 +345,6 @@ class _MensajesTabState extends ConsumerState<_MensajesTab> {
         'p_storage_path': result.storagePath,
         'p_tags': ['chatter'],
       });
-
-      String adjuntoId = '';
-      if (row is Map<String, dynamic>) {
-        adjuntoId = (row['id'] as String?) ?? '';
-      } else if (row is String) {
-        adjuntoId = row;
-      }
 
       if (adjuntoId.isNotEmpty) {
         setState(() => _adjuntosIds.add(adjuntoId));
@@ -425,7 +424,7 @@ class _ChatterHeader extends StatelessWidget {
     final esSeguidor = esSeguidorAsync.valueOrNull ?? false;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(color: theme.resources.dividerStrokeColorDefault),
@@ -438,18 +437,14 @@ class _ChatterHeader extends StatelessWidget {
             size: 14,
             color: theme.resources.textFillColorSecondary,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Text(
             'Chatter',
             style: theme.typography.bodyStrong,
           ),
           const Spacer(),
           if (esSeguidorAsync.isLoading)
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: ProgressRing(strokeWidth: 2),
-            )
+            const PilarProgressRing.small()
           else
             Button(
               onPressed: esSeguidor ? onDejarDeSeguir : onSeguir,
@@ -462,7 +457,7 @@ class _ChatterHeader extends StatelessWidget {
                         : FluentIcons.subscribe,
                     size: 12,
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: Spacing.xs),
                   Text(
                     esSeguidor ? 'Siguiendo' : 'Seguir',
                     style: theme.typography.caption,
@@ -500,12 +495,12 @@ class _LogSistemaItem extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(FluentIcons.history, size: 12, color: secondary),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,9 +567,9 @@ class _CambioEstadoBanner extends StatelessWidget {
     final despues = cambios.isNotEmpty ? cambios.first.despues : null;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         decoration: BoxDecoration(
           color: theme.accentColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(6),
@@ -585,7 +580,7 @@ class _CambioEstadoBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(FluentIcons.history, size: 14, color: theme.accentColor),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             Text('Estado: ', style: theme.typography.caption),
             if (antes != null) ...[
               Text(
@@ -595,13 +590,13 @@ class _CambioEstadoBanner extends StatelessWidget {
                   color: theme.resources.textFillColorSecondary,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Icon(
                 FluentIcons.chevron_right,
                 size: 10,
                 color: theme.resources.textFillColorSecondary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
             ],
             if (despues != null)
               Text(
@@ -633,11 +628,11 @@ class _ActividadCompletadaItem extends StatelessWidget {
     final theme = FluentTheme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Row(
         children: [
           Icon(FluentIcons.check_mark, size: 12, color: Colors.green),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Expanded(
             child: Text(
               mensaje.cuerpo ?? 'Actividad completada',
@@ -667,9 +662,9 @@ class _EmailEntrante extends StatelessWidget {
     final theme = FluentTheme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(Spacing.ms),
         decoration: BoxDecoration(
           color: theme.resources.cardBackgroundFillColorDefault,
           borderRadius: BorderRadius.circular(8),
@@ -680,7 +675,7 @@ class _EmailEntrante extends StatelessWidget {
           children: [
             Icon(FluentIcons.mail, size: 14,
                 color: theme.resources.textFillColorSecondary),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -737,7 +732,7 @@ class _ComentarioItem extends ConsumerWidget {
         : theme.resources.cardStrokeColorDefault;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -746,11 +741,11 @@ class _ComentarioItem extends ConsumerWidget {
             nombre: mensaje.autorNombre,
             avatarUrl: mensaje.autorAvatar,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           // Burbuja
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(Spacing.ms),
               decoration: BoxDecoration(
                 color: bubbleColor,
                 borderRadius: const BorderRadius.only(
@@ -772,13 +767,13 @@ class _ComentarioItem extends ConsumerWidget {
                             ?.copyWith(fontSize: 12),
                       ),
                       if (esNota) ...[
-                        const SizedBox(width: 4),
+                        const SizedBox(width: Spacing.xs),
                         const Icon(
                           FluentIcons.lock,
                           size: 10,
                           color: Color(0xFFB8860B),
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: Spacing.xxs),
                         Text(
                           'Nota interna',
                           style: theme.typography.caption?.copyWith(
@@ -797,7 +792,7 @@ class _ComentarioItem extends ConsumerWidget {
                   ),
                   // Cuerpo
                   if (mensaje.cuerpo != null && mensaje.cuerpo!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: Spacing.xs),
                     SelectableText(
                       mensaje.cuerpo!,
                       style: theme.typography.body?.copyWith(fontSize: 13),
@@ -805,7 +800,7 @@ class _ComentarioItem extends ConsumerWidget {
                   ],
                   // Adjuntos
                   if (mensaje.tieneAdjuntos) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: Spacing.sm),
                     _AdjuntosChips(adjuntosIds: mensaje.adjuntosIds),
                   ],
                 ],
@@ -884,65 +879,27 @@ class _InicialCircle extends StatelessWidget {
 // Chips de adjuntos en un mensaje
 // ---------------------------------------------------------------------------
 
-class _AdjuntosChips extends StatefulWidget {
+class _AdjuntosChips extends ConsumerWidget {
   final List<String> adjuntosIds;
 
   const _AdjuntosChips({required this.adjuntosIds});
 
   @override
-  State<_AdjuntosChips> createState() => _AdjuntosChipsState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (adjuntosIds.isEmpty) return const SizedBox.shrink();
 
-class _AdjuntosChipsState extends State<_AdjuntosChips> {
-  List<AdjuntoItem>? _adjuntos;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAdjuntos();
-  }
-
-  Future<void> _loadAdjuntos() async {
-    if (!mounted) return;
-    try {
-      final rows = await Supabase.instance.client
-          .from('adjuntos')
-          .select()
-          .inFilter('id', widget.adjuntosIds)
-          .isFilter('eliminado_en', null);
-
-      if (!mounted) return;
-      setState(() {
-        _adjuntos = (rows as List<dynamic>)
-            .map((r) => AdjuntoItem.fromJson(r as Map<String, dynamic>))
-            .toList();
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const SizedBox(
-        height: 16,
-        width: 16,
-        child: ProgressRing(strokeWidth: 2),
-      );
-    }
-
-    final items = _adjuntos ?? [];
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      children: items
-          .map((a) => _AdjuntoChip(adjunto: a))
-          .toList(),
+    final async = ref.watch(adjuntosByIdsProvider(adjuntosIds));
+    return async.when(
+      loading: () => const PilarProgressRing.small(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Wrap(
+          spacing: Spacing.sm,
+          runSpacing: Spacing.xs,
+          children: items.map((a) => _AdjuntoChip(adjunto: a)).toList(),
+        );
+      },
     );
   }
 }
@@ -959,7 +916,7 @@ class _AdjuntoChip extends StatelessWidget {
     return GestureDetector(
       onTap: _open,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xs),
         decoration: BoxDecoration(
           color: theme.resources.cardBackgroundFillColorDefault,
           borderRadius: BorderRadius.circular(12),
@@ -970,7 +927,7 @@ class _AdjuntoChip extends StatelessWidget {
           children: [
             Icon(FluentIcons.attach, size: 11,
                 color: theme.resources.textFillColorSecondary),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 140),
               child: Text(
@@ -980,7 +937,7 @@ class _AdjuntoChip extends StatelessWidget {
                 style: theme.typography.caption?.copyWith(fontSize: 11),
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Text(
               adjunto.tamanioLabel,
               style: theme.typography.caption?.copyWith(
@@ -1044,7 +1001,7 @@ class _ComposeBar extends StatelessWidget {
             ? const Color(0xFFFFFAE6)
             : theme.resources.layerFillColorDefault,
       ),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Spacing.ms),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1060,12 +1017,12 @@ class _ComposeBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(FluentIcons.chat, size: 12),
-                    SizedBox(width: 4),
+                    SizedBox(width: Spacing.xs),
                     Text('Comentario'),
                   ],
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               ToggleButton(
                 checked: esNotaInterna,
                 onChanged: (_) {
@@ -1075,7 +1032,7 @@ class _ComposeBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(FluentIcons.lock, size: 12),
-                    SizedBox(width: 4),
+                    SizedBox(width: Spacing.xs),
                     Text('Nota interna'),
                   ],
                 ),
@@ -1084,7 +1041,7 @@ class _ComposeBar extends StatelessWidget {
                 const Spacer(),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
                   decoration: BoxDecoration(
                     color: theme.accentColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -1100,18 +1057,14 @@ class _ComposeBar extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
 
           // Progress de upload
           if (subiendo) ...[
             Row(
               children: [
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: ProgressRing(strokeWidth: 2),
-                ),
-                const SizedBox(width: 6),
+                const PilarProgressRing(size: 12),
+                const SizedBox(width: Spacing.sm),
                 Expanded(
                   child: Text(
                     uploadProgress != null
@@ -1126,13 +1079,13 @@ class _ComposeBar extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: Spacing.xs),
             ProgressBar(
               value: uploadProgress != null
                   ? uploadProgress!.fraction * 100
                   : null,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
           ],
 
           // TextBox
@@ -1146,7 +1099,7 @@ class _ComposeBar extends StatelessWidget {
             expands: false,
             textInputAction: TextInputAction.newline,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
 
           // Botones inferiores
           Row(
@@ -1157,7 +1110,7 @@ class _ComposeBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(FluentIcons.attach, size: 14),
-                    SizedBox(width: 4),
+                    SizedBox(width: Spacing.xs),
                     Text('Adjuntar'),
                   ],
                 ),
@@ -1166,16 +1119,12 @@ class _ComposeBar extends StatelessWidget {
               FilledButton(
                 onPressed: enviando || subiendo ? null : onEnviar,
                 child: enviando
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: ProgressRing(strokeWidth: 2),
-                      )
+                    ? const PilarProgressRing(size: 14)
                     : const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('Enviar'),
-                          SizedBox(width: 4),
+                          SizedBox(width: Spacing.xs),
                           Icon(FluentIcons.send, size: 12),
                         ],
                       ),
@@ -1214,7 +1163,7 @@ class _ActividadesTab extends ConsumerWidget {
       children: [
         Expanded(
           child: actividadesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: Text('Error: $e'),
@@ -1232,7 +1181,7 @@ class _ActividadesTab extends ConsumerWidget {
                         size: 32,
                         color: theme.resources.textFillColorSecondary,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                       Text(
                         'Sin actividades',
                         style: theme.typography.body?.copyWith(
@@ -1246,7 +1195,7 @@ class _ActividadesTab extends ConsumerWidget {
 
               return ListView.separated(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
                 itemCount: actividades.length,
                 separatorBuilder: (_, __) => const Divider(),
                 itemBuilder: (ctx, i) => _ActividadTile(
@@ -1259,7 +1208,7 @@ class _ActividadesTab extends ConsumerWidget {
         ),
         // Botón nueva actividad
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(Spacing.ms),
           child: SizedBox(
             width: double.infinity,
             child: Button(
@@ -1268,7 +1217,7 @@ class _ActividadesTab extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(FluentIcons.add, size: 12),
-                  SizedBox(width: 6),
+                  SizedBox(width: Spacing.sm),
                   Text('Nueva actividad'),
                 ],
               ),
@@ -1294,9 +1243,9 @@ class _ActividadesTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(actividad.titulo),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             const Text('Resultado (opcional):'),
-            const SizedBox(height: 6),
+            const SizedBox(height: Spacing.sm),
             TextBox(
               controller: resultCtrl,
               placeholder: 'Describe el resultado...',
@@ -1385,13 +1334,13 @@ class _ActividadTile extends StatelessWidget {
     return Opacity(
       opacity: completada ? 0.55 : 1.0,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Icono del tipo de actividad
             Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.only(top: Spacing.xxs),
               child: Icon(
                 _iconoTipo(actividad.tipo),
                 size: 16,
@@ -1400,7 +1349,7 @@ class _ActividadTile extends StatelessWidget {
                     : estadoColor,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1530,17 +1479,17 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
               title: Text(_error!),
               severity: InfoBarSeverity.error,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
           ],
           Text('Título *', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             controller: _tituloCtrl,
             placeholder: 'Descripción breve de la actividad',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           Text('Tipo', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           ComboBox<String>(
             value: _tipo,
             items: const [
@@ -1552,16 +1501,16 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
             ],
             onChanged: (v) => setState(() => _tipo = v ?? 'tarea'),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           Text('Fecha límite', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           DatePicker(
             selected: _fechaLimite,
             onChanged: (d) => setState(() => _fechaLimite = d),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           Text('Descripción', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             controller: _descripCtrl,
             placeholder: 'Detalles opcionales...',
@@ -1577,11 +1526,7 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
         FilledButton(
           onPressed: _guardando ? null : _guardar,
           child: _guardando
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing(size: 14)
               : const Text('Crear actividad'),
         ),
       ],
@@ -1656,10 +1601,10 @@ class _MensajeExterno extends StatelessWidget {
         ),
     };
 
-    final esEnviado = mensaje.metadatosJson['direccion'] == 'outbound';
+    final esEnviado = mensaje.metadatos['direccion'] == 'outbound';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Container(
         decoration: BoxDecoration(
           border: Border(left: BorderSide(color: color, width: 3)),
@@ -1667,14 +1612,14 @@ class _MensajeExterno extends StatelessWidget {
           borderRadius:
               const BorderRadius.horizontal(right: Radius.circular(8)),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Icon(icon, size: 14, color: color),
-                const SizedBox(width: 6),
+                const SizedBox(width: Spacing.sm),
                 Text(
                   label,
                   style: theme.typography.caption?.copyWith(
@@ -1682,7 +1627,7 @@ class _MensajeExterno extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1690,12 +1635,12 @@ class _MensajeExterno extends StatelessWidget {
                     children: [
                       Text(
                         esEnviado
-                            ? 'Enviado a ${mensaje.metadatosJson['destinatario'] ?? ''}'
+                            ? 'Enviado a ${mensaje.metadatos['destinatario'] ?? ''}'
                             : mensaje.autorNombre,
                         style: theme.typography.caption,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (mensaje.metadatosJson['via_contacto'] == true)
+                      if (mensaje.metadatos['via_contacto'] == true)
                         Text(
                           '(Conversación directa)',
                           style: theme.typography.caption?.copyWith(
@@ -1713,7 +1658,7 @@ class _MensajeExterno extends StatelessWidget {
               ],
             ),
             if (mensaje.cuerpo != null && mensaje.cuerpo!.isNotEmpty) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: Spacing.xs),
               Text(
                 mensaje.cuerpo!,
                 maxLines: 3,
@@ -1729,7 +1674,7 @@ class _MensajeExterno extends StatelessWidget {
                   builder: (ctx, close) => InfoBar(
                     title: const Text('ID de conversación'),
                     content: Text(
-                      mensaje.metadatosJson['conversacion_id']?.toString() ??
+                      mensaje.metadatos['conversacion_id']?.toString() ??
                           mensaje.id,
                     ),
                     action: IconButton(
@@ -1794,7 +1739,7 @@ class _CanalesVinculadasSectionState
             onTap: () => setState(() => _expandida = !_expandida),
             child: Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
               child: Row(
                 children: [
                   Icon(
@@ -1804,7 +1749,7 @@ class _CanalesVinculadasSectionState
                     size: 10,
                     color: theme.resources.textFillColorSecondary,
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Icon(
                     FluentIcons.link,
                     size: 12,
@@ -1818,10 +1763,10 @@ class _CanalesVinculadasSectionState
                     ),
                   ),
                   if (count > 0) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: Spacing.sm),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
+                          horizontal: Spacing.xs, vertical: Spacing.xxs),
                       decoration: BoxDecoration(
                         color: theme.accentColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
@@ -1843,7 +1788,7 @@ class _CanalesVinculadasSectionState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(FluentIcons.add, size: 11),
-                        SizedBox(width: 4),
+                        SizedBox(width: Spacing.xs),
                         Text('Vincular'),
                       ],
                     ),
@@ -1857,15 +1802,11 @@ class _CanalesVinculadasSectionState
           if (_expandida)
             vinculadasAsync.when(
               loading: () => const Padding(
-                padding: EdgeInsets.all(8),
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: ProgressRing(strokeWidth: 2),
-                ),
+                padding: EdgeInsets.all(Spacing.sm),
+                child: PilarProgressRing.small(),
               ),
               error: (e, _) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xs),
                 child: Text(
                   'Error: $e',
                   style: theme.typography.caption
@@ -1876,7 +1817,7 @@ class _CanalesVinculadasSectionState
                 if (lista.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
+                        horizontal: Spacing.ms, vertical: Spacing.xs),
                     child: Text(
                       'Sin canales vinculados',
                       style: theme.typography.caption?.copyWith(
@@ -1977,7 +1918,7 @@ class _CanalesVinculadoTile extends StatelessWidget {
           }();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xxs),
       child: Row(
         children: [
           Container(
@@ -1988,9 +1929,9 @@ class _CanalesVinculadoTile extends StatelessWidget {
               color: conv.activa ? color : theme.inactiveColor,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           Icon(icon, size: 13, color: color),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2015,7 +1956,7 @@ class _CanalesVinculadoTile extends StatelessWidget {
               tiempoRelativo,
               style: theme.typography.caption?.copyWith(fontSize: 10),
             ),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Tooltip(
             message: 'Desvincular conversación',
             child: IconButton(
@@ -2072,18 +2013,11 @@ class _VincularConversacionDialogState
     if (!mounted) return;
     setState(() => _buscando = true);
     try {
-      final rows = await Supabase.instance.client
-          .from('com_conversaciones')
-          .select('id, canal, destinatario_ref, destinatario_nombre, entidad_id')
-          .isFilter('entidad_id', null)
-          .ilike('destinatario_ref', '%$query%')
-          .limit(20);
+      final rows = await buscarConversacionesNoVinculadas(query);
 
       if (!mounted) return;
       setState(() {
-        _resultados = (rows as List<dynamic>)
-            .map((r) => r as Map<String, dynamic>)
-            .toList();
+        _resultados = rows;
         _buscando = false;
       });
     } catch (e) {
@@ -2127,34 +2061,32 @@ class _VincularConversacionDialogState
             'Busca una conversación no vinculada para asociarla a este registro.',
             style: theme.typography.caption,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Spacing.ms),
           TextBox(
             controller: _busquedaCtrl,
             placeholder: 'Buscar por número, email o nombre...',
             onChanged: _onBusquedaChanged,
             prefix: const Padding(
-              padding: EdgeInsets.only(left: 8),
+              padding: EdgeInsets.only(left: Spacing.sm),
               child: Icon(FluentIcons.search, size: 13),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           if (_error != null) ...[
             InfoBar(
               title: Text(_error!),
               severity: InfoBarSeverity.error,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
           ],
           if (_buscando)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: ProgressRing(),
-              ),
+            const Padding(
+              padding: EdgeInsets.all(Spacing.md),
+              child: PilarLoadingCenter(),
             )
           else if (_resultados.isEmpty && _busquedaCtrl.text.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(Spacing.ms),
               child: Text(
                 'Sin resultados',
                 style: theme.typography.body?.copyWith(
@@ -2192,9 +2124,9 @@ class _VincularConversacionDialogState
                   return GestureDetector(
                     onTap: _vinculando ? null : () => _vincular(r['id'] as String),
                     child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      margin: const EdgeInsets.symmetric(vertical: Spacing.xxs),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
+                          horizontal: Spacing.ms, vertical: Spacing.sm),
                       decoration: BoxDecoration(
                         color:
                             theme.resources.cardBackgroundFillColorDefault,
@@ -2206,7 +2138,7 @@ class _VincularConversacionDialogState
                       child: Row(
                         children: [
                           Icon(icon, size: 16, color: color),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: Spacing.ms),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2247,12 +2179,7 @@ class _VincularConversacionDialogState
           onPressed: _vinculando ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        if (_vinculando)
-          const SizedBox(
-            width: 20,
-            height: 20,
-            child: ProgressRing(strokeWidth: 2),
-          ),
+        if (_vinculando) const PilarProgressRing(size: 20),
       ],
     );
   }

@@ -1,132 +1,18 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/usuario_provider.dart';
+import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/error_state.dart';
+import '../providers/gestor_permisos_provider.dart';
+
 
 // ---------------------------------------------------------------------------
-// Modelos
+// Providers locales (estado UI)
 // ---------------------------------------------------------------------------
-
-class RolItem {
-  final String id;
-  final String codigo;
-  final String nombre;
-  final String? descripcion;
-  final bool esSistema;
-  final String? empresaId;
-  final bool activo;
-
-  const RolItem({
-    required this.id,
-    required this.codigo,
-    required this.nombre,
-    this.descripcion,
-    required this.esSistema,
-    this.empresaId,
-    required this.activo,
-  });
-
-  factory RolItem.fromJson(Map<String, dynamic> json) => RolItem(
-        id: json['id'] as String,
-        codigo: json['codigo'] as String,
-        nombre: json['nombre'] as String,
-        descripcion: json['descripcion'] as String?,
-        esSistema: json['es_sistema'] as bool? ?? false,
-        empresaId: json['empresa_id'] as String?,
-        activo: json['activo'] as bool? ?? true,
-      );
-}
-
-class PermisoEstado {
-  final String id;
-  final String codigo;
-  final String modulo;
-  final String recurso;
-  final String accion;
-  final String? descripcion;
-  final int nivel;     // 0=menu, 1=tabla CRUD, 2=sub-acción
-  final String? parentId;
-  bool tienePermiso;
-
-  PermisoEstado({
-    required this.id,
-    required this.codigo,
-    required this.modulo,
-    required this.recurso,
-    required this.accion,
-    this.descripcion,
-    this.nivel = 1,
-    this.parentId,
-    required this.tienePermiso,
-  });
-
-  factory PermisoEstado.fromJson(Map<String, dynamic> json) => PermisoEstado(
-        id: json['id'] as String,
-        codigo: json['codigo'] as String,
-        modulo: json['modulo'] as String,
-        recurso: json['recurso'] as String,
-        accion: json['accion'] as String,
-        descripcion: json['descripcion'] as String?,
-        nivel: (json['nivel'] as num?)?.toInt() ?? 1,
-        parentId: json['parent_id'] as String?,
-        tienePermiso: json['tiene_permiso'] as bool? ?? false,
-      );
-}
-
-class UsuarioRolItem {
-  final String usuarioId;
-  final String email;
-  final String nombreDisplay;
-  final String? avatarUrl;
-  final bool activo;
-
-  const UsuarioRolItem({
-    required this.usuarioId,
-    required this.email,
-    required this.nombreDisplay,
-    this.avatarUrl,
-    required this.activo,
-  });
-
-  factory UsuarioRolItem.fromJson(Map<String, dynamic> json) => UsuarioRolItem(
-        usuarioId: json['usuario_id'] as String,
-        email: json['email'] as String,
-        nombreDisplay:
-            json['nombre_display'] as String? ?? json['email'] as String,
-        avatarUrl: json['avatar_url'] as String?,
-        activo: json['activo'] as bool? ?? true,
-      );
-}
-
-// ---------------------------------------------------------------------------
-// Providers
-// ---------------------------------------------------------------------------
-
-final rolesAdminProvider = FutureProvider<List<RolItem>>((ref) async {
-  final data = await Supabase.instance.client.rpc('admin_get_roles');
-  return (data as List)
-      .map((e) => RolItem.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
-
-final permisosRolProvider =
-    FutureProvider.family<List<PermisoEstado>, String>((ref, rolId) async {
-  final data = await Supabase.instance.client
-      .rpc('admin_get_permisos_rol', params: {'p_rol_id': rolId});
-  return (data as List)
-      .map((e) => PermisoEstado.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
-
-final usuariosRolProvider =
-    FutureProvider.family<List<UsuarioRolItem>, String>((ref, rolId) async {
-  final data = await Supabase.instance.client
-      .rpc('admin_get_usuarios_rol', params: {'p_rol_id': rolId});
-  return (data as List)
-      .map((e) => UsuarioRolItem.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
 
 final _rolSeleccionadoProvider = StateProvider<RolItem?>((ref) => null);
 final _filtroModuloProvider = StateProvider<String?>((ref) => null);
@@ -170,8 +56,8 @@ class GestorPermisosScreen extends ConsumerWidget {
         ),
       ),
       content: rolesAsync.when(
-        loading: () => const Center(child: ProgressRing()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => const PilarLoadingCenter(),
+        error: (e, _) => PilarErrorState(error: e),
         data: (roles) {
           if (rolSeleccionado == null && roles.isNotEmpty) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -189,7 +75,7 @@ class GestorPermisosScreen extends ConsumerWidget {
               if (rolSeleccionado?.esSistema == true)
                 const Padding(
                   padding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
                   child: InfoBar(
                     title: Text('Personalización por empresa'),
                     content: Text(
@@ -207,7 +93,7 @@ class GestorPermisosScreen extends ConsumerWidget {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          if (constraints.maxWidth >= 900) {
+                          if (constraints.maxWidth >= PilarBreakpoints.tablet) {
                             return Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -257,10 +143,10 @@ class _Toolbar extends ConsumerWidget {
     final theme = FluentTheme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: Spacing.sm,
+        runSpacing: Spacing.sm,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           // Selector de rol con etiqueta
@@ -270,7 +156,7 @@ class _Toolbar extends ConsumerWidget {
               Text('Rol:',
                   style: theme.typography.body
                       ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               SizedBox(
                 width: 240,
                 child: ComboBox<String>(
@@ -288,7 +174,7 @@ class _Toolbar extends ConsumerWidget {
                                       overflow: TextOverflow.ellipsis),
                                 ),
                                 if (r.esSistema) ...[
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: Spacing.sm),
                                   const InfoBadge(source: Text('S')),
                                 ],
                               ],
@@ -306,14 +192,14 @@ class _Toolbar extends ConsumerWidget {
               ),
               // Botón eliminar rol (solo custom)
               if (rolSeleccionado != null && !rolSeleccionado.esSistema) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: Spacing.xs),
                 Tooltip(
                   message: 'Eliminar rol',
                   child: Button(
                     style: const ButtonStyle(
                       padding: WidgetStatePropertyAll(
                           EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6)),
+                              horizontal: Spacing.ms, vertical: Spacing.sm)),
                     ),
                     child: const Icon(FluentIcons.delete, size: 14),
                     onPressed: () =>
@@ -346,7 +232,7 @@ class _Toolbar extends ConsumerWidget {
                   Text('Módulo:',
                       style: theme.typography.body
                           ?.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   SizedBox(
                     width: 180,
                     child: ComboBox<String>(
@@ -364,7 +250,7 @@ class _Toolbar extends ConsumerWidget {
                     ),
                   ),
                   if (filtroModulo != null) ...[
-                    const SizedBox(width: 2),
+                    const SizedBox(width: Spacing.xxs),
                     IconButton(
                       icon: const Icon(FluentIcons.clear_filter, size: 14),
                       onPressed: () =>
@@ -381,7 +267,7 @@ class _Toolbar extends ConsumerWidget {
             child: TextBox(
               placeholder: 'Buscar permiso...',
               prefix: const Padding(
-                padding: EdgeInsets.only(left: 8),
+                padding: EdgeInsets.only(left: Spacing.sm),
                 child: Icon(FluentIcons.search, size: 14),
               ),
               onChanged: (v) =>
@@ -477,33 +363,31 @@ class _MatrizPermisosState extends ConsumerState<_MatrizPermisos> {
 
   Future<void> _toggle(String permisoId, bool conceder) async {
     setState(() => _cargando.add(permisoId));
-    try {
-      await Supabase.instance.client.rpc('admin_toggle_permiso_rol', params: {
-        'p_rol_id': widget.rolId,
-        'p_permiso_id': permisoId,
-        'p_conceder': conceder,
-      });
+    final result = await ref
+        .read(gestorPermisosProvider.notifier)
+        .togglePermisoRol(
+          rolId: widget.rolId,
+          permisoId: permisoId,
+          conceder: conceder,
+        );
+    if (!mounted) return;
+    setState(() => _cargando.remove(permisoId));
+    if (result.ok) {
       ref.invalidate(permisosRolProvider(widget.rolId));
-      if (mounted) {
-        displayInfoBar(context,
-            builder: (_, close) => InfoBar(
-                  title: Text(conceder ? 'Permiso concedido' : 'Permiso revocado'),
-                  severity: InfoBarSeverity.success,
-                  onClose: close,
-                ));
-      }
-    } catch (e) {
-      if (mounted) {
-        displayInfoBar(context,
-            builder: (_, close) => InfoBar(
-                  title: const Text('Error al actualizar permiso'),
-                  content: Text(e.toString()),
-                  severity: InfoBarSeverity.error,
-                  onClose: close,
-                ));
-      }
-    } finally {
-      if (mounted) setState(() => _cargando.remove(permisoId));
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: Text(conceder ? 'Permiso concedido' : 'Permiso revocado'),
+                severity: InfoBarSeverity.success,
+                onClose: close,
+              ));
+    } else {
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Error al actualizar permiso'),
+                content: Text(result.error ?? 'Error desconocido'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ));
     }
   }
 
@@ -514,8 +398,8 @@ class _MatrizPermisosState extends ConsumerState<_MatrizPermisos> {
     final filtroTexto = ref.watch(_filtroTextoProvider);
 
     return permisosAsync.when(
-      loading: () => const Center(child: ProgressRing()),
-      error: (e, _) => Center(child: Text('Error al cargar permisos: $e')),
+      loading: () => const PilarLoadingCenter(),
+      error: (e, _) => PilarErrorState(error: e),
       data: (todosPermisos) {
         final permisos = todosPermisos.where((p) {
           if (filtroModulo != null && p.modulo != filtroModulo) return false;
@@ -537,7 +421,7 @@ class _MatrizPermisosState extends ConsumerState<_MatrizPermisos> {
                 Icon(FluentIcons.permissions,
                     size: 40,
                     color: FluentTheme.of(context).resources.textFillColorDisabled),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.ms),
                 Text('No hay permisos que mostrar',
                     style: FluentTheme.of(context).typography.body),
               ],
@@ -702,7 +586,7 @@ class _CabeceraMat extends StatelessWidget {
           SizedBox(
             width: colDesc,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.ms),
               child: Text('Descripción', style: theme.typography.bodyStrong),
             ),
           ),
@@ -713,7 +597,7 @@ class _CabeceraMat extends StatelessWidget {
                   border: Border(right: BorderSide(color: borderColor)),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.ms),
                   child: Tooltip(
                     message: col,
                     child: Text(
@@ -752,11 +636,11 @@ class _RowModulo extends StatelessWidget {
         color: theme.accentColor.withValues(alpha: 0.07),
         border: Border(bottom: BorderSide(color: borderColor)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
       child: Row(
         children: [
           Icon(FluentIcons.permissions, size: 12, color: theme.accentColor),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Text(
             modulo.toUpperCase(),
             style: theme.typography.bodyStrong
@@ -808,13 +692,13 @@ class _RowMenu extends StatelessWidget {
           SizedBox(
             width: colDesc,
             child: Padding(
-              padding: const EdgeInsets.only(left: 12, right: 8, top: 7, bottom: 7),
+              padding: const EdgeInsets.only(left: Spacing.ms, right: Spacing.sm, top: Spacing.sm, bottom: Spacing.sm),
               child: Row(
                 children: [
                   Icon(FluentIcons.nav2_d_map_view,
                       size: 12,
                       color: theme.accentColor.withValues(alpha: 0.8)),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Expanded(
                     child: Text(
                       'Menú: ${_prettifyRecurso(permiso.recurso)}',
@@ -889,7 +773,7 @@ class _RowTabla extends StatelessWidget {
           SizedBox(
             width: colDesc,
             child: Padding(
-              padding: const EdgeInsets.only(left: 24, right: 8, top: 7, bottom: 7),
+              padding: const EdgeInsets.only(left: Spacing.lg, right: Spacing.sm, top: Spacing.sm, bottom: Spacing.sm),
               child: Text(
                 'Tabla: ${_prettifyRecurso(recurso)}',
                 style: theme.typography.body,
@@ -962,7 +846,7 @@ class _RowSubAccion extends StatelessWidget {
           SizedBox(
             width: colDesc,
             child: Padding(
-              padding: const EdgeInsets.only(left: 36, right: 8, top: 7, bottom: 7),
+              padding: const EdgeInsets.only(left: Spacing.xl, right: Spacing.sm, top: Spacing.sm, bottom: Spacing.sm),
               child: Text(
                 permiso.descripcion ?? permiso.codigo,
                 style: theme.typography.caption
@@ -1054,7 +938,7 @@ class _CeldaCheck extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: isLoading
-          ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
+          ? const PilarProgressRing.small()
           : Tooltip(
               message: esSistema
                   ? '${permiso.codigo}\n(override por empresa)'
@@ -1102,11 +986,11 @@ class _PanelUsuarios extends ConsumerWidget {
                   color: theme.resources.dividerStrokeColorDefault),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           child: Row(
             children: [
               const Icon(FluentIcons.people, size: 16),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text('Usuarios asignados',
                     style: theme.typography.bodyStrong,
@@ -1116,7 +1000,7 @@ class _PanelUsuarios extends ConsumerWidget {
               usuariosAsync.whenOrNull(
                     data: (u) => u.isNotEmpty
                         ? Padding(
-                            padding: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.only(right: Spacing.xs),
                             child: InfoBadge(source: Text('${u.length}')),
                           )
                         : null,
@@ -1132,9 +1016,9 @@ class _PanelUsuarios extends ConsumerWidget {
         ),
         Expanded(
           child: usuariosAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
               child: InfoBar(
                 title: const Text('Error al cargar usuarios'),
                 content: Text(e.toString()),
@@ -1143,19 +1027,10 @@ class _PanelUsuarios extends ConsumerWidget {
             ),
             data: (usuarios) {
               if (usuarios.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(FluentIcons.people,
-                          size: 36,
-                          color: theme.resources.textFillColorDisabled),
-                      const SizedBox(height: 8),
-                      Text('Sin usuarios asignados',
-                          style: theme.typography.caption?.copyWith(
-                              color: theme.resources.textFillColorDisabled)),
-                    ],
-                  ),
+                return const PilarEmptyState(
+                  message: 'Sin usuarios asignados',
+                  icon: FluentIcons.people,
+                  iconSize: 36,
                 );
               }
               return ListView.separated(
@@ -1206,31 +1081,30 @@ class _PanelUsuarios extends ConsumerWidget {
     );
     if (confirmar != true || !context.mounted) return;
 
-    try {
-      await Supabase.instance.client.rpc('admin_toggle_usuario_rol', params: {
-        'p_usuario_id': usuario.usuarioId,
-        'p_rol_id': rolId,
-        'p_asignar': false,
-      });
+    final result = await ref
+        .read(gestorPermisosProvider.notifier)
+        .toggleUsuarioRol(
+          userId: usuario.usuarioId,
+          rolId: rolId,
+          asignar: false,
+        );
+    if (!context.mounted) return;
+    if (result.ok) {
       ref.invalidate(usuariosRolProvider(rolId));
-      if (context.mounted) {
-        displayInfoBar(context,
-            builder: (_, close) => InfoBar(
-                  title: Text('${usuario.nombreDisplay} eliminado del rol'),
-                  severity: InfoBarSeverity.success,
-                  onClose: close,
-                ));
-      }
-    } catch (e) {
-      if (context.mounted) {
-        displayInfoBar(context,
-            builder: (_, close) => InfoBar(
-                  title: const Text('Error al quitar usuario'),
-                  content: Text(e.toString()),
-                  severity: InfoBarSeverity.error,
-                  onClose: close,
-                ));
-      }
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: Text('${usuario.nombreDisplay} eliminado del rol'),
+                severity: InfoBarSeverity.success,
+                onClose: close,
+              ));
+    } else {
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Error al quitar usuario'),
+                content: Text(result.error ?? 'Error desconocido'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ));
     }
   }
 }
@@ -1253,7 +1127,7 @@ class _UsuarioCard extends StatelessWidget {
         : '?';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
       child: Row(
         children: [
           Container(
@@ -1274,7 +1148,7 @@ class _UsuarioCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: Spacing.ms),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1324,7 +1198,7 @@ Future<void> _mostrarNuevoRolDialog(BuildContext context, WidgetRef ref) async {
               placeholder: 'CUSTOM_ROL',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Nombre',
             child: TextBox(
@@ -1332,7 +1206,7 @@ Future<void> _mostrarNuevoRolDialog(BuildContext context, WidgetRef ref) async {
               placeholder: 'Nombre del rol',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Descripcion (opcional)',
             child: TextBox(
@@ -1355,34 +1229,33 @@ Future<void> _mostrarNuevoRolDialog(BuildContext context, WidgetRef ref) async {
             final nombre = nombreCtrl.text.trim();
             if (codigo.isEmpty || nombre.isEmpty) return;
 
-            try {
-              await Supabase.instance.client.rpc('admin_crear_rol', params: {
-                'p_codigo': codigo,
-                'p_nombre': nombre,
-                'p_descripcion': descCtrl.text.trim().isEmpty
-                    ? null
-                    : descCtrl.text.trim(),
-              });
+            final result = await ref
+                .read(gestorPermisosProvider.notifier)
+                .crearRol(
+                  codigo: codigo,
+                  nombre: nombre,
+                  descripcion: descCtrl.text.trim().isEmpty
+                      ? null
+                      : descCtrl.text.trim(),
+                );
+            if (!context.mounted) return;
+            if (result.ok) {
               ref.invalidate(rolesAdminProvider);
-              if (context.mounted) Navigator.of(context).pop();
-              if (context.mounted) {
-                displayInfoBar(context,
-                    builder: (_, close) => InfoBar(
-                          title: Text('Rol "$nombre" creado'),
-                          severity: InfoBarSeverity.success,
-                          onClose: close,
-                        ));
-              }
-            } catch (e) {
-              if (context.mounted) {
-                displayInfoBar(context,
-                    builder: (_, close) => InfoBar(
-                          title: const Text('Error al crear rol'),
-                          content: Text(e.toString()),
-                          severity: InfoBarSeverity.error,
-                          onClose: close,
-                        ));
-              }
+              Navigator.of(context).pop();
+              displayInfoBar(context,
+                  builder: (_, close) => InfoBar(
+                        title: Text('Rol "$nombre" creado'),
+                        severity: InfoBarSeverity.success,
+                        onClose: close,
+                      ));
+            } else {
+              displayInfoBar(context,
+                  builder: (_, close) => InfoBar(
+                        title: const Text('Error al crear rol'),
+                        content: Text(result.error ?? 'Error desconocido'),
+                        severity: InfoBarSeverity.error,
+                        onClose: close,
+                      ));
             }
           },
         ),
@@ -1401,11 +1274,12 @@ Future<void> _mostrarAsignarUsuarioDialog(
 
   List<Map<String, dynamic>> todosUsuarios = [];
   String? errorCarga;
-  try {
-    final data = await Supabase.instance.client.rpc('admin_get_usuarios');
-    todosUsuarios = (data as List).cast<Map<String, dynamic>>();
-  } catch (e) {
-    errorCarga = e.toString();
+  final usuariosResult =
+      await ref.read(gestorPermisosProvider.notifier).getAllUsuarios();
+  if (usuariosResult.error != null) {
+    errorCarga = usuariosResult.error;
+  } else {
+    todosUsuarios = usuariosResult.data ?? [];
   }
 
   // Solo usuarios reales (excluye invitaciones pendientes que tienen usuario_id=null)
@@ -1469,15 +1343,17 @@ Future<void> _mostrarAsignarUsuarioDialog(
             onPressed: seleccionadoId == null
                 ? null
                 : () async {
-                    try {
-                      await Supabase.instance.client
-                          .rpc('admin_toggle_usuario_rol', params: {
-                        'p_usuario_id': seleccionadoId,
-                        'p_rol_id': rolId,
-                        'p_asignar': true,
-                      });
+                    final result = await ref
+                        .read(gestorPermisosProvider.notifier)
+                        .toggleUsuarioRol(
+                          userId: seleccionadoId!,
+                          rolId: rolId,
+                          asignar: true,
+                        );
+                    if (!ctx.mounted) return;
+                    if (result.ok) {
                       ref.invalidate(usuariosRolProvider(rolId));
-                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      Navigator.of(ctx).pop();
                       if (context.mounted) {
                         displayInfoBar(context,
                             builder: (_, close) => InfoBar(
@@ -1487,13 +1363,13 @@ Future<void> _mostrarAsignarUsuarioDialog(
                                   onClose: close,
                                 ));
                       }
-                    } catch (e) {
+                    } else {
                       if (context.mounted) {
                         displayInfoBar(context,
                             builder: (_, close) => InfoBar(
-                                  title:
-                                      const Text('Error al asignar usuario'),
-                                  content: Text(e.toString()),
+                                  title: const Text('Error al asignar usuario'),
+                                  content: Text(
+                                      result.error ?? 'Error desconocido'),
                                   severity: InfoBarSeverity.error,
                                   onClose: close,
                                 ));
@@ -1534,31 +1410,26 @@ Future<void> _confirmarEliminarRol(
   );
   if (confirmar != true || !context.mounted) return;
 
-  try {
-    await Supabase.instance.client
-        .rpc('admin_eliminar_rol', params: {'p_rol_id': rol.id});
+  final result = await ref
+      .read(gestorPermisosProvider.notifier)
+      .eliminarRol(rolId: rol.id);
+  if (!context.mounted) return;
+  if (result.ok) {
     ref.invalidate(rolesAdminProvider);
     ref.read(_rolSeleccionadoProvider.notifier).state = null;
-    if (context.mounted) {
-      displayInfoBar(context,
-          builder: (_, close) => InfoBar(
-                title: Text('Rol "${rol.nombre}" eliminado'),
-                severity: InfoBarSeverity.success,
-                onClose: close,
-              ));
-    }
-  } catch (e) {
-    final msg = e.toString().contains('tiene_usuarios_asignados')
-        ? 'No se puede eliminar: el rol tiene usuarios asignados'
-        : e.toString();
-    if (context.mounted) {
-      displayInfoBar(context,
-          builder: (_, close) => InfoBar(
-                title: const Text('Error al eliminar rol'),
-                content: Text(msg),
-                severity: InfoBarSeverity.error,
-                onClose: close,
-              ));
-    }
+    displayInfoBar(context,
+        builder: (_, close) => InfoBar(
+              title: Text('Rol "${rol.nombre}" eliminado'),
+              severity: InfoBarSeverity.success,
+              onClose: close,
+            ));
+  } else {
+    displayInfoBar(context,
+        builder: (_, close) => InfoBar(
+              title: const Text('Error al eliminar rol'),
+              content: Text(result.error ?? 'Error desconocido'),
+              severity: InfoBarSeverity.error,
+              onClose: close,
+            ));
   }
 }

@@ -1,8 +1,11 @@
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
-import '../models/com_mensaje.dart';
+import '../../../core/providers/repository_provider.dart';
 import '../models/email_thread.dart';
 
 // ============================================================================
@@ -47,9 +50,9 @@ final emailBusquedaProvider = StateProvider<String?>((ref) => null);
 
 /// Hilos de email para la carpeta indicada.
 ///
-/// Llama a la RPC `com_get_email_threads` con los filtros activos.
-/// Suscripción Realtime en `com_conversaciones` para actualización automática
-/// cuando llegan nuevos emails o cambia el estado de los existentes.
+/// emailThreads es una vista derivada (JOIN en RPC), no una tabla directa.
+/// Se mantiene como RPC en todas las plataformas.
+/// Suscripción Realtime en `com_conversaciones` para actualización automática.
 final emailThreadsProvider = FutureProvider.autoDispose
     .family<List<EmailThread>, EmailCarpeta>((ref, carpeta) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
@@ -93,9 +96,12 @@ final emailThreadsProvider = FutureProvider.autoDispose
 
 /// Mensajes del hilo seleccionado.
 ///
-/// Suscripción Realtime a `com_mensajes` filtrada por `conversacion_id`
-/// para que el hilo de email se actualice cuando llegan respuestas.
-/// Incluye reconexión automática (iOS foreground resume).
+/// - **Native**: Lee desde SQLite (Brick) por `conversacionId`, con fallback
+///   a RPC `com_get_mensajes_conversacion`.
+/// - **Web**: RPC directa.
+///
+/// Suscripción Realtime a `com_mensajes` para actualización automática
+/// cuando llegan respuestas. Incluye reconexión automática.
 final emailMensajesProvider = FutureProvider.autoDispose
     .family<List<ComMensaje>, String>((ref, convId) async {
   final empresaId = ref.watch(empresaActivaIdProvider);
@@ -127,6 +133,30 @@ final emailMensajesProvider = FutureProvider.autoDispose
       });
   ref.onDispose(() => channel.unsubscribe());
 
+  // Native: local-first con Brick
+  final repo = ref.read(repositoryProvider);
+  if (!kIsWeb && repo != null) {
+    try {
+      final results = await repo.get<ComMensaje>(
+        policy: OfflineFirstGetPolicy.awaitRemote,
+        query: Query(where: [Where.exact('conversacionId', convId)]),
+      );
+      if (results.isNotEmpty) {
+        return results..sort((a, b) {
+          final ta = a.creadoEn;
+          final tb = b.creadoEn;
+          if (ta == null && tb == null) return 0;
+          if (ta == null) return -1;
+          if (tb == null) return 1;
+          return ta.compareTo(tb);
+        });
+      }
+    } catch (_) {
+      // fall through to RPC
+    }
+  }
+
+  // Web fallback o si Brick no tiene datos
   final data = await Supabase.instance.client.rpc(
     'com_get_mensajes_conversacion',
     params: {'p_conv_id': convId, 'p_limit': 100, 'p_offset': 0},
@@ -153,3 +183,53 @@ final emailCuentasProvider =
 
   return (data as List).cast<Map<String, dynamic>>();
 });
+
+// ---------------------------------------------------------------------------
+// EnviarEmailNotifier — escritura de mensajes de email
+// ---------------------------------------------------------------------------
+
+/// Notifier para enviar emails outbound vía com_mensajes.
+///
+/// Uso:
+/// ```dart
+/// await ref.read(enviarEmailProvider.notifier).enviar(
+///   cuentaId: id,
+///   to: 'dest@example.com',
+///   subject: 'Asunto',
+///   body: '<p>Cuerpo</p>',
+/// );
+/// ```
+class EnviarEmailNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<void> enviar({
+    required String cuentaId,
+    required String to,
+    required String subject,
+    required String body,
+    String? conversacionId,
+  }) async {
+    final empresaId = ref.read(empresaActivaIdProvider);
+
+    await Supabase.instance.client.from('com_mensajes').insert({
+      'empresa_id': empresaId,
+      'cuenta_id': cuentaId,
+      'canal': 'email_api',
+      'tipo': 'outbound',
+      'destinatario_ref': to,
+      'asunto': subject,
+      'cuerpo': body,
+      if (conversacionId != null) 'conversacion_id': conversacionId,
+    });
+
+    // Invalidar hilos y mensajes para reflejar el envío
+    ref.invalidate(emailThreadsProvider);
+    if (conversacionId != null) {
+      ref.invalidate(emailMensajesProvider(conversacionId));
+    }
+  }
+}
+
+final enviarEmailProvider =
+    AsyncNotifierProvider<EnviarEmailNotifier, void>(EnviarEmailNotifier.new);

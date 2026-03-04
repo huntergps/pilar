@@ -16,6 +16,7 @@ Future<Modulo> _$ModuloFromSupabase(
     icono: data['icono'] == null ? null : data['icono'] as String?,
     orden: data['orden'] == null ? null : data['orden'] as int?,
     activo: data['activo'] as bool,
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -32,6 +33,7 @@ Future<Map<String, dynamic>> _$ModuloToSupabase(
     'icono': instance.icono,
     'orden': instance.orden,
     'activo': instance.activo,
+    'version': instance.version,
   };
 }
 
@@ -50,6 +52,7 @@ Future<Modulo> _$ModuloFromSqlite(
     icono: data['icono'] == null ? null : data['icono'] as String?,
     orden: data['orden'] == null ? null : data['orden'] as int?,
     activo: data['activo'] == 1,
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -66,6 +69,7 @@ Future<Map<String, dynamic>> _$ModuloToSqlite(
     'icono': instance.icono,
     'orden': instance.orden,
     'activo': instance.activo ? 1 : 0,
+    'version': instance.version,
   };
 }
 
@@ -106,6 +110,10 @@ class ModuloAdapter extends OfflineFirstWithSupabaseAdapter<Modulo> {
     'activo': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'activo',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -161,6 +169,12 @@ class ModuloAdapter extends OfflineFirstWithSupabaseAdapter<Modulo> {
       columnName: 'activo',
       iterable: false,
       type: bool,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

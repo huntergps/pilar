@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../providers/contactos_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // ContactoPicker
@@ -98,18 +99,11 @@ class _ContactoPickerState extends ConsumerState<ContactoPicker> {
 
   Future<void> _buscar(String query) async {
     try {
-      final data = await Supabase.instance.client.rpc(
-        'entidades_buscar_contactos',
-        params: {
-          'p_query': query,
-          'p_filtro': widget.filtro,
-          'p_solo_activos': true,
-          'p_limit': 20,
-          'p_offset': 0,
-        },
-      ) as List;
+      final data = await ref.read(
+        contactoBusquedaProvider((query: query, filtro: widget.filtro)).future,
+      );
       if (!mounted) return;
-      _resultsNotifier.value = data.cast<Map<String, dynamic>>();
+      _resultsNotifier.value = data;
       if (_resultsNotifier.value.isNotEmpty && _focusNode.hasFocus) {
         _showOverlay();
       } else {
@@ -232,7 +226,7 @@ class _ContactoDropdown extends StatelessWidget {
                 ),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
                   itemCount: results.length,
                   itemBuilder: (ctx, i) => _ContactoTile(
                     contacto: results[i],
@@ -281,7 +275,7 @@ class _ContactoTileState extends State<_ContactoTile> {
         onExit: (_) => setState(() => _hover = false),
         cursor: SystemMouseCursors.click,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           color: _hover
               ? theme.resources.subtleFillColorSecondary
               : Colors.transparent,

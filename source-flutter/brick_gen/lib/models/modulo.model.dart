@@ -1,4 +1,5 @@
 import 'package:brick_offline_first_with_supabase/brick_offline_first_with_supabase.dart';
+import 'package:brick_sqlite/brick_sqlite.dart';
 import 'package:brick_supabase/brick_supabase.dart';
 
 @ConnectOfflineFirstWithSupabase(
@@ -15,6 +16,10 @@ class Modulo extends OfflineFirstWithSupabaseModel {
   final int? orden;
   final bool activo;
 
+  @Supabase(name: 'version', defaultValue: '1')
+  @Sqlite(defaultValue: '1')
+  final int version;
+
   Modulo({
     required this.id,
     required this.nombre,
@@ -23,5 +28,6 @@ class Modulo extends OfflineFirstWithSupabaseModel {
     this.icono,
     this.orden,
     this.activo = true,
+    this.version = 1,
   });
 }

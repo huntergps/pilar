@@ -1,12 +1,12 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:brick_gen/brick_gen.dart';
 
 import '../providers/familias_provider.dart';
+import '../providers/familia_write_provider.dart';
+import '../../../core/providers/brick_write_provider.dart';
 
 // ---------------------------------------------------------------------------
 // FamiliasScreen — gestión de familias de productos
@@ -107,20 +107,47 @@ class _FamiliasLista extends ConsumerWidget {
       onNew: () => onOpenTab(null),
       onRowTap: onOpenTab,
       onDelete: (f) async {
-        if (!kIsWeb && PilarRepository.isInitialized) {
-          await PilarRepository.instance.upsert<ProductoFamilia>(ProductoFamilia(
-            id: f['id'] as String,
-            nombre: f['nombre'] as String? ?? '',
-            descripcion: f['descripcion'] as String?,
-            activo: false,
-          ));
-        } else {
-          await Supabase.instance.client
-              .from('producto_familias')
-              .update({'activo': false})
-              .eq('id', f['id'] as String);
+        final familia = ProductoFamilia(
+          id: f['id'] as String,
+          nombre: f['nombre'] as String? ?? '',
+          descripcion: f['descripcion'] as String?,
+          activo: false,
+        );
+        try {
+          await ref.read(familiaWriteProvider.notifier).delete(familia);
+        } on OfflineWriteException catch (e) {
+          if (context.mounted) {
+            displayInfoBar(
+              context,
+              builder: (_, close) => InfoBar(
+                title: Text(
+                  e.isConflict ? 'Conflicto' : 'Sin conexión',
+                ),
+                content: Text(
+                  e.isConflict
+                      ? 'Otro usuario modificó este registro. Recarga e intenta de nuevo.'
+                      : 'Sin conexión. El cambio se guardará cuando recuperes la red.',
+                ),
+                severity: e.isConflict
+                    ? InfoBarSeverity.error
+                    : InfoBarSeverity.warning,
+                onClose: close,
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            displayInfoBar(
+              context,
+              builder: (_, close) => InfoBar(
+                title: const Text('Error'),
+                content: Text('No se pudo eliminar la familia: $e'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ),
+            );
+          }
         }
-        ref.read(familiasProvider.notifier).refresh();
       },
       deleteConfirmText: (f) =>
           '¿Eliminar familia "${f['nombre']}"? Los productos de esta familia quedarán sin familia asignada.',
@@ -132,7 +159,7 @@ class _FamiliasLista extends ConsumerWidget {
 // Formulario
 // ---------------------------------------------------------------------------
 
-class _FamiliaForm extends StatefulWidget {
+class _FamiliaForm extends ConsumerStatefulWidget {
   final Map<String, dynamic>? familia;
   final VoidCallback onSaved;
   final VoidCallback onCancel;
@@ -140,10 +167,10 @@ class _FamiliaForm extends StatefulWidget {
   const _FamiliaForm({this.familia, required this.onSaved, required this.onCancel});
 
   @override
-  State<_FamiliaForm> createState() => _FamiliaFormState();
+  ConsumerState<_FamiliaForm> createState() => _FamiliaFormState();
 }
 
-class _FamiliaFormState extends State<_FamiliaForm> {
+class _FamiliaFormState extends ConsumerState<_FamiliaForm> {
   final _nombreCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
 
@@ -173,27 +200,21 @@ class _FamiliaFormState extends State<_FamiliaForm> {
     final descVal =
         _descCtrl.text.trim().isNotEmpty ? _descCtrl.text.trim() : null;
 
-    if (!kIsWeb && PilarRepository.isInitialized) {
-      await PilarRepository.instance.upsert<ProductoFamilia>(ProductoFamilia(
-        id: id,
-        nombre: _nombreCtrl.text.trim(),
-        descripcion: descVal,
-        activo: true,
-      ));
-    } else {
-      final data = {
-        'nombre': _nombreCtrl.text.trim(),
-        'descripcion': descVal,
-      };
-      if (widget.familia != null) {
-        await Supabase.instance.client
-            .from('producto_familias')
-            .update(data)
-            .eq('id', id);
+    final familia = ProductoFamilia(
+      id: id,
+      nombre: _nombreCtrl.text.trim(),
+      descripcion: descVal,
+      activo: true,
+    );
+
+    try {
+      await ref.read(familiaWriteProvider.notifier).save(familia);
+    } on OfflineWriteException catch (e) {
+      if (e.isConflict) {
+        throw 'Conflicto: otro usuario modificó este registro. '
+            'Recarga e intenta de nuevo.';
       } else {
-        await Supabase.instance.client
-            .from('producto_familias')
-            .insert({...data, 'id': id});
+        throw 'Sin conexión. El cambio se guardará cuando recuperes la red.';
       }
     }
 

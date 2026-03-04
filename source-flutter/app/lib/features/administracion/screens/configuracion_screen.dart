@@ -5,12 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../../core/config/supabase_config.dart';
+import '../../../core/providers/auth_actions_provider.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/router/app_router.dart' show PilarRoutes, supabaseUrlProvider;
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Pantalla principal
@@ -53,7 +53,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
         // SECCIÓN: APARIENCIA
         // ================================================================
         const _SectionHeader(title: 'Apariencia'),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // --- Modo de tema ---
         InfoLabel(
@@ -70,7 +70,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             },
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: Spacing.ml),
 
         // --- Modo de navegación ---
         InfoLabel(
@@ -88,7 +88,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             },
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: Spacing.ml),
 
         // --- Color de acento (usuario puede sobreescribir el color de empresa) ---
         InfoLabel(
@@ -102,7 +102,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
                 includeNoneOption: true,
                 noneLabel: 'Empresa / Sistema',
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: Spacing.sm),
               Text(
                 config.accentColor == null
                     ? 'Usando color de la empresa o del sistema operativo.'
@@ -112,7 +112,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: Spacing.ml),
 
         // --- Tipografía (expander con 7 sliders individuales) ---
         Expander(
@@ -122,7 +122,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
               const Spacer(),
               if (!_isDefaultTypography(config))
                 Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.only(right: Spacing.sm),
                   child: Button(
                     child: const Text('Restablecer'),
                     onPressed: () => configSvc.resetTypography(),
@@ -131,7 +131,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             ],
           ),
           content: Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.only(top: Spacing.sm),
             child: Column(
               children: [
                 _TypoSlider('Display',       config.displayFactor,    configSvc.setDisplayFactor),
@@ -145,7 +145,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: Spacing.ml),
 
         // --- Densidad de espaciado ---
         InfoLabel(
@@ -162,7 +162,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
                   onChanged: configSvc.setSpacingFactor,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.ms),
               SizedBox(
                 width: 42,
                 child: Text(
@@ -180,7 +180,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
 
         // --- Efecto de ventana (solo desktop) ---
         if (isDesktop) ...[
-          const SizedBox(height: 20),
+          const SizedBox(height: Spacing.ml),
           InfoLabel(
             label: 'Efecto de ventana',
             child: ComboBox<WindowEffect>(
@@ -201,7 +201,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
           ),
         ],
 
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // Restablecer toda la apariencia
         Row(
@@ -238,10 +238,10 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
         // SECCIÓN SOLO ADMIN: Servidor
         // ================================================================
         if (puedeAdmin) ...[
-          const SizedBox(height: 32),
+          const SizedBox(height: Spacing.xl),
 
           const _SectionHeader(title: 'Servidor'),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
 
           _ConfigRow(
             icon: FluentIcons.cloud,
@@ -250,7 +250,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
           ),
 
           if (!compiledIn) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             Row(
               children: [
                 Button(
@@ -260,7 +260,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
               ],
             ),
           ] else ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             Text(
               'Las credenciales están fijadas en tiempo de compilación '
               'y no se pueden cambiar desde aquí.',
@@ -268,7 +268,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
             ),
           ],
 
-          const SizedBox(height: 32),
+          const SizedBox(height: Spacing.xl),
         ],
       ],
     );
@@ -306,7 +306,7 @@ class _ConfiguracionScreenState extends ConsumerState<ConfiguracionScreen> {
     );
 
     if (confirmed == true && context.mounted) {
-      await Supabase.instance.client.auth.signOut();
+      await ref.read(authActionsProvider.notifier).signOut();
       await SupabaseConfigService.clear();
       if (context.mounted) context.go(PilarRoutes.setup);
     }
@@ -328,7 +328,7 @@ class _SectionHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: theme.typography.bodyStrong),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         const Divider(),
       ],
     );
@@ -392,8 +392,8 @@ class _ColorSwatchRow extends StatelessWidget {
     final bodyColor = theme.typography.body?.color ?? Colors.white;
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: Spacing.sm,
+      runSpacing: Spacing.sm,
       children: [
         if (includeNoneOption)
           Tooltip(
@@ -478,7 +478,7 @@ class _TypoSlider extends StatelessWidget {
     final theme = FluentTheme.of(context);
     final isDefault = (value - 1.0).abs() < 0.001;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: Spacing.ms),
       child: Row(
         children: [
           SizedBox(
@@ -500,7 +500,7 @@ class _TypoSlider extends StatelessWidget {
               onChanged: onChanged,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           SizedBox(
             width: 44,
             child: Text(
@@ -537,7 +537,7 @@ class _ConfigRow extends StatelessWidget {
     return Row(
       children: [
         Icon(icon, size: 16, color: theme.inactiveColor),
-        const SizedBox(width: 8),
+        const SizedBox(width: Spacing.sm),
         Text('$label: ', style: theme.typography.bodyStrong),
         Expanded(
           child: Text(

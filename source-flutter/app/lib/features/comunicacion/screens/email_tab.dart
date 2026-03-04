@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../../../core/providers/empresa_provider.dart';
-import '../models/com_mensaje.dart';
+import '../../../core/theme/pilar_breakpoints.dart';
+import 'package:brick_gen/brick_gen.dart';
 import '../models/email_thread.dart';
 import '../providers/email_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 // ============================================================================
 // HELPERS
@@ -86,9 +86,9 @@ class _EmailTabState extends ConsumerState<EmailTab> {
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final w = constraints.maxWidth;
-        if (w >= 900) {
+        if (w >= PilarBreakpoints.tablet) {
           return _EmailDesktopLayout(
-            isLarge: w >= 1200,
+            isLarge: w >= PilarBreakpoints.desktop,
             onCompose: _openCompose,
             esEmpresa: widget.esEmpresa,
           );
@@ -198,13 +198,13 @@ class _EmailMobileLayoutState extends ConsumerState<_EmailMobileLayout> {
         // Barra de carpetas + botón redactar
         Container(
           color: theme.resources.layerFillColorDefault,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           child: Row(
             children: [
               Expanded(
                 child: _CarpetaComboBox(),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               IconButton(
                 icon: const Icon(FluentIcons.new_mail),
                 onPressed: () => widget.onCompose(),
@@ -228,8 +228,8 @@ class _EmailMobileLayoutState extends ConsumerState<_EmailMobileLayout> {
                       child: Container(
                         color: theme.resources.layerFillColorDefault,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+                          horizontal: Spacing.md,
+                          vertical: Spacing.ms,
                         ),
                         child: Row(
                           children: [
@@ -238,7 +238,7 @@ class _EmailMobileLayoutState extends ConsumerState<_EmailMobileLayout> {
                               size: 14,
                               color: theme.accentColor,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Spacing.sm),
                             Text(
                               'Volver a la lista',
                               style: theme.typography.body
@@ -282,7 +282,7 @@ class _EmailSidebar extends ConsumerWidget {
         children: [
           // ---- Encabezado de scope ----
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            padding: const EdgeInsets.fromLTRB(Spacing.ms, Spacing.ms, Spacing.ms, Spacing.xs),
             child: Row(
               children: [
                 Icon(
@@ -290,7 +290,7 @@ class _EmailSidebar extends ConsumerWidget {
                   size: 14,
                   color: theme.inactiveColor,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: Spacing.sm),
                 Text(
                   esEmpresa ? 'Email empresa' : 'Mi Email',
                   style: theme.typography.caption?.copyWith(
@@ -303,21 +303,21 @@ class _EmailSidebar extends ConsumerWidget {
           ),
           // Botón Redactar
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+            padding: const EdgeInsets.fromLTRB(Spacing.ms, Spacing.md, Spacing.ms, Spacing.sm),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton(
                 onPressed: onCompose,
                 style: ButtonStyle(
                   padding: WidgetStateProperty.all(
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    const EdgeInsets.symmetric(vertical: Spacing.ms, horizontal: Spacing.ms),
                   ),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(FluentIcons.new_mail, size: 15),
-                    SizedBox(width: 8),
+                    SizedBox(width: Spacing.sm),
                     Text('Redactar'),
                   ],
                 ),
@@ -325,7 +325,7 @@ class _EmailSidebar extends ConsumerWidget {
             ),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
 
           // Carpetas
           for (final c in EmailCarpeta.values)
@@ -373,8 +373,8 @@ class _FolderTile extends ConsumerWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         decoration: BoxDecoration(
           color: isSelected
               ? theme.accentColor.withValues(alpha: 0.12)
@@ -390,7 +390,7 @@ class _FolderTile extends ConsumerWidget {
                   ? theme.accentColor
                   : theme.resources.textFillColorPrimary,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: Spacing.ms),
             Expanded(
               child: Text(
                 carpeta.label,
@@ -403,7 +403,7 @@ class _FolderTile extends ConsumerWidget {
             if (count > 0)
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? theme.accentColor.withValues(alpha: 0.20)
@@ -501,12 +501,12 @@ class _EmailListState extends ConsumerState<_EmailList> {
       children: [
         // Barra de búsqueda
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(Spacing.ms),
           child: TextBox(
             controller: _ctrl,
             placeholder: 'Buscar en ${carpeta.label.toLowerCase()}...',
             prefix: const Padding(
-              padding: EdgeInsets.only(left: 8),
+              padding: EdgeInsets.only(left: Spacing.sm),
               child: Icon(FluentIcons.search, size: 14),
             ),
             onChanged: _onSearch,
@@ -524,9 +524,9 @@ class _EmailListState extends ConsumerState<_EmailList> {
 
         Expanded(
           child: threadsAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
               child: InfoBar(
                 title: const Text('Error al cargar correos'),
                 content: Text('$e'),
@@ -544,7 +544,7 @@ class _EmailListState extends ConsumerState<_EmailList> {
                         size: 48,
                         color: theme.resources.textFillColorTertiary,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: Spacing.ms),
                       Text(
                         'Sin correos en ${carpeta.label.toLowerCase()}',
                         style: theme.typography.body?.copyWith(
@@ -632,14 +632,14 @@ class _EmailListItemState extends State<_EmailListItem> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.ms),
             child: Row(
               children: [
                 // Estrella (local, sin persistir)
                 GestureDetector(
                   onTap: () => setState(() => _starred = !_starred),
                   child: Padding(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(Spacing.xs),
                     child: Icon(
                       _starred
                           ? FluentIcons.favorite_star_fill
@@ -652,7 +652,7 @@ class _EmailListItemState extends State<_EmailListItem> {
                   ),
                 ),
 
-                const SizedBox(width: 2),
+                const SizedBox(width: Spacing.xxs),
 
                 // Nombre del remitente
                 SizedBox(
@@ -668,7 +668,7 @@ class _EmailListItemState extends State<_EmailListItem> {
                   ),
                 ),
 
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
 
                 // Asunto + preview (flex)
                 Expanded(
@@ -699,12 +699,12 @@ class _EmailListItemState extends State<_EmailListItem> {
                   ),
                 ),
 
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
 
                 // Indicador de adjuntos
                 if (t.tieneAdjuntos)
                   Padding(
-                    padding: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.only(right: Spacing.xs),
                     child: Icon(
                       FluentIcons.attach,
                       size: 12,
@@ -756,7 +756,7 @@ class _EmailReader extends ConsumerWidget {
               size: 56,
               color: theme.resources.textFillColorTertiary,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
             Text(
               'Selecciona un correo para leerlo',
               style: theme.typography.body?.copyWith(
@@ -788,7 +788,7 @@ class _EmailReader extends ConsumerWidget {
         Container(
           color: theme.resources.layerFillColorDefault,
           padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
           child: Row(
             children: [
               if (thread != null) ...[
@@ -798,19 +798,19 @@ class _EmailReader extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(FluentIcons.reply, size: 13),
-                      SizedBox(width: 6),
+                      SizedBox(width: Spacing.sm),
                       Text('Responder'),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
                 Button(
                   onPressed: () => onReply(thread),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(FluentIcons.forward, size: 13),
-                      SizedBox(width: 6),
+                      SizedBox(width: Spacing.sm),
                       Text('Reenviar'),
                     ],
                   ),
@@ -839,9 +839,9 @@ class _EmailReader extends ConsumerWidget {
         // ── Contenido del hilo ───────────────────────────────────────────────
         Expanded(
           child: mensajesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
               child: InfoBar(
                 title: const Text('Error al cargar mensajes'),
                 content: Text('$e'),
@@ -865,33 +865,33 @@ class _EmailReader extends ConsumerWidget {
                   '(Sin asunto)';
 
               return ListView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(Spacing.ml),
                 children: [
                   // Asunto del hilo
                   Text(
                     asunto,
                     style: theme.typography.titleLarge,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.xs),
                   Text(
                     '${mensajes.length} ${mensajes.length == 1 ? 'mensaje' : 'mensajes'}',
                     style: theme.typography.caption?.copyWith(
                       color: theme.resources.textFillColorSecondary,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Spacing.md),
 
                   // Mensajes del hilo
                   for (int i = 0; i < mensajes.length; i++)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: Spacing.sm),
                       child: _EmailMessageCard(
                         mensaje: mensajes[i],
                         isLast: i == mensajes.length - 1,
                       ),
                     ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.lg),
 
                   // Botones de acción al pie del hilo
                   if (thread != null)
@@ -903,19 +903,19 @@ class _EmailReader extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(FluentIcons.reply, size: 13),
-                              SizedBox(width: 6),
+                              SizedBox(width: Spacing.sm),
                               Text('Responder'),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: Spacing.sm),
                         Button(
                           onPressed: () => onReply(thread),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(FluentIcons.forward, size: 13),
-                              SizedBox(width: 6),
+                              SizedBox(width: Spacing.sm),
                               Text('Reenviar'),
                             ],
                           ),
@@ -970,8 +970,8 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
             onTap: () => setState(() => _expanded = !_expanded),
             child: Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
+                horizontal: Spacing.md,
+                vertical: Spacing.ms,
               ),
               decoration: BoxDecoration(
                 color: _expanded
@@ -1002,7 +1002,7 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
 
                   Expanded(
                     child: Column(
@@ -1017,9 +1017,9 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Spacing.sm),
                             Text(
-                              _formatFechaLarga(m.creadoEn),
+                              _formatFechaLarga(m.creadoEn ?? m.enviadoEn ?? DateTime.now()),
                               style: theme.typography.caption?.copyWith(
                                 color:
                                     theme.resources.textFillColorSecondary,
@@ -1043,7 +1043,7 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
                     ),
                   ),
 
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Spacing.sm),
                   Icon(
                     _expanded
                         ? FluentIcons.chevron_up_small
@@ -1063,7 +1063,7 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
               color: theme.resources.dividerStrokeColorDefault,
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
               child: SelectableText(
                 m.cuerpo ?? '(Sin contenido)',
                 style: theme.typography.body,
@@ -1073,7 +1073,7 @@ class _EmailMessageCardState extends State<_EmailMessageCard> {
             // Estado del mensaje
             if (m.estado != 'recibido')
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.none, Spacing.md, Spacing.ms),
                 child: Row(
                   children: [
                     _EstadoBadge(estado: m.estado),
@@ -1114,7 +1114,7 @@ class _EstadoBadge extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
@@ -1193,19 +1193,13 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
     });
 
     try {
-      final empresaId = ref.read(empresaActivaIdProvider);
-
-      await Supabase.instance.client.from('com_mensajes').insert({
-        'empresa_id': empresaId,
-        'cuenta_id': _cuentaId,
-        'canal': 'email_api',
-        'tipo': 'outbound',
-        'destinatario_ref': to,
-        'asunto': subject,
-        'cuerpo': body,
-        if (widget.replyTo != null)
-          'conversacion_id': widget.replyTo!.conversacionId,
-      });
+      await ref.read(enviarEmailProvider.notifier).enviar(
+        cuentaId: _cuentaId!,
+        to: to,
+        subject: subject,
+        body: body,
+        conversacionId: widget.replyTo?.conversacionId,
+      );
 
       widget.onSent();
       if (mounted) Navigator.of(context).pop();
@@ -1234,8 +1228,7 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
           children: [
             // ── Cuenta de envío ─────────────────────────────────────────────
             cuentasAsync.when(
-              loading: () =>
-                  const Center(child: ProgressRing()),
+              loading: () => const PilarLoadingCenter(),
               error: (e, _) => InfoBar(
                 title: const Text('Error al cargar cuentas'),
                 content: Text('$e'),
@@ -1280,7 +1273,7 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
                 keyboardType: TextInputType.emailAddress,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: Spacing.ms),
 
             // ── Asunto ──────────────────────────────────────────────────────
             InfoLabel(
@@ -1290,7 +1283,7 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
                 placeholder: 'Asunto del correo',
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: Spacing.ms),
 
             // ── Cuerpo ──────────────────────────────────────────────────────
             InfoLabel(
@@ -1305,9 +1298,9 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
 
             // ── Texto de respuesta (cita) ────────────────────────────────
             if (widget.replyTo != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: Spacing.sm),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(Spacing.ms),
                 decoration: BoxDecoration(
                   color: theme.resources.subtleFillColorSecondary,
                   border: Border(
@@ -1339,7 +1332,7 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
 
             // ── Error ────────────────────────────────────────────────────────
             if (_error != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: Spacing.sm),
               InfoBar(
                 title: Text(_error!),
                 severity: InfoBarSeverity.error,
@@ -1356,16 +1349,12 @@ class _ComposeDialogState extends ConsumerState<_ComposeDialog> {
         FilledButton(
           onPressed: _sending ? null : _send,
           child: _sending
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing.small()
               : const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(FluentIcons.send, size: 13),
-                    SizedBox(width: 6),
+                    SizedBox(width: Spacing.sm),
                     Text('Enviar'),
                   ],
                 ),

@@ -5,6 +5,10 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+
 // ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
@@ -13,11 +17,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///
 /// Returns an empty list on web (no SQLite available) and when the repository
 /// is not yet initialized.
+/// Auto-refresca cada 5 s mientras alguien lo esté observando
+/// (p.ej. el badge en PilarHeader), garantizando que el conteo pendiente
+/// se actualice aunque SyncLogScreen no esté abierta.
 final syncQueueItemsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   if (kIsWeb) return const [];
   if (!PilarRepository.isInitialized) return const [];
+
+  final timer = Timer.periodic(const Duration(seconds: 5), (_) {
+    ref.invalidateSelf();
+  });
+  ref.onDispose(timer.cancel);
+
   return PilarRepository.instance.getOfflineQueueItems();
+});
+
+/// Fuerza un reintento inmediato de todos los requests pendientes en la cola
+/// offline de Brick.
+///
+/// No-op en web (sin SQLite) o cuando el repositorio no está inicializado.
+/// [RestOfflineRequestQueue.start] es síncrono — lanza el procesamiento en
+/// background y retorna enseguida. Después invalidamos [syncQueueItemsProvider]
+/// para que la UI refresque la lista tras un breve delay.
+final syncRetryProvider = FutureProvider.autoDispose<void>((ref) async {
+  if (kIsWeb) return;
+  if (!PilarRepository.isInitialized) return;
+  PilarRepository.instance.retryOfflineQueue();
+  // Pequeño delay para dar tiempo a que Brick procese al menos el primer item
+  // antes de refrescar la vista.
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  ref.invalidate(syncQueueItemsProvider);
 });
 
 // ---------------------------------------------------------------------------
@@ -38,6 +68,12 @@ class SyncLogScreen extends ConsumerStatefulWidget {
 
 class _SyncLogScreenState extends ConsumerState<SyncLogScreen> {
   Timer? _autoRefresh;
+
+  /// true mientras [syncRetryProvider] está ejecutándose.
+  bool _retrying = false;
+
+  /// Mensaje de error del último reintento fallido; null si no hay error.
+  String? _retryError;
 
   @override
   void initState() {
@@ -93,6 +129,38 @@ class _SyncLogScreenState extends ConsumerState<SyncLogScreen> {
     ref.invalidate(syncQueueItemsProvider);
   }
 
+  Future<void> _retryNow() async {
+    if (_retrying) return;
+    setState(() {
+      _retrying = true;
+      _retryError = null; // limpiar error anterior
+    });
+    try {
+      // Invalidate to trigger the provider — it re-runs retryOfflineQueue()
+      // and then invalidates syncQueueItemsProvider when done.
+      ref.invalidate(syncRetryProvider);
+      // Wait for the provider to settle so we can flip the loading flag.
+      await ref.read(syncRetryProvider.future);
+      // Éxito: la lista se actualiza sola vía syncQueueItemsProvider.
+    } catch (e) {
+      if (mounted) {
+        setState(() => _retryError = _retryErrorMessage(e));
+      }
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
+  String _retryErrorMessage(Object e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('socket') ||
+        msg.contains('network') ||
+        msg.contains('timeout')) {
+      return 'Sin conexión a internet. Vuelve a intentarlo cuando recuperes la red.';
+    }
+    return 'Error al reintentar: ${e.toString()}';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (kIsWeb) {
@@ -112,48 +180,75 @@ class _SyncLogScreenState extends ConsumerState<SyncLogScreen> {
                 label: const Text('Actualizar'),
                 onPressed: () => ref.invalidate(syncQueueItemsProvider),
               ),
-              if (items.isNotEmpty)
+              if (items.isNotEmpty) ...[
+                CommandBarButton(
+                  icon: _retrying
+                      ? const PilarProgressRing(size: 14)
+                      : const Icon(FluentIcons.sync),
+                  label: const Text('Reintentar ahora'),
+                  onPressed: _retrying ? null : _retryNow,
+                ),
                 CommandBarButton(
                   icon: const Icon(FluentIcons.delete),
                   label: const Text('Vaciar cola'),
                   onPressed: () => _clearAll(context, items),
                 ),
+              ],
             ],
           ),
           loading: () => const CommandBar(primaryItems: []),
           error: (_, __) => const CommandBar(primaryItems: []),
         ),
       ),
-      content: itemsAsync.when(
-        loading: () => const Center(child: ProgressRing()),
-        error: (e, _) => Center(
-          child: InfoBar(
-            title: const Text('Error al leer la cola'),
-            content: Text(e.toString()),
-            severity: InfoBarSeverity.error,
-          ),
-        ),
-        data: (items) {
-          if (items.isEmpty) {
-            return _EmptyState(
-              onRefresh: () => ref.invalidate(syncQueueItemsProvider),
-            );
-          }
-          return LayoutBuilder(
-            builder: (ctx, constraints) {
-              if (constraints.maxWidth >= 900) {
-                return _DataGridView(
-                  items: items,
-                  onDelete: (id) => _deleteItem(ctx, id),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_retryError != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  Spacing.md, Spacing.sm, Spacing.md, 0),
+              child: InfoBar(
+                title: const Text('Error al reintentar sincronización'),
+                content: Text(_retryError!),
+                severity: InfoBarSeverity.error,
+                isIconVisible: true,
+                onClose: () => setState(() => _retryError = null),
+              ),
+            ),
+          Expanded(
+            child: itemsAsync.when(
+              loading: () => const PilarLoadingCenter(),
+              error: (e, _) => Center(
+                child: InfoBar(
+                  title: const Text('Error al leer la cola'),
+                  content: Text(e.toString()),
+                  severity: InfoBarSeverity.error,
+                ),
+              ),
+              data: (items) {
+                if (items.isEmpty) {
+                  return _EmptyState(
+                    onRefresh: () => ref.invalidate(syncQueueItemsProvider),
+                  );
+                }
+                return LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    if (constraints.maxWidth >= PilarBreakpoints.tablet) {
+                      return _DataGridView(
+                        items: items,
+                        onDelete: (id) => _deleteItem(ctx, id),
+                      );
+                    }
+                    return _ListViewBody(
+                      items: items,
+                      onDelete: (id) => _deleteItem(ctx, id),
+                    );
+                  },
                 );
-              }
-              return _ListViewBody(
-                items: items,
-                onDelete: (id) => _deleteItem(ctx, id),
-              );
-            },
-          );
-        },
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -193,7 +288,7 @@ String _methodBadgeColor(String? method) {
 }
 
 // ---------------------------------------------------------------------------
-// SfDataGrid view (≥ 900 px)
+// SfDataGrid view (≥ PilarBreakpoints.tablet)
 // ---------------------------------------------------------------------------
 
 class _DataGridView extends StatelessWidget {
@@ -207,12 +302,12 @@ class _DataGridView extends StatelessWidget {
     final theme = FluentTheme.of(context);
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.md),
       children: [
         // Encabezado de tabla
         Container(
           color: theme.accentColor.withValues(alpha: 0.12),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           child: Row(
             children: [
               SizedBox(
@@ -239,7 +334,7 @@ class _DataGridView extends StatelessWidget {
                   width: 70,
                   child: Text('Intentos',
                       style: theme.typography.bodyStrong)),
-              const SizedBox(width: 40),
+              const SizedBox(width: Spacing.xl),
             ],
           ),
         ),
@@ -290,7 +385,7 @@ class _TableRow extends StatelessWidget {
 
     return Container(
       color: bg,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
       child: Row(
         children: [
           SizedBox(
@@ -336,7 +431,7 @@ class _TableRow extends StatelessWidget {
               children: [
                 Text(attempts, style: theme.typography.body),
                 if (locked) ...[
-                  const SizedBox(width: 4),
+                  const SizedBox(width: Spacing.xs),
                   Icon(FluentIcons.lock, size: 12,
                       color: theme.accentColor),
                 ],
@@ -358,7 +453,7 @@ class _TableRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// ListView view (< 900 px)
+// ListView view (< PilarBreakpoints.tablet)
 // ---------------------------------------------------------------------------
 
 class _ListViewBody extends StatelessWidget {
@@ -370,9 +465,9 @@ class _ListViewBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(Spacing.ms),
       itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
       itemBuilder: (ctx, i) {
         final row = items[i];
         final id = row['id'] as int? ?? 0;
@@ -384,14 +479,14 @@ class _ListViewBody extends StatelessWidget {
 
         final theme = FluentTheme.of(ctx);
         return Card(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(Spacing.ms),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   _MethodBadge(method: method),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Spacing.sm),
                   Expanded(
                     child: Text(entity,
                         style: theme.typography.bodyStrong,
@@ -404,7 +499,7 @@ class _ListViewBody extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: Spacing.xs),
               Text(
                 url,
                 style: theme.typography.caption?.copyWith(
@@ -412,17 +507,17 @@ class _ListViewBody extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: Spacing.sm),
               Row(
                 children: [
                   Icon(FluentIcons.clock, size: 12,
                       color: theme.resources.textFillColorSecondary),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: Spacing.xs),
                   Text(createdAt, style: theme.typography.caption),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
                   Icon(FluentIcons.refresh, size: 12,
                       color: theme.resources.textFillColorSecondary),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: Spacing.xs),
                   Text('$attempts intentos',
                       style: theme.typography.caption),
                 ],
@@ -452,7 +547,7 @@ class _MethodBadge extends StatelessWidget {
       _ => const Color(0xFF6B7280),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
@@ -483,23 +578,23 @@ class _EmptyState extends StatelessWidget {
         children: [
           const Icon(FluentIcons.sync_status,
               size: 48, color: Colors.successPrimaryColor),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           Text('Cola vacía — todo sincronizado',
               style: theme.typography.subtitle),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           Text(
             'No hay requests pendientes de envío a Supabase.',
             style: theme.typography.body?.copyWith(
                 color: theme.resources.textFillColorSecondary),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           Button(
             onPressed: onRefresh,
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(FluentIcons.refresh, size: 14),
-                SizedBox(width: 6),
+                SizedBox(width: Spacing.sm),
                 Text('Actualizar'),
               ],
             ),

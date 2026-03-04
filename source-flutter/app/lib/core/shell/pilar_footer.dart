@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../offline/connectivity_service.dart';
 import '../providers/app_version_provider.dart';
+import '../config/pilar_constants.dart';
 import '../providers/empresa_provider.dart';
+import '../../core/theme/pilar_spacing.dart';
 
 /// Barra de estado inferior de PILAR ERP.
 ///
@@ -61,13 +63,13 @@ class _PilarFooterState extends ConsumerState<PilarFooter> {
         isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF0F0F0);
     final textColor = theme.resources.textFillColorSecondary;
     final appVersion = versionInfo != null
-        ? 'PILAR ERP v${versionInfo.version}'
-        : 'PILAR ERP';
+        ? '$kAppName v${versionInfo.version}'
+        : kAppName;
 
     return Container(
       height: 24,
       color: bgColor,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms),
       child: Row(
         children: [
           // ── Izquierda: empresa ───────────────────────────────────────────
@@ -77,7 +79,7 @@ class _PilarFooterState extends ConsumerState<PilarFooter> {
               size: 11,
               color: textColor,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Flexible(
               child: Text(
                 empresaNombre,
@@ -100,7 +102,7 @@ class _PilarFooterState extends ConsumerState<PilarFooter> {
 
           // ── Derecha: conectividad + reloj ────────────────────────────────
           _ConnectivityBadge(isOnline: isOnline, textColor: textColor),
-          const SizedBox(width: 10),
+          const SizedBox(width: Spacing.ms),
           Icon(
             FluentIcons.clock,
             size: 11,
@@ -147,7 +149,7 @@ class _ConnectivityBadge extends StatelessWidget {
             shape: BoxShape.circle,
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: Spacing.xs),
         Text(
           label,
           style: theme.typography.caption?.copyWith(color: textColor),

@@ -6,8 +6,7 @@
  *   - submit: envia nueva plantilla a Meta para aprobacion
  *   - update: actualiza plantilla existente en Meta
  *
- * Auth: verify_jwt: false (custom_access_token_hook modifica JWTs — ver invite-user)
- *        Validación manual del header Authorization: Bearer <jwt>
+ * Auth: verify_jwt: true (requiere JWT de usuario autenticado)
  *
  * Body: { action: 'sync' | 'submit' | 'update', cuenta_id: string, ...extra }
  */
@@ -268,12 +267,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (req.method !== 'POST') {
     return errorResponse(405, 'METHOD_NOT_ALLOWED', 'Solo se acepta POST');
-  }
-
-  // Validar Authorization header (seguridad manual, verify_jwt=false)
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return errorResponse(401, 'UNAUTHORIZED', 'Se requiere Authorization: Bearer <jwt>');
   }
 
   // Parse body

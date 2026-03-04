@@ -14,3 +14,14 @@ export 'models/usuario_empresa_perfil.model.dart';
 export 'models/contacto.model.dart';
 export 'models/producto.model.dart';
 export 'models/producto_familia.model.dart';
+// Comunicación
+export 'models/com_conversacion.model.dart';
+export 'models/com_mensaje.model.dart';
+// Roles
+export 'models/rol.model.dart';
+// Chat interno
+export 'models/chat_mensaje.model.dart';
+// Chatter (panel de discusión)
+export 'models/chatter_mensaje.model.dart';
+// Adjuntos
+export 'models/adjunto.model.dart';

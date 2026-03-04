@@ -1,12 +1,13 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../providers/alertas_provider.dart';
+import '../providers/auth_actions_provider.dart';
 import '../providers/perfil_provider.dart';
 import '../providers/presencia_provider.dart';
+import '../providers/sync_count_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../router/app_router.dart';
@@ -16,6 +17,9 @@ import '../../features/notificaciones/widgets/notificaciones_dialog.dart';
 import '../../features/perfil/screens/perfil_screen.dart'
     show PerfilDialog, CambiarContrasenaDialog;
 import '../widgets/user_card.dart';
+import '../../core/theme/pilar_spacing.dart';
+
+export '../providers/sync_count_provider.dart' show pendingSyncCountProvider;
 
 /// The right-hand side of the [TitleBar] inside [PilarShell].
 ///
@@ -76,6 +80,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
     final badgeCount = ref.watch(notificacionesBadgeProvider).valueOrNull ?? 0;
     final alertasCount = ref.watch(alertasCountProvider).valueOrNull ?? 0;
     final alertas = ref.watch(alertasActivasProvider).valueOrNull ?? [];
+    final pendingSync = ref.watch(pendingSyncCountProvider);
 
     // Determina el color del icono de alertas según la severidad más alta.
     final alertaColor = alertas.any((a) => a.severidad == 'critical' || a.severidad == 'error')
@@ -85,10 +90,48 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // ---- Sync badge — solo visible cuando hay cambios pendientes ----
+        if (pendingSync > 0)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: Spacing.xs),
+            child: Tooltip(
+              message: '$pendingSync ${pendingSync == 1 ? 'cambio pendiente' : 'cambios pendientes'} de sincronización',
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: const Icon(FluentIcons.sync),
+                    onPressed: () => context.go(PilarRoutes.adminSyncLog),
+                  ),
+                  Positioned(
+                    right: Spacing.xs,
+                    top: Spacing.xs,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: Spacing.xs, vertical: Spacing.xxs),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$pendingSync',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
         // ---- Alert icon — solo visible cuando hay alertas activas ----
         if (alertasCount > 0)
           Padding(
-            padding: const EdgeInsetsDirectional.only(end: 4),
+            padding: const EdgeInsetsDirectional.only(end: Spacing.xs),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
@@ -103,11 +146,11 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                   ),
                 ),
                 Positioned(
-                  right: 4,
-                  top: 4,
+                  right: Spacing.xs,
+                  top: Spacing.xs,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 1),
+                        horizontal: Spacing.xs, vertical: Spacing.xxs),
                     decoration: BoxDecoration(
                       color: alertaColor,
                       borderRadius: BorderRadius.circular(8),
@@ -128,7 +171,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
 
         // ---- Notification bell with unread-count dot ----
         Padding(
-          padding: const EdgeInsetsDirectional.only(end: 4),
+          padding: const EdgeInsetsDirectional.only(end: Spacing.xs),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -138,8 +181,8 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
               ),
               if (badgeCount > 0)
                 Positioned(
-                  right: 6,
-                  top: 6,
+                  right: Spacing.sm,
+                  top: Spacing.sm,
                   child: Container(
                     width: 8,
                     height: 8,
@@ -179,7 +222,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
         // ---- User avatar + estado + chevron ----
         if (usuario != null)
           Padding(
-            padding: const EdgeInsetsDirectional.only(end: 8),
+            padding: const EdgeInsetsDirectional.only(end: Spacing.sm),
             child: FlyoutTarget(
               controller: _userMenuController,
               child: HoverButton(
@@ -188,8 +231,8 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                   final estado = ref.watch(estadoPresenciaProvider);
                   return Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: Spacing.sm,
+                      vertical: Spacing.xs,
                     ),
                     decoration: BoxDecoration(
                       color: states.isHovered
@@ -210,7 +253,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                           theme: theme,
                           estado: estado,
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: Spacing.sm),
                         Text(
                           perfil != null && perfil.displayName.isNotEmpty
                               ? perfil.displayName
@@ -220,7 +263,7 @@ class _PilarHeaderState extends ConsumerState<PilarHeader> {
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: Spacing.xs),
                         Icon(
                           FluentIcons.chevron_down,
                           size: 8,
@@ -301,7 +344,7 @@ class _UserMenuFlyout extends ConsumerWidget {
 
     Future<void> signOut() async {
       Navigator.of(flyoutCtx).maybePop();
-      await Supabase.instance.client.auth.signOut();
+      await ref.read(authActionsProvider.notifier).signOut();
       if (context.mounted) context.go(PilarRoutes.login);
     }
 
@@ -349,13 +392,13 @@ class _UserMenuFlyout extends ConsumerWidget {
               sublabel: usuario?.rolNombre,
               avatarUrl: perfil?.avatarUrl,
               avatarRadius: 18,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(Spacing.md),
             ),
             const Divider(),
 
             // ---- Selector de estado de presencia ----
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: EstadoPresencia.values.map((estado) {
@@ -367,7 +410,7 @@ class _UserMenuFlyout extends ConsumerWidget {
                     },
                     builder: (ctx, states) => Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
+                          horizontal: Spacing.sm, vertical: Spacing.sm),
                       decoration: BoxDecoration(
                         color: seleccionado
                             ? theme.accentColor.withValues(alpha: 0.12)
@@ -386,7 +429,7 @@ class _UserMenuFlyout extends ConsumerWidget {
                               color: estado.color,
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: Spacing.ms),
                           Text(
                             estado.label,
                             style: theme.typography.body?.copyWith(
@@ -416,12 +459,12 @@ class _UserMenuFlyout extends ConsumerWidget {
                     ? theme.resources.subtleFillColorSecondary
                     : null,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
                 child: Row(
                   children: [
                     Icon(FluentIcons.lock,
                         size: 16, color: theme.inactiveColor),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: Spacing.ms),
                     Text('Cambiar contraseña',
                         style: theme.typography.body),
                   ],
@@ -437,12 +480,12 @@ class _UserMenuFlyout extends ConsumerWidget {
                     ? theme.resources.subtleFillColorSecondary
                     : null,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
                 child: Row(
                   children: [
                     Icon(FluentIcons.contact,
                         size: 16, color: theme.inactiveColor),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: Spacing.ms),
                     Text('Mi perfil', style: theme.typography.body),
                   ],
                 ),
@@ -457,12 +500,12 @@ class _UserMenuFlyout extends ConsumerWidget {
                     ? theme.resources.subtleFillColorSecondary
                     : null,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
                 child: Row(
                   children: [
                     Icon(FluentIcons.company_directory,
                         size: 16, color: theme.inactiveColor),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: Spacing.ms),
                     Text('Cambiar empresa',
                         style: theme.typography.body),
                   ],
@@ -480,13 +523,13 @@ class _UserMenuFlyout extends ConsumerWidget {
                     ? theme.resources.subtleFillColorSecondary
                     : null,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
                 child: Row(
                   children: [
                     Icon(FluentIcons.sign_out,
                         size: 16,
                         color: theme.resources.systemFillColorCritical),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: Spacing.ms),
                     Text(
                       'Cerrar sesión',
                       style: theme.typography.body?.copyWith(
@@ -497,7 +540,7 @@ class _UserMenuFlyout extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: Spacing.xs),
           ],
         ),
       ),
@@ -556,8 +599,8 @@ class _HeaderAvatar extends StatelessWidget {
         children: [
           Positioned(top: 0, left: 0, child: avatar),
           Positioned(
-            right: 0,
-            bottom: 0,
+            right: Spacing.none,
+            bottom: Spacing.none,
             child: Container(
               width: dotSize,
               height: dotSize,

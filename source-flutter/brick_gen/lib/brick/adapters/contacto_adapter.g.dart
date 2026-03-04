@@ -8,9 +8,13 @@ Future<Contacto> _$ContactoFromSupabase(
 }) async {
   return Contacto(
     id: data['id'] as String,
-    empresaId: data['empresa_id'] == null ? null : data['empresa_id'] as String?,
+    empresaId: data['empresa_id'] == null
+        ? null
+        : data['empresa_id'] as String?,
     razonSocial: data['razon_social'] as String,
-    nombreComercial: data['nombre_comercial'] == null ? null : data['nombre_comercial'] as String?,
+    nombreComercial: data['nombre_comercial'] == null
+        ? null
+        : data['nombre_comercial'] as String?,
     numeroId: data['numero_id'] == null ? null : data['numero_id'] as String?,
     tipoEntidad: data['tipo_entidad'] as String,
     tipoIdentificacion: data['tipo_identificacion'] as String,
@@ -24,9 +28,14 @@ Future<Contacto> _$ContactoFromSupabase(
     website: data['website'] == null ? null : data['website'] as String?,
     direccion: data['direccion'] == null ? null : data['direccion'] as String?,
     notas: data['notas'] == null ? null : data['notas'] as String?,
-    empresaPadreId: data['empresa_padre_id'] == null ? null : data['empresa_padre_id'] as String?,
-    categoriaId: data['categoria_id'] == null ? null : data['categoria_id'] as String?,
+    empresaPadreId: data['empresa_padre_id'] == null
+        ? null
+        : data['empresa_padre_id'] as String?,
+    categoriaId: data['categoria_id'] == null
+        ? null
+        : data['categoria_id'] as String?,
     activo: data['activo'] as bool,
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -56,6 +65,7 @@ Future<Map<String, dynamic>> _$ContactoToSupabase(
     'empresa_padre_id': instance.empresaPadreId,
     'categoria_id': instance.categoriaId,
     'activo': instance.activo,
+    'version': instance.version,
   };
 }
 
@@ -67,7 +77,9 @@ Future<Contacto> _$ContactoFromSqlite(
   return Contacto(
     id: data['id'] as String,
     razonSocial: data['razon_social'] as String,
-    nombreComercial: data['nombre_comercial'] == null ? null : data['nombre_comercial'] as String?,
+    nombreComercial: data['nombre_comercial'] == null
+        ? null
+        : data['nombre_comercial'] as String?,
     numeroId: data['numero_id'] == null ? null : data['numero_id'] as String?,
     tipoEntidad: data['tipo_entidad'] as String,
     tipoIdentificacion: data['tipo_identificacion'] as String,
@@ -82,6 +94,7 @@ Future<Contacto> _$ContactoFromSqlite(
     direccion: data['direccion'] == null ? null : data['direccion'] as String?,
     notas: data['notas'] == null ? null : data['notas'] as String?,
     activo: data['activo'] == 1,
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -108,6 +121,7 @@ Future<Map<String, dynamic>> _$ContactoToSqlite(
     'direccion': instance.direccion,
     'notas': instance.notas,
     'activo': instance.activo ? 1 : 0,
+    'version': instance.version,
   };
 }
 
@@ -121,26 +135,90 @@ class ContactoAdapter extends OfflineFirstWithSupabaseAdapter<Contacto> {
   final defaultToNull = true;
   @override
   final fieldsToSupabaseColumns = {
-    'id': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'id'),
-    'empresaId': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'empresa_id'),
-    'razonSocial': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'razon_social'),
-    'nombreComercial': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'nombre_comercial'),
-    'numeroId': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'numero_id'),
-    'tipoEntidad': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'tipo_entidad'),
-    'tipoIdentificacion': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'tipo_identificacion'),
-    'esCliente': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'es_cliente'),
-    'esProveedor': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'es_proveedor'),
-    'esEmpleado': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'es_empleado'),
-    'email': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'email'),
-    'telefono': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'telefono'),
-    'celular': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'celular'),
-    'cargo': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'cargo'),
-    'website': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'website'),
-    'direccion': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'direccion'),
-    'notas': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'notas'),
-    'empresaPadreId': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'empresa_padre_id'),
-    'categoriaId': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'categoria_id'),
-    'activo': const RuntimeSupabaseColumnDefinition(association: false, columnName: 'activo'),
+    'id': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'id',
+    ),
+    'empresaId': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'empresa_id',
+    ),
+    'razonSocial': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'razon_social',
+    ),
+    'nombreComercial': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'nombre_comercial',
+    ),
+    'numeroId': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'numero_id',
+    ),
+    'tipoEntidad': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'tipo_entidad',
+    ),
+    'tipoIdentificacion': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'tipo_identificacion',
+    ),
+    'esCliente': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'es_cliente',
+    ),
+    'esProveedor': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'es_proveedor',
+    ),
+    'esEmpleado': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'es_empleado',
+    ),
+    'email': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'email',
+    ),
+    'telefono': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'telefono',
+    ),
+    'celular': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'celular',
+    ),
+    'cargo': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'cargo',
+    ),
+    'website': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'website',
+    ),
+    'direccion': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'direccion',
+    ),
+    'notas': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'notas',
+    ),
+    'empresaPadreId': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'empresa_padre_id',
+    ),
+    'categoriaId': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'categoria_id',
+    ),
+    'activo': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'activo',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
+    ),
   };
   @override
   final ignoreDuplicates = false;
@@ -149,58 +227,118 @@ class ContactoAdapter extends OfflineFirstWithSupabaseAdapter<Contacto> {
   @override
   final Map<String, RuntimeSqliteColumnDefinition> fieldsToSqliteColumns = {
     'primaryKey': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: '_brick_id', iterable: false, type: int,
+      association: false,
+      columnName: '_brick_id',
+      iterable: false,
+      type: int,
     ),
     'id': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'id', iterable: false, type: String,
+      association: false,
+      columnName: 'id',
+      iterable: false,
+      type: String,
     ),
     'razonSocial': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'razon_social', iterable: false, type: String,
+      association: false,
+      columnName: 'razon_social',
+      iterable: false,
+      type: String,
     ),
     'nombreComercial': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'nombre_comercial', iterable: false, type: String,
+      association: false,
+      columnName: 'nombre_comercial',
+      iterable: false,
+      type: String,
     ),
     'numeroId': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'numero_id', iterable: false, type: String,
+      association: false,
+      columnName: 'numero_id',
+      iterable: false,
+      type: String,
     ),
     'tipoEntidad': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'tipo_entidad', iterable: false, type: String,
+      association: false,
+      columnName: 'tipo_entidad',
+      iterable: false,
+      type: String,
     ),
     'tipoIdentificacion': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'tipo_identificacion', iterable: false, type: String,
+      association: false,
+      columnName: 'tipo_identificacion',
+      iterable: false,
+      type: String,
     ),
     'esCliente': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'es_cliente', iterable: false, type: bool,
+      association: false,
+      columnName: 'es_cliente',
+      iterable: false,
+      type: bool,
     ),
     'esProveedor': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'es_proveedor', iterable: false, type: bool,
+      association: false,
+      columnName: 'es_proveedor',
+      iterable: false,
+      type: bool,
     ),
     'esEmpleado': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'es_empleado', iterable: false, type: bool,
+      association: false,
+      columnName: 'es_empleado',
+      iterable: false,
+      type: bool,
     ),
     'email': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'email', iterable: false, type: String,
+      association: false,
+      columnName: 'email',
+      iterable: false,
+      type: String,
     ),
     'telefono': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'telefono', iterable: false, type: String,
+      association: false,
+      columnName: 'telefono',
+      iterable: false,
+      type: String,
     ),
     'celular': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'celular', iterable: false, type: String,
+      association: false,
+      columnName: 'celular',
+      iterable: false,
+      type: String,
     ),
     'cargo': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'cargo', iterable: false, type: String,
+      association: false,
+      columnName: 'cargo',
+      iterable: false,
+      type: String,
     ),
     'website': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'website', iterable: false, type: String,
+      association: false,
+      columnName: 'website',
+      iterable: false,
+      type: String,
     ),
     'direccion': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'direccion', iterable: false, type: String,
+      association: false,
+      columnName: 'direccion',
+      iterable: false,
+      type: String,
     ),
     'notas': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'notas', iterable: false, type: String,
+      association: false,
+      columnName: 'notas',
+      iterable: false,
+      type: String,
     ),
     'activo': const RuntimeSqliteColumnDefinition(
-      association: false, columnName: 'activo', iterable: false, type: bool,
+      association: false,
+      columnName: 'activo',
+      iterable: false,
+      type: bool,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override
@@ -216,23 +354,39 @@ class ContactoAdapter extends OfflineFirstWithSupabaseAdapter<Contacto> {
     Map<String, dynamic> input, {
     required provider,
     covariant OfflineFirstWithSupabaseRepository? repository,
-  }) async => await _$ContactoFromSupabase(input, provider: provider, repository: repository);
+  }) async => await _$ContactoFromSupabase(
+    input,
+    provider: provider,
+    repository: repository,
+  );
   @override
   Future<Map<String, dynamic>> toSupabase(
     Contacto input, {
     required provider,
     covariant OfflineFirstWithSupabaseRepository? repository,
-  }) async => await _$ContactoToSupabase(input, provider: provider, repository: repository);
+  }) async => await _$ContactoToSupabase(
+    input,
+    provider: provider,
+    repository: repository,
+  );
   @override
   Future<Contacto> fromSqlite(
     Map<String, dynamic> input, {
     required provider,
     covariant OfflineFirstWithSupabaseRepository? repository,
-  }) async => await _$ContactoFromSqlite(input, provider: provider, repository: repository);
+  }) async => await _$ContactoFromSqlite(
+    input,
+    provider: provider,
+    repository: repository,
+  );
   @override
   Future<Map<String, dynamic>> toSqlite(
     Contacto input, {
     required provider,
     covariant OfflineFirstWithSupabaseRepository? repository,
-  }) async => await _$ContactoToSqlite(input, provider: provider, repository: repository);
+  }) async => await _$ContactoToSqlite(
+    input,
+    provider: provider,
+    repository: repository,
+  );
 }

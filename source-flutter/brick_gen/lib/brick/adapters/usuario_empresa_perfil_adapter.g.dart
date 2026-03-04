@@ -24,6 +24,7 @@ Future<UsuarioEmpresaPerfil> _$UsuarioEmpresaPerfilFromSupabase(
     zonaHoraria: data['zona_horaria'] == null
         ? null
         : data['zona_horaria'] as String?,
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -42,6 +43,7 @@ Future<Map<String, dynamic>> _$UsuarioEmpresaPerfilToSupabase(
     'telefono': instance.telefono,
     'email_contacto': instance.emailContacto,
     'zona_horaria': instance.zonaHoraria,
+    'version': instance.version,
   };
 }
 
@@ -68,6 +70,7 @@ Future<UsuarioEmpresaPerfil> _$UsuarioEmpresaPerfilFromSqlite(
     zonaHoraria: data['zona_horaria'] == null
         ? null
         : data['zona_horaria'] as String?,
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -86,6 +89,7 @@ Future<Map<String, dynamic>> _$UsuarioEmpresaPerfilToSqlite(
     'telefono': instance.telefono,
     'email_contacto': instance.emailContacto,
     'zona_horaria': instance.zonaHoraria,
+    'version': instance.version,
   };
 }
 
@@ -135,6 +139,10 @@ class UsuarioEmpresaPerfilAdapter
     'zonaHoraria': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'zona_horaria',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -202,6 +210,12 @@ class UsuarioEmpresaPerfilAdapter
       columnName: 'zona_horaria',
       iterable: false,
       type: String,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

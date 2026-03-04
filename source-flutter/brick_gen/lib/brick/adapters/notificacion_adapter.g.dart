@@ -23,6 +23,7 @@ Future<Notificacion> _$NotificacionFromSupabase(
         : data['created_at'] == null
         ? null
         : DateTime.tryParse(data['created_at'] as String),
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -42,6 +43,7 @@ Future<Map<String, dynamic>> _$NotificacionToSupabase(
     'accion_url': instance.accionUrl,
     'leida': instance.leida,
     'created_at': instance.createdAt?.toIso8601String(),
+    'version': instance.version,
   };
 }
 
@@ -67,6 +69,7 @@ Future<Notificacion> _$NotificacionFromSqlite(
         : data['created_at'] == null
         ? null
         : DateTime.tryParse(data['created_at'] as String),
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -86,6 +89,7 @@ Future<Map<String, dynamic>> _$NotificacionToSqlite(
     'accion_url': instance.accionUrl,
     'leida': instance.leida ? 1 : 0,
     'created_at': instance.createdAt?.toIso8601String(),
+    'version': instance.version,
   };
 }
 
@@ -139,6 +143,10 @@ class NotificacionAdapter
     'createdAt': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'created_at',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -212,6 +220,12 @@ class NotificacionAdapter
       columnName: 'created_at',
       iterable: false,
       type: DateTime,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/providers/auth_actions_provider.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 /// Pantalla que se muestra al usuario invitado la primera vez que accede.
 ///
@@ -97,7 +100,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Padding(
-                padding: const EdgeInsets.all(32),
+                padding: const EdgeInsets.all(Spacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -107,14 +110,14 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                       size: 48,
                       color: theme.accentColor,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: Spacing.lg),
 
                     Text(
                       'Establece tu contraseña',
                       style: theme.typography.titleLarge,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
                     Text(
                       'Crea una contraseña para acceder a PILAR en el futuro.',
                       style: theme.typography.body?.copyWith(
@@ -122,7 +125,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: Spacing.xl),
 
                     // Campo contraseña
                     InfoLabel(
@@ -134,7 +137,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                         onSubmitted: (_) => _guardar(),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Spacing.md),
 
                     // Campo confirmar contraseña
                     InfoLabel(
@@ -146,7 +149,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                         onSubmitted: (_) => _guardar(),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
 
                     // Error
                     if (_error != null) ...[
@@ -154,20 +157,16 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                         title: Text(_error!),
                         severity: InfoBarSeverity.error,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                     ],
 
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
 
                     // Botón guardar
                     FilledButton(
                       onPressed: _loading ? null : _guardar,
                       child: _loading
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: ProgressRing(strokeWidth: 2),
-                            )
+                          ? const PilarProgressRing(size: 16)
                           : const Text('Guardar contraseña'),
                     ),
                   ],

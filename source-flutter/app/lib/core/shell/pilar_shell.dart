@@ -11,18 +11,22 @@ import 'package:window_manager/window_manager.dart';
 
 import '../offline/connectivity_service.dart';
 import '../offline/offline_banner.dart';
+import '../providers/auth_actions_provider.dart';
 import '../providers/empresa_provider.dart';
 import '../providers/modulos_provider.dart';
 import '../providers/perfil_provider.dart';
 import '../providers/print_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/usuario_provider.dart';
+import '../config/pilar_constants.dart';
 import '../router/app_router.dart';
 import '../services/window_service.dart';
 import '../../features/comunicacion/providers/com_unread_provider.dart';
 import '../../features/notificaciones/providers/notificaciones_provider.dart';
+import '../widgets/loading_spinner.dart';
 import 'pilar_footer.dart';
 import 'pilar_header.dart';
+import '../../core/theme/pilar_spacing.dart';
 
 /// The main authenticated navigation shell for PILAR ERP.
 ///
@@ -295,7 +299,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
   // ---- Sign-out ------------------------------------------------------------
 
   Future<void> _signOut(BuildContext context) async {
-    await Supabase.instance.client.auth.signOut();
+    await ref.read(authActionsProvider.notifier).signOut();
     if (context.mounted) context.go(PilarRoutes.login);
   }
 
@@ -397,7 +401,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
           title: const DragToMoveArea(
             child: Align(
               alignment: AlignmentDirectional.centerStart,
-              child: Text('PILAR ERP'),
+              child: const Text(kAppName),
             ),
           ),
           endHeader: PilarHeader(isDesktop: _isDesktop),
@@ -424,7 +428,7 @@ class _PilarShellState extends ConsumerState<PilarShell>
                 builder: (ctx) {
                   final accent = FluentTheme.of(ctx).accentColor;
                   return Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+                    padding: const EdgeInsets.fromLTRB(Spacing.ms, Spacing.sm, Spacing.ms, Spacing.xxs),
                     child: SvgPicture.asset(
                       'assets/logos/pilar_logo.svg',
                       height: 32,
@@ -711,14 +715,14 @@ class _EmpresaSwitcherWidget extends ConsumerWidget {
     final logoUrl = empresaConfig?.logoUrl;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
+      padding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.xxs, Spacing.sm, Spacing.sm),
       child: HoverButton(
         onPressed: () => showDialog<void>(
           context: context,
           builder: (_) => _EmpresaSwitcherDialog(shellContext: context),
         ),
         builder: (ctx, states) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.sm),
           decoration: BoxDecoration(
             color: states.isHovered
                 ? theme.resources.subtleFillColorSecondary
@@ -733,7 +737,7 @@ class _EmpresaSwitcherWidget extends ConsumerWidget {
           child: Row(
             children: [
               _CompanyAvatar(logoUrl: logoUrl, nombre: nombre, size: 22),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   nombre,
@@ -743,7 +747,7 @@ class _EmpresaSwitcherWidget extends ConsumerWidget {
                   maxLines: 1,
                 ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: Spacing.xxs),
               Icon(
                 FluentIcons.chevron_unfold10,
                 size: 10,
@@ -803,7 +807,7 @@ class _EmpresaSwitcherDialogState
         child: empresasAsync.when(
           loading: () => const SizedBox(
             height: 80,
-            child: Center(child: ProgressRing()),
+            child: Center(child: PilarProgressRing()),
           ),
           error: (e, _) => Text(e.toString()),
           data: (empresas) => Column(
@@ -818,7 +822,7 @@ class _EmpresaSwitcherDialogState
                       : () => _switch(e.empresaId),
                   builder: (ctx, states) => Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 8),
+                        horizontal: Spacing.xs, vertical: Spacing.sm),
                     decoration: BoxDecoration(
                       color: isActive
                           ? theme.accentColor.withValues(alpha: 0.08)
@@ -831,7 +835,7 @@ class _EmpresaSwitcherDialogState
                       children: [
                         _CompanyAvatar(
                             logoUrl: e.logoUrl, nombre: e.nombre, size: 32),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: Spacing.ms),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -858,7 +862,7 @@ class _EmpresaSwitcherDialogState
                           const SizedBox(
                             width: 16,
                             height: 16,
-                            child: ProgressRing(strokeWidth: 2),
+                            child: PilarProgressRing.small(),
                           )
                         else if (isActive)
                           Icon(FluentIcons.check_mark,
@@ -880,7 +884,7 @@ class _EmpresaSwitcherDialogState
                       },
                 builder: (ctx, states) => Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.sm),
                   decoration: BoxDecoration(
                     color: states.isHovered
                         ? theme.resources.subtleFillColorSecondary
@@ -891,7 +895,7 @@ class _EmpresaSwitcherDialogState
                     children: [
                       Icon(FluentIcons.add,
                           size: 14, color: theme.accentColor),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: Spacing.sm),
                       Text(
                         'Nueva empresa',
                         style: theme.typography.body

@@ -5,12 +5,14 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart' show immutable, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/chatter_actividad.dart';
-import '../models/chatter_mensaje.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Parámetro de identidad
@@ -35,8 +37,6 @@ class ChatterNotifier
       _channel = null;
     });
 
-    final mensajes = await _fetchMensajes(arg);
-
     // Suscribir Realtime para INSERT en chatter_mensajes
     final client = Supabase.instance.client;
     _channel = client
@@ -54,7 +54,34 @@ class ChatterNotifier
         )
         .subscribe();
 
-    return mensajes;
+    // Native: local-first con Brick
+    final repo = ref.read(repositoryProvider);
+    if (!kIsWeb && repo != null) {
+      try {
+        final results = await repo.get<ChatterMensaje>(
+          policy: OfflineFirstGetPolicy.awaitRemote,
+          query: Query(where: [
+            Where.exact('entidadTipo', arg.entidadTipo),
+            Where.exact('entidadId', arg.entidadId),
+          ]),
+        );
+        if (results.isNotEmpty) {
+          return results
+            ..sort((a, b) {
+              final ta = a.creadoEn;
+              final tb = b.creadoEn;
+              if (ta == null && tb == null) return 0;
+              if (ta == null) return -1;
+              if (tb == null) return 1;
+              return ta.compareTo(tb);
+            });
+        }
+      } catch (_) {
+        // fall through to RPC
+      }
+    }
+
+    return _fetchMensajes(arg);
   }
 
   // -------------------------------------------------------------------------
@@ -412,3 +439,190 @@ final comVincularProvider =
     AsyncNotifierProvider.family<ComVincularNotifier, void, ChatterRef>(
   ComVincularNotifier.new,
 );
+
+// ---------------------------------------------------------------------------
+// chatterBuscarEntidadProvider — búsqueda de entidades para vincular
+// ---------------------------------------------------------------------------
+
+/// Busca entidades de negocio (contactos, facturas, etc.) para el diálogo de
+/// vinculación del chatter.
+///
+/// Uso:
+/// ```dart
+/// final data = await ref.read(
+///   chatterBuscarEntidadProvider((tipo: 'contactos', busqueda: q)).future,
+/// );
+/// ```
+final chatterBuscarEntidadProvider = FutureProvider.autoDispose
+    .family<List<({String id, String etiqueta, String? secundario})>,
+        ({String tipo, String? busqueda})>(
+  (ref, params) async {
+    if ((params.busqueda?.length ?? 0) < 2 && params.busqueda != null) {
+      return const [];
+    }
+    final data = await Supabase.instance.client.rpc(
+      'chatter_buscar_entidad',
+      params: {
+        'p_tipo': params.tipo,
+        'p_busqueda': params.busqueda?.trim().isEmpty == true
+            ? null
+            : params.busqueda?.trim(),
+        'p_limit': 20,
+      },
+    ) as List;
+    return data
+        .map((e) {
+          final m = e as Map<String, dynamic>;
+          return (
+            id: m['entidad_id'] as String,
+            etiqueta: m['etiqueta'] as String? ?? m['entidad_id'] as String,
+            secundario: m['secundario'] as String?,
+          );
+        })
+        .toList();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Búsqueda de conversaciones no vinculadas
+// ---------------------------------------------------------------------------
+
+/// Busca conversaciones de com_conversaciones que no tienen entidad vinculada
+/// y cuyo destinatario_ref coincide con [query].
+///
+/// Uso desde _VincularConversacionDialog.
+Future<List<Map<String, dynamic>>> buscarConversacionesNoVinculadas(
+  String query,
+) async {
+  final rows = await Supabase.instance.client
+      .from('com_conversaciones')
+      .select('id, canal, destinatario_ref, destinatario_nombre, entidad_id')
+      .isFilter('entidad_id', null)
+      .ilike('destinatario_ref', '%$query%')
+      .limit(20);
+
+  return (rows as List<dynamic>)
+      .map((r) => r as Map<String, dynamic>)
+      .toList();
+}
+
+// ---------------------------------------------------------------------------
+// comCuentasPorTipoProvider — cuentas de comunicación filtradas por tipo
+// ---------------------------------------------------------------------------
+
+/// Retorna las cuentas de comunicación activas filtradas por tipo de canal.
+/// [tipos] puede ser null para cargar todos los tipos o una lista de tipos
+/// como ['whatsapp', 'telegram'].
+///
+/// Uso:
+/// ```dart
+/// final cuentas = ref.watch(
+///   comCuentasPorTipoProvider(['whatsapp', 'telegram']),
+/// );
+/// ```
+final comCuentasPorTipoProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, List<String>?>(
+  (ref, tipos) async {
+    final query = Supabase.instance.client
+        .from('com_cuentas')
+        .select('id, nombre, tipo')
+        .eq('activo', true);
+
+    final rows = tipos != null && tipos.isNotEmpty
+        ? await query.inFilter('tipo', tipos)
+        : await query;
+
+    return (rows as List).cast<Map<String, dynamic>>();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// ComSendDesdeEntidadNotifier — envío de mensaje externo desde una entidad
+// ---------------------------------------------------------------------------
+
+/// Notifier para enviar un mensaje externo (WhatsApp/Email/Telegram)
+/// vinculado a una entidad de negocio.
+///
+/// Uso:
+/// ```dart
+/// await ref.read(comSendDesdeEntidadProvider.notifier).enviar(
+///   entidadTipo: 'facturas',
+///   entidadId: id,
+///   canal: 'whatsapp',
+///   cuentaId: cid,
+///   destinatarioRef: '+593...',
+///   cuerpo: 'Hola...',
+/// );
+/// ```
+class ComSendDesdeEntidadNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<void> enviar({
+    required String entidadTipo,
+    required String entidadId,
+    required String canal,
+    required String cuentaId,
+    required String destinatarioRef,
+    required String cuerpo,
+    String? destinatarioNombre,
+    String? contactoId,
+  }) async {
+    await Supabase.instance.client.rpc(
+      'com_send_desde_entidad',
+      params: {
+        'p_entidad_tipo': entidadTipo,
+        'p_entidad_id': entidadId,
+        'p_canal': canal,
+        'p_cuenta_id': cuentaId,
+        'p_destinatario_ref': destinatarioRef,
+        'p_cuerpo': cuerpo,
+        if (destinatarioNombre?.isNotEmpty == true)
+          'p_destinatario_nombre': destinatarioNombre,
+        if (contactoId != null) 'p_contacto_id': contactoId,
+      },
+    );
+  }
+}
+
+final comSendDesdeEntidadProvider =
+    AsyncNotifierProvider<ComSendDesdeEntidadNotifier, void>(
+        ComSendDesdeEntidadNotifier.new);
+
+// ---------------------------------------------------------------------------
+// ComVincularConversacionNotifier — vincula conversación a entidad de negocio
+// ---------------------------------------------------------------------------
+
+/// Notifier para vincular una conversación existente a un registro de negocio.
+///
+/// Uso:
+/// ```dart
+/// await ref.read(comVincularConversacionProvider.notifier).vincular(
+///   conversacionId: conv.id,
+///   entidadTipo: 'contactos',
+///   entidadId: contactoId,
+/// );
+/// ```
+class ComVincularConversacionNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<void> vincular({
+    required String conversacionId,
+    required String entidadTipo,
+    required String entidadId,
+  }) async {
+    await Supabase.instance.client.rpc(
+      'com_vincular_conversacion',
+      params: {
+        'p_conversacion_id': conversacionId,
+        'p_entidad_tipo': entidadTipo,
+        'p_entidad_id': entidadId,
+      },
+    );
+  }
+}
+
+final comVincularConversacionProvider =
+    AsyncNotifierProvider<ComVincularConversacionNotifier, void>(
+        ComVincularConversacionNotifier.new);

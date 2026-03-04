@@ -27,6 +27,12 @@ class ProductoFamilia extends OfflineFirstWithSupabaseModel {
 
   final bool activo;
 
+  /// Versión del registro — bloqueo optimista (LWW para maestros).
+  /// Se incrementa en la BD con cada UPDATE. Brick lo sincroniza en SQLite.
+  @Supabase(name: 'version', defaultValue: '1')
+  @Sqlite(defaultValue: '1')
+  final int version;
+
   ProductoFamilia({
     required this.id,
     this.empresaId,
@@ -35,6 +41,7 @@ class ProductoFamilia extends OfflineFirstWithSupabaseModel {
     this.imagenUrl,
     this.categoriaId,
     required this.activo,
+    this.version = 1,
   });
 
   Map<String, dynamic> toMap() => {
@@ -44,5 +51,6 @@ class ProductoFamilia extends OfflineFirstWithSupabaseModel {
         'imagen_url': imagenUrl,
         'categoria_id': categoriaId,
         'activo': activo,
+        'version': version,
       };
 }

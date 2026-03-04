@@ -11,6 +11,7 @@ Future<ModuloEmpresa> _$ModuloEmpresaFromSupabase(
     empresaId: data['empresa_id'] as String,
     moduloId: data['modulo_id'] as String,
     habilitado: data['habilitado'] as bool,
+    version: data['version'] as int ?? 1,
   );
 }
 
@@ -24,6 +25,7 @@ Future<Map<String, dynamic>> _$ModuloEmpresaToSupabase(
     'empresa_id': instance.empresaId,
     'modulo_id': instance.moduloId,
     'habilitado': instance.habilitado,
+    'version': instance.version,
   };
 }
 
@@ -37,6 +39,7 @@ Future<ModuloEmpresa> _$ModuloEmpresaFromSqlite(
     empresaId: data['empresa_id'] as String,
     moduloId: data['modulo_id'] as String,
     habilitado: data['habilitado'] == 1,
+    version: data['version'] as int ?? 1,
   )..primaryKey = data['_brick_id'] as int;
 }
 
@@ -50,6 +53,7 @@ Future<Map<String, dynamic>> _$ModuloEmpresaToSqlite(
     'empresa_id': instance.empresaId,
     'modulo_id': instance.moduloId,
     'habilitado': instance.habilitado ? 1 : 0,
+    'version': instance.version,
   };
 }
 
@@ -79,6 +83,10 @@ class ModuloEmpresaAdapter
     'habilitado': const RuntimeSupabaseColumnDefinition(
       association: false,
       columnName: 'habilitado',
+    ),
+    'version': const RuntimeSupabaseColumnDefinition(
+      association: false,
+      columnName: 'version',
     ),
   };
   @override
@@ -116,6 +124,12 @@ class ModuloEmpresaAdapter
       columnName: 'habilitado',
       iterable: false,
       type: bool,
+    ),
+    'version': const RuntimeSqliteColumnDefinition(
+      association: false,
+      columnName: 'version',
+      iterable: false,
+      type: int,
     ),
   };
   @override

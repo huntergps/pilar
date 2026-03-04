@@ -2,9 +2,8 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../providers/notificaciones_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 /// Dialog que muestra las últimas 20 notificaciones del usuario.
 ///
@@ -36,7 +35,7 @@ class NotificacionesDialog extends ConsumerWidget {
         isEmpty: (list) => list.isEmpty,
         emptyWidget: const Center(
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
+            padding: EdgeInsets.symmetric(vertical: Spacing.xl),
             child: Text('Sin notificaciones'),
           ),
         ),
@@ -50,14 +49,9 @@ class NotificacionesDialog extends ConsumerWidget {
               notificacion: n,
               onMarkRead: n.leida
                   ? null
-                  : () async {
-                      await Supabase.instance.client.rpc(
-                        'marcar_notificacion_leida',
-                        params: {'p_notificacion_id': n.id},
-                      );
-                      ref.invalidate(notificacionesProvider);
-                      ref.invalidate(notificacionesBadgeProvider);
-                    },
+                  : () => ref
+                      .read(notificacionesWriteProvider.notifier)
+                      .marcarLeida(n.id),
             );
           },
         ),
@@ -70,12 +64,9 @@ class NotificacionesDialog extends ConsumerWidget {
         HyperlinkButton(
           child: const Text('Marcar todas como leídas'),
           onPressed: () async {
-            await Supabase.instance.client
-                .rpc('marcar_todas_notificaciones_leidas');
-
-            ref.invalidate(notificacionesProvider);
-            ref.invalidate(notificacionesBadgeProvider);
-
+            await ref
+                .read(notificacionesWriteProvider.notifier)
+                .marcarTodasLeidas();
             if (context.mounted) Navigator.pop(context);
           },
         ),
@@ -104,12 +95,12 @@ class _NotificacionTile extends StatelessWidget {
     return HoverButton(
       onPressed: onMarkRead,
       builder: (_, states) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(top: 2, right: 10),
+              padding: const EdgeInsets.only(top: Spacing.xxs, right: Spacing.ms),
               child: Icon(
                 notificacion.leida
                     ? FluentIcons.ringer
@@ -131,7 +122,7 @@ class _NotificacionTile extends StatelessWidget {
                         : theme.typography.bodyStrong,
                   ),
                   if (notificacion.cuerpo != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: Spacing.xxs),
                     Text(
                       notificacion.cuerpo!,
                       style: theme.typography.caption,
@@ -139,7 +130,7 @@ class _NotificacionTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     DateFormat('dd/MM/yyyy HH:mm')
                         .format(notificacion.creadaAt.toLocal()),

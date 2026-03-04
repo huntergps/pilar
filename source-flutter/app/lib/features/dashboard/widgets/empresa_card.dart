@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
 import '../../../core/providers/empresa_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Card principal
@@ -35,7 +36,7 @@ class EmpresaCard extends StatelessWidget {
         empresa.telefono != null || empresa.email != null;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.ms, Spacing.lg, Spacing.none),
       child: Card(
         padding: EdgeInsets.zero,
         // NOTE: No usar IntrinsicHeight aquí — es incompatible con LayoutBuilder.
@@ -52,7 +53,7 @@ class EmpresaCard extends StatelessWidget {
               // ---- Contenido ----
               Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 16),
+                    horizontal: Spacing.ml, vertical: Spacing.md),
                 child: LayoutBuilder(builder: (ctx, constraints) {
                   final logoSize = constraints.maxWidth < 480 ? 52.0 : 68.0;
                   final gap = constraints.maxWidth < 480 ? 14.0 : 20.0;
@@ -87,7 +88,7 @@ class EmpresaCard extends StatelessWidget {
 
                             // Nombre legal — solo si difiere del comercial
                             if (mostrarLegal) ...[
-                              const SizedBox(height: 2),
+                              const SizedBox(height: Spacing.xxs),
                               Text(
                                 empresa.nombre,
                                 style: theme.typography.caption?.copyWith(
@@ -98,12 +99,12 @@ class EmpresaCard extends StatelessWidget {
                               ),
                             ],
 
-                            const SizedBox(height: 10),
+                            const SizedBox(height: Spacing.ms),
 
                             // Chips: RUC + Moneda
                             Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
+                              spacing: Spacing.sm,
+                              runSpacing: Spacing.sm,
                               children: [
                                 if (empresa.ruc != null)
                                   _MetaChip(
@@ -116,10 +117,10 @@ class EmpresaCard extends StatelessWidget {
 
                             // Contacto: teléfono + email
                             if (tieneContacto) ...[
-                              const SizedBox(height: 8),
+                              const SizedBox(height: Spacing.sm),
                               Wrap(
-                                spacing: 16,
-                                runSpacing: 4,
+                                spacing: Spacing.md,
+                                runSpacing: Spacing.xs,
                                 children: [
                                   if (empresa.telefono != null)
                                     _ContactItem(
@@ -237,7 +238,7 @@ class _MetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: theme.accentColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
@@ -277,7 +278,7 @@ class _ContactItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 13, color: theme.inactiveColor),
-        const SizedBox(width: 4),
+        const SizedBox(width: Spacing.xs),
         Flexible(
           child: Text(
             label,

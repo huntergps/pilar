@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_provider.dart';
 import 'empresa_provider.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -33,6 +37,16 @@ class ModuloItem {
       icono: json['icono'] as String? ?? 'apps',
       orden: json['orden'] as int? ?? 99,
       tipo: json['tipo'] as String? ?? 'core',
+    );
+  }
+
+  factory ModuloItem.fromBrick(Modulo m) {
+    return ModuloItem(
+      id: m.id,
+      nombre: m.nombre,
+      icono: m.icono ?? 'apps',
+      orden: m.orden ?? 99,
+      tipo: m.tipo,
     );
   }
 }
@@ -73,13 +87,12 @@ class ModuloEstado {
 
 /// Lista de módulos activos para la empresa y usuario actuales.
 ///
-/// Usa la RPC `get_modulos_activos` directamente (todas las plataformas):
-/// - Infraestructura: siempre visibles.
-/// - Core/auxiliar: solo si están habilitados para la empresa activa.
+/// - **Native**: Lee `Modulo` + `ModuloEmpresa` desde SQLite (Brick offline-first),
+///   con sync en background desde Supabase.
+/// - **Web**: RPC `get_modulos_activos` directa.
 ///
-/// Suscripción Realtime a `modulo_empresas` para que la lista se actualice
-/// automáticamente cuando el admin activa o desactiva un módulo sin necesidad
-/// de que otros usuarios conectados recarguen la app.
+/// Suscripción Realtime a `modulo_empresas` para actualización automática
+/// cuando el admin activa o desactiva un módulo.
 final modulosActivosProvider = StreamProvider.autoDispose<List<ModuloItem>>((ref) {
   ref.watch(authStateProvider);
   final empresaId = ref.watch(empresaActivaIdProvider);
@@ -92,8 +105,34 @@ final modulosActivosProvider = StreamProvider.autoDispose<List<ModuloItem>>((ref
 
   Future<void> fetch() async {
     try {
-      final data =
-          await Supabase.instance.client.rpc('get_modulos_activos');
+      // Native: offline-first con Brick
+      final repo = ref.read(repositoryProvider);
+      if (!kIsWeb && repo != null) {
+        final moduloEmpresas = await repo.get<ModuloEmpresa>(
+          policy: OfflineFirstGetPolicy.awaitRemote,
+          query: Query(where: [
+            Where.exact('empresaId', empresaId),
+            Where.exact('habilitado', true),
+          ]),
+        );
+        if (moduloEmpresas.isNotEmpty) {
+          final moduloIds = moduloEmpresas.map((me) => me.moduloId).toSet();
+          final todosModulos = await repo.get<Modulo>(
+            policy: OfflineFirstGetPolicy.localOnly,
+            query: Query(where: [Where.exact('activo', true)]),
+          );
+          final activos = todosModulos
+              .where((m) => moduloIds.contains(m.id) || m.tipo == 'infraestructura')
+              .map(ModuloItem.fromBrick)
+              .toList()
+            ..sort((a, b) => a.orden.compareTo(b.orden));
+          if (!controller.isClosed) controller.add(activos);
+          return;
+        }
+      }
+
+      // Web / fallback RPC
+      final data = await Supabase.instance.client.rpc('get_modulos_activos');
       if (!controller.isClosed) {
         controller.add((data as List)
             .map((e) => ModuloItem.fromJson(e as Map<String, dynamic>))
@@ -104,10 +143,9 @@ final modulosActivosProvider = StreamProvider.autoDispose<List<ModuloItem>>((ref
     }
   }
 
-  // Carga inicial
   fetch();
 
-  // Realtime: re-fetch cuando se activa/desactiva un módulo para esta empresa
+  // Realtime: re-fetch cuando se activa/desactiva un módulo
   final channel = Supabase.instance.client
       .channel('modulos_empresa_$empresaId')
       .onPostgresChanges(

@@ -19,6 +19,8 @@ dependencies:
     path: ../paquetes/flutter-auth-fluent-ui
   pilar_print:
     path: ../paquetes/pilar_print
+  supabase_tus:
+    path: ../paquetes/supabase_tus
 
   # === State management ===
   flutter_riverpod: ^2.5.0

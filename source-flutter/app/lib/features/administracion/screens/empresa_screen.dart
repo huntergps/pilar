@@ -6,70 +6,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
-
-// ---------------------------------------------------------------------------
-// Geographic catalog (Ecuador SRI — static)
-// ---------------------------------------------------------------------------
-
-// (id, nombre)
-const _provincias = [
-  (1, 'Azuay'),
-  (2, 'Bolívar'),
-  (3, 'Cañar'),
-  (4, 'Carchi'),
-  (5, 'Cotopaxi'),
-  (6, 'Chimborazo'),
-  (7, 'El Oro'),
-  (8, 'Esmeraldas'),
-  (9, 'Guayas'),
-  (10, 'Imbabura'),
-  (11, 'Loja'),
-  (12, 'Los Ríos'),
-  (13, 'Manabí'),
-  (14, 'Morona Santiago'),
-  (15, 'Napo'),
-  (16, 'Pastaza'),
-  (17, 'Pichincha'),
-  (18, 'Tungurahua'),
-  (19, 'Zamora Chinchipe'),
-  (20, 'Galápagos'),
-  (21, 'Sucumbíos'),
-  (22, 'Orellana'),
-  (23, 'Santo Domingo de los Tsáchilas'),
-  (24, 'Santa Elena'),
-];
-
-// (id, nombre, provinciaId)
-const _ciudades = [
-  (101, 'Cuenca', 1),
-  (201, 'Guaranda', 2),
-  (301, 'Azogues', 3),
-  (401, 'Tulcán', 4),
-  (501, 'Latacunga', 5),
-  (601, 'Riobamba', 6),
-  (701, 'Machala', 7),
-  (801, 'Esmeraldas', 8),
-  (901, 'Guayaquil', 9),
-  (1001, 'Ibarra', 10),
-  (1101, 'Loja', 11),
-  (1201, 'Babahoyo', 12),
-  (1301, 'Portoviejo', 13),
-  (1401, 'Macas', 14),
-  (1501, 'Tena', 15),
-  (1601, 'Puyo', 16),
-  (1701, 'Quito', 17),
-  (1702, 'Cayambe', 17),
-  (1703, 'Rumiñahui', 17),
-  (1801, 'Ambato', 18),
-  (1901, 'Zamora', 19),
-  (2001, 'Puerto Baquerizo Moreno', 20),
-  (2002, 'Puerto Ayora', 20),           // cantón Santa Cruz
-  (2003, 'Puerto Villamil', 20),        // cantón Isabela
-  (2101, 'Nueva Loja (Lago Agrio)', 21),
-  (2201, 'Puerto Francisco de Orellana', 22),
-  (2301, 'Santo Domingo', 23),
-  (2401, 'Santa Elena', 24),
-];
+import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/utils/ecuador_geo_provider.dart';
+import '../../../core/utils/timezones.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../providers/empresa_write_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -101,10 +43,11 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
   // Tipo RUC
   String? _tipoRuc;
 
-  // Geographic selectors
+  // Geographic selectors + timezone
   bool _initialized = false;
   int? _provinciaId;
   int? _ciudadId;
+  String? _zonaHoraria;
 
   // Logo
   String? _logoUrl;
@@ -138,6 +81,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
     if (_tipoRuc != null)         data['tipo_ruc']         = _tipoRuc;
     if (_provinciaId != null)     data['provincia_id']     = _provinciaId;
     if (_ciudadId != null)        data['ciudad_id']        = _ciudadId;
+    if (_zonaHoraria != null)     data['zona_horaria']     = _zonaHoraria;
     if (_logoUrl != null)         data['logo_url']         = _logoUrl;
 
     final color = _colorPrimCtrl.text.trim();
@@ -148,18 +92,18 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 
     // ── Datos principales ──────────────────────────────────────────────────
     if (data.isNotEmpty) {
-      final result = await Supabase.instance.client.rpc(
-        'admin_update_empresa',
-        params: {'p_data': data},
-      );
-      if (result is! Map || result['ok'] != true) {
+      try {
+        await ref.read(empresaWriteProvider.notifier).updateEmpresa(params: data);
+        // La invalidación de empresaConfigProvider y misEmpresasProvider
+        // la hace el provider internamente.
+      } catch (e) {
         ok = false;
         if (mounted) {
           displayInfoBar(
             context,
             builder: (_, close) => InfoBar(
               title: const Text('Error al guardar datos de empresa'),
-              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              content: Text(e.toString()),
               severity: InfoBarSeverity.error,
               onClose: close,
             ),
@@ -170,20 +114,20 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 
     // ── Color primario ─────────────────────────────────────────────────────
     if (color.isNotEmpty) {
-      final result = await Supabase.instance.client.rpc(
-        'admin_update_branding',
-        params: {'p_data': {'color_primario': color}},
-      );
-      if (result is Map && result['ok'] == true) {
+      try {
+        await ref
+            .read(empresaWriteProvider.notifier)
+            .updateBranding(params: {'color_primario': color});
         setState(() => _colorSavedInDb = color);
-      } else {
+        // La invalidación de empresaConfigProvider la hace el provider internamente.
+      } catch (e) {
         ok = false;
         if (mounted) {
           displayInfoBar(
             context,
             builder: (_, close) => InfoBar(
               title: const Text('Error al guardar color'),
-              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
+              content: Text(e.toString()),
               severity: InfoBarSeverity.error,
               onClose: close,
             ),
@@ -193,7 +137,6 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
     }
 
     if (ok) {
-      ref.invalidate(empresaConfigProvider);
       if (mounted) {
         displayInfoBar(
           context,
@@ -229,16 +172,12 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 
     try {
       final ext = file.extension ?? 'png';
-      final path = '$empresaId/logo.$ext';
-      final client = Supabase.instance.client;
 
-      await client.storage.from('logos').uploadBinary(
-            path,
-            file.bytes!,
-            fileOptions: FileOptions(upsert: true, contentType: 'image/$ext'),
+      final url = await ref.read(empresaWriteProvider.notifier).uploadLogo(
+            bytes: file.bytes!,
+            ext: ext,
+            empresaId: empresaId,
           );
-
-      final url = client.storage.from('logos').getPublicUrl(path);
 
       // Limpiar caché de imágenes de Flutter (la URL es idéntica tras upsert,
       // sin esto todas las pantallas siguen mostrando el logo anterior).
@@ -250,9 +189,11 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
       setState(() => _logoUrl = bustUrl);
 
       // Persist clean URL (sin cache-buster) en BD
-      await client.rpc('admin_update_empresa',
-          params: {'p_data': {'logo_url': url}});
-      ref.invalidate(empresaConfigProvider);
+      await ref
+          .read(empresaWriteProvider.notifier)
+          .updateEmpresa(params: {'logo_url': url});
+      // La invalidación de empresaConfigProvider y misEmpresasProvider
+      // la hace el provider internamente.
     } on StorageException catch (e) {
       if (mounted) {
         displayInfoBar(
@@ -280,6 +221,10 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
         ref.watch(hasPermissionProvider('administracion.empresa.editar'));
     final empresaAsync = ref.watch(empresaConfigProvider);
     final theme = FluentTheme.of(context);
+    final provinciasAsync = ref.watch(provinciasEcProvider);
+    final ciudadesAsync = _provinciaId != null
+        ? ref.watch(ciudadesPorProvinciaProvider(_provinciaId!))
+        : null;
 
     return ScaffoldPage(
       header: PageHeader(
@@ -310,17 +255,14 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
             _tipoRuc = empresa.tipoRuc;
             _provinciaId = empresa.provinciaId;
             _ciudadId = empresa.ciudadId;
+            _zonaHoraria = empresa.zonaHoraria ?? 'America/Guayaquil';
             _logoUrl = empresa.logoUrl;
             _colorPrimCtrl.text = empresa.colorPrimario ?? '';
             _colorSavedInDb = empresa.colorPrimario;
           }
 
-          final ciudadesFiltradas = _provinciaId == null
-              ? <(int, String, int)>[]
-              : _ciudades
-                  .where((c) => c.$3 == _provinciaId)
-                  .toList()
-                ..sort((a, b) => a.$2.compareTo(b.$2));
+          final provincias = provinciasAsync.valueOrNull ?? <EcuadorProvincia>[];
+          final ciudades = ciudadesAsync?.valueOrNull ?? <EcuadorCiudad>[];
 
           // --- Form sections using FormSection ---
           final datosEmpresaSection = FormSection(
@@ -371,7 +313,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                         value: 'sociedad',
                         content: Text('Sociedad'),
                       ),
-                      SizedBox(width: 24),
+                      SizedBox(width: Spacing.lg),
                       RadioButton<String>(
                         value: 'persona_natural',
                         content: Text('Persona natural'),
@@ -402,24 +344,26 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                       label: 'Provincia',
                       child: ComboBox<int>(
                         value: _provinciaId,
-                        placeholder: const Text('Seleccione'),
-                        items: _provincias
+                        placeholder: provinciasAsync.isLoading
+                            ? const Text('Cargando...')
+                            : const Text('Seleccione'),
+                        items: provincias
                             .map((p) => ComboBoxItem<int>(
-                                  value: p.$1,
-                                  child: Text(p.$2),
+                                  value: p.id,
+                                  child: Text(p.nombre),
                                 ))
                             .toList(),
-                        onChanged: puedeEditar
-                            ? (value) => setState(() {
+                        onChanged: (!puedeEditar || provinciasAsync.isLoading)
+                            ? null
+                            : (value) => setState(() {
                                   _provinciaId = value;
                                   _ciudadId = null;
-                                })
-                            : null,
+                                }),
                         isExpanded: true,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
                   Expanded(
                     child: InfoLabel(
                       label: 'Ciudad',
@@ -428,15 +372,19 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                         placeholder: Text(
                           _provinciaId == null
                               ? 'Seleccione provincia primero'
-                              : 'Seleccione ciudad',
+                              : ciudadesAsync?.isLoading == true
+                                  ? 'Cargando...'
+                                  : 'Seleccione ciudad',
                         ),
-                        items: ciudadesFiltradas
+                        items: ciudades
                             .map((c) => ComboBoxItem<int>(
-                                  value: c.$1,
-                                  child: Text(c.$2),
+                                  value: c.id,
+                                  child: Text(c.nombre),
                                 ))
                             .toList(),
-                        onChanged: (!puedeEditar || ciudadesFiltradas.isEmpty)
+                        onChanged: (!puedeEditar ||
+                                _provinciaId == null ||
+                                ciudadesAsync?.isLoading == true)
                             ? null
                             : (value) =>
                                 setState(() => _ciudadId = value),
@@ -472,11 +420,27 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 readOnly: !puedeEditar,
                 onSaved: (v) => _web = v,
               ),
+              InfoLabel(
+                label: 'Zona horaria',
+                child: ComboBox<String>(
+                  value: _zonaHoraria,
+                  isExpanded: true,
+                  items: kZonasHorarias
+                      .map((z) => ComboBoxItem<String>(
+                            value: z.$1,
+                            child: Text(z.$2),
+                          ))
+                      .toList(),
+                  onChanged: puedeEditar
+                      ? (v) => setState(() => _zonaHoraria = v)
+                      : null,
+                ),
+              ),
             ],
           );
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(Spacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -486,24 +450,24 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         datosEmpresaSection,
-                        const SizedBox(height: 24),
+                        const SizedBox(height: Spacing.lg),
                         ubicacionSection,
                       ],
                     );
 
-                    // ---- Mobile (< 600 px): logo arriba, formulario abajo ----
-                    if (constraints.maxWidth < 600) {
+                    // ---- Mobile (< PilarBreakpoints.mobile): logo arriba, formulario abajo ----
+                    if (constraints.maxWidth < PilarBreakpoints.mobile) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildLogoMobile(theme, empresa.empresaId, puedeEditar),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: Spacing.lg),
                           formSections,
                         ],
                       );
                     }
 
-                    // ---- Desktop / tablet (>= 600 px): logo izquierda, form derecha ----
+                    // ---- Desktop / tablet (>= PilarBreakpoints.mobile): logo izquierda, form derecha ----
                     return ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
                       child: Row(
@@ -514,7 +478,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                             child: _buildLogoDesktop(
                                 theme, empresa.empresaId, puedeEditar),
                           ),
-                          const SizedBox(width: 28),
+                          const SizedBox(width: Spacing.lg),
                           Expanded(child: formSections),
                         ],
                       ),
@@ -524,7 +488,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 
                 // ---- Seccion de branding (solo admins) ----
                 if (puedeEditar) ...[
-                  const SizedBox(height: 32),
+                  const SizedBox(height: Spacing.xl),
                   _EmpresaBrandingSection(
                     colorPrimCtrl:    _colorPrimCtrl,
                     selectedPrimario: _selectedPrimario,
@@ -553,7 +517,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text('Logo de empresa', style: theme.typography.bodyStrong),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
 
         // Square preview — fills the 160 px column width
         AspectRatio(
@@ -585,7 +549,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
 
         if (_logoUrl != null) ...[
           const Row(
@@ -593,7 +557,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
             children: [
               Icon(FluentIcons.check_mark,
                   size: 11, color: Colors.successPrimaryColor),
-              SizedBox(width: 4),
+              SizedBox(width: Spacing.xs),
               Text(
                 'Logo cargado',
                 style:
@@ -601,29 +565,24 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
         ],
 
         if (puedeEditar)
           _logoUploading
-              ? const Center(
-                  child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: ProgressRing(strokeWidth: 2)),
-                )
+              ? const Center(child: PilarProgressRing(size: 20))
               : Button(
                   onPressed: () => _pickAndUploadLogo(empresaId),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(FluentIcons.upload, size: 14),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: Spacing.sm),
                       Text(_logoUrl == null ? 'Seleccionar' : 'Cambiar'),
                     ],
                   ),
                 ),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         Text(
           'PNG, JPG, WebP, SVG\nMáx. 5 MB',
           style: TextStyle(
@@ -635,7 +594,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
     );
   }
 
-  // ---- Logo: fila horizontal para móvil (< 600 px) -----------------------
+  // ---- Logo: fila horizontal para móvil (< PilarBreakpoints.mobile) -----------------------
 
   Widget _buildLogoMobile(
       FluentThemeData theme, String empresaId, bool puedeEditar) {
@@ -643,11 +602,11 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Logo de empresa', style: theme.typography.bodyStrong),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         const Divider(),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(Spacing.md),
           decoration: BoxDecoration(
             color: theme.resources.cardBackgroundFillColorDefault,
             borderRadius: BorderRadius.circular(8),
@@ -685,7 +644,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                         color: theme.resources.textFillColorTertiary,
                       ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: Spacing.md),
 
               Expanded(
                 child: Column(
@@ -693,7 +652,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   children: [
                     if (_logoFileName != null)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.only(bottom: Spacing.xs),
                         child: Text(
                           _logoFileName!,
                           style: theme.typography.caption,
@@ -702,13 +661,13 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                       ),
                     if (_logoUrl != null)
                       const Padding(
-                        padding: EdgeInsets.only(bottom: 4),
+                        padding: EdgeInsets.only(bottom: Spacing.xs),
                         child: Row(
                           children: [
                             Icon(FluentIcons.check_mark,
                                 size: 12,
                                 color: Colors.successPrimaryColor),
-                            SizedBox(width: 4),
+                            SizedBox(width: Spacing.xs),
                             Text(
                               'Logo cargado',
                               style: TextStyle(
@@ -728,22 +687,18 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: Spacing.md),
 
               if (puedeEditar)
                 _logoUploading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: ProgressRing(strokeWidth: 2),
-                      )
+                    ? const PilarProgressRing(size: 20)
                     : Button(
                         onPressed: () => _pickAndUploadLogo(empresaId),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(FluentIcons.upload, size: 14),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: Spacing.sm),
                             Text(_logoUrl == null ? 'Seleccionar' : 'Cambiar'),
                           ],
                         ),
@@ -760,7 +715,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
 // Sección de branding de empresa
 // ---------------------------------------------------------------------------
 
-class _EmpresaBrandingSection extends StatefulWidget {
+class _EmpresaBrandingSection extends ConsumerStatefulWidget {
   final TextEditingController colorPrimCtrl;
   final AccentColor? selectedPrimario;
   final void Function(AccentColor?) onPrimarioChanged;
@@ -776,10 +731,12 @@ class _EmpresaBrandingSection extends StatefulWidget {
   });
 
   @override
-  State<_EmpresaBrandingSection> createState() => _EmpresaBrandingSectionState();
+  ConsumerState<_EmpresaBrandingSection> createState() =>
+      _EmpresaBrandingSectionState();
 }
 
-class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
+class _EmpresaBrandingSectionState
+    extends ConsumerState<_EmpresaBrandingSection> {
   bool _forcing = false;
 
   Future<void> _forceToAll() async {
@@ -812,34 +769,33 @@ class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
 
     setState(() => _forcing = true);
     try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_force_empresa_color',
-        params: {'p_color': color},
-      );
+      await ref
+          .read(empresaWriteProvider.notifier)
+          .forceColorToAll(color: color);
       if (mounted) {
-        if (result is Map && result['ok'] == true) {
-          displayInfoBar(
-            context,
-            builder: (_, close) => InfoBar(
-              title: const Text('Color aplicado a todos los usuarios'),
-              content: const Text(
-                'Los usuarios verán el nuevo color en la próxima vez que abran la app.',
-              ),
-              severity: InfoBarSeverity.success,
-              onClose: close,
+        displayInfoBar(
+          context,
+          builder: (_, close) => InfoBar(
+            title: const Text('Color aplicado a todos los usuarios'),
+            content: const Text(
+              'Los usuarios verán el nuevo color en la próxima vez que abran la app.',
             ),
-          );
-        } else {
-          displayInfoBar(
-            context,
-            builder: (_, close) => InfoBar(
-              title: const Text('Error al aplicar'),
-              content: Text(result?['error']?.toString() ?? 'Error desconocido'),
-              severity: InfoBarSeverity.error,
-              onClose: close,
-            ),
-          );
-        }
+            severity: InfoBarSeverity.success,
+            onClose: close,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        displayInfoBar(
+          context,
+          builder: (_, close) => InfoBar(
+            title: const Text('Error al aplicar'),
+            content: Text(e.toString()),
+            severity: InfoBarSeverity.error,
+            onClose: close,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _forcing = false);
@@ -860,15 +816,15 @@ class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Personalización', style: theme.typography.bodyStrong),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         const Divider(),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         Text(
           'Color de acento predeterminado para todos los usuarios de esta empresa. '
           'Cada usuario puede sobreescribir este color desde Configuración.',
           style: theme.typography.caption?.copyWith(color: theme.inactiveColor),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         InfoLabel(
           label: 'Color de acento de la empresa',
@@ -878,16 +834,12 @@ class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
             onSwatchSelected: widget.onPrimarioChanged,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // Guardar se hace desde el botón principal del formulario.
         // "Aplicar a todos" solo disponible cuando el color ya está guardado en BD.
         _forcing
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: ProgressRing(strokeWidth: 2),
-              )
+            ? const PilarProgressRing(size: 20)
             : Tooltip(
                 message: colorIsSaved
                     ? 'Descarta el color personalizado de todos los usuarios '
@@ -899,7 +851,7 @@ class _EmpresaBrandingSectionState extends State<_EmpresaBrandingSection> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(FluentIcons.sync, size: 14),
-                      SizedBox(width: 6),
+                      SizedBox(width: Spacing.sm),
                       Text('Aplicar a todos'),
                     ],
                   ),
@@ -936,12 +888,12 @@ class _BrandingColorPicker extends StatelessWidget {
           includeNoneOption: true,
           noneLabel: 'Sin color',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         TextBox(
           controller: controller,
           placeholder: '#0078D4',
           prefix: const Padding(
-            padding: EdgeInsets.only(left: 8),
+            padding: EdgeInsets.only(left: Spacing.sm),
             child: Icon(FluentIcons.color, size: 14),
           ),
         ),
@@ -968,8 +920,8 @@ class _ColorSwatchRow extends StatelessWidget {
     final theme = FluentTheme.of(context);
     final bodyColor = theme.typography.body?.color ?? Colors.white;
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: Spacing.sm,
+      runSpacing: Spacing.sm,
       children: [
         if (includeNoneOption)
           Tooltip(

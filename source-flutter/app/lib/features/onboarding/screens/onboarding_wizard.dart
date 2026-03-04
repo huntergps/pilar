@@ -5,10 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/config/pilar_constants.dart';
 import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/utils/ecuador_geo_provider.dart';
+import '../../../core/widgets/loading_spinner.dart';
 import '../../../features/administracion/providers/admin_providers.dart';
+import '../../../features/administracion/providers/empresa_write_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -20,68 +25,6 @@ class _InvitacionPendiente {
   String email = '';
   String rolCodigo = 'LECTURA';
 }
-
-// ---------------------------------------------------------------------------
-// Geographic catalog (embedded — static Ecuador SRI data)
-// ---------------------------------------------------------------------------
-
-// (id, nombre)
-const _provincias = [
-  (1, 'Azuay'),
-  (2, 'Bolívar'),
-  (3, 'Cañar'),
-  (4, 'Carchi'),
-  (5, 'Cotopaxi'),
-  (6, 'Chimborazo'),
-  (7, 'El Oro'),
-  (8, 'Esmeraldas'),
-  (9, 'Guayas'),
-  (10, 'Imbabura'),
-  (11, 'Loja'),
-  (12, 'Los Ríos'),
-  (13, 'Manabí'),
-  (14, 'Morona Santiago'),
-  (15, 'Napo'),
-  (16, 'Pastaza'),
-  (17, 'Pichincha'),
-  (18, 'Tungurahua'),
-  (19, 'Zamora Chinchipe'),
-  (20, 'Galápagos'),
-  (21, 'Sucumbíos'),
-  (22, 'Orellana'),
-  (23, 'Santo Domingo de los Tsáchilas'),
-  (24, 'Santa Elena'),
-];
-
-// (id, nombre, provinciaId)
-const _ciudades = [
-  (101, 'Cuenca', 1),
-  (201, 'Guaranda', 2),
-  (301, 'Azogues', 3),
-  (401, 'Tulcán', 4),
-  (501, 'Latacunga', 5),
-  (601, 'Riobamba', 6),
-  (701, 'Machala', 7),
-  (801, 'Esmeraldas', 8),
-  (901, 'Guayaquil', 9),
-  (1001, 'Ibarra', 10),
-  (1101, 'Loja', 11),
-  (1201, 'Babahoyo', 12),
-  (1301, 'Portoviejo', 13),
-  (1401, 'Macas', 14),
-  (1501, 'Tena', 15),
-  (1601, 'Puyo', 16),
-  (1701, 'Quito', 17),
-  (1702, 'Cayambe', 17),
-  (1703, 'Rumiñahui', 17),
-  (1801, 'Ambato', 18),
-  (1901, 'Zamora', 19),
-  (2001, 'Puerto Baquerizo Moreno', 20),
-  (2101, 'Nueva Loja (Lago Agrio)', 21),
-  (2201, 'Puerto Francisco de Orellana', 22),
-  (2301, 'Santo Domingo', 23),
-  (2401, 'Santa Elena', 24),
-];
 
 // ---------------------------------------------------------------------------
 // Roles fallback (used while rolesProvider is loading)
@@ -179,7 +122,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     final theme = FluentTheme.of(context);
     return ScaffoldPage(
       header: PageHeader(
-        title: const Text('Bienvenido a PILAR ERP'),
+        title: const Text('Bienvenido a $kAppName'),
         leading: Padding(
           padding: const EdgeInsets.only(left: Spacing.md),
           child: Icon(
@@ -327,14 +270,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
 
   Widget _buildStepEmpresa() {
     final theme = FluentTheme.of(context);
-
-    // Cities filtered by selected province
-    final ciudadesFiltradas = _provinciaId == null
-        ? <(int, String, int)>[]
-        : _ciudades
-            .where((c) => c.$3 == _provinciaId)
-            .toList()
-          ..sort((a, b) => a.$2.compareTo(b.$2));
+    final provinciasAsync = ref.watch(provinciasEcProvider);
+    final ciudadesAsync = _provinciaId != null
+        ? ref.watch(ciudadesPorProvinciaProvider(_provinciaId!))
+        : null;
+    final provincias = provinciasAsync.valueOrNull ?? <EcuadorProvincia>[];
+    final ciudades = ciudadesAsync?.valueOrNull ?? <EcuadorCiudad>[];
 
     return SingleChildScrollView(
       child: Form(
@@ -453,17 +394,21 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
                     label: 'Provincia',
                     child: ComboBox<int>(
                       value: _provinciaId,
-                      placeholder: const Text('Seleccione'),
-                      items: _provincias
+                      placeholder: provinciasAsync.isLoading
+                          ? const Text('Cargando...')
+                          : const Text('Seleccione'),
+                      items: provincias
                           .map((p) => ComboBoxItem<int>(
-                                value: p.$1,
-                                child: Text(p.$2),
+                                value: p.id,
+                                child: Text(p.nombre),
                               ))
                           .toList(),
-                      onChanged: (value) => setState(() {
-                        _provinciaId = value;
-                        _ciudadId = null; // reset city when province changes
-                      }),
+                      onChanged: provinciasAsync.isLoading
+                          ? null
+                          : (value) => setState(() {
+                                _provinciaId = value;
+                                _ciudadId = null;
+                              }),
                       isExpanded: true,
                     ),
                   ),
@@ -477,15 +422,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
                       placeholder: Text(
                         _provinciaId == null
                             ? 'Seleccione provincia primero'
-                            : 'Seleccione ciudad',
+                            : ciudadesAsync?.isLoading == true
+                                ? 'Cargando...'
+                                : 'Seleccione ciudad',
                       ),
-                      items: ciudadesFiltradas
+                      items: ciudades
                           .map((c) => ComboBoxItem<int>(
-                                value: c.$1,
-                                child: Text(c.$2),
+                                value: c.id,
+                                child: Text(c.nombre),
                               ))
                           .toList(),
-                      onChanged: ciudadesFiltradas.isEmpty
+                      onChanged: (_provinciaId == null ||
+                              ciudadesAsync?.isLoading == true)
                           ? null
                           : (value) =>
                               setState(() => _ciudadId = value),
@@ -568,7 +516,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
                       children: [
                         Icon(FluentIcons.check_mark,
                             size: 12, color: Colors.successPrimaryColor),
-                        SizedBox(width: 4),
+                        SizedBox(width: Spacing.xs),
                         Text(
                           'Logo subido correctamente',
                           style: TextStyle(
@@ -593,11 +541,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
 
           // Upload / change button
           _logoUploading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing(size: 20)
               : Button(
                   onPressed: _pickAndUploadLogo,
                   child: Row(
@@ -641,19 +585,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
 
     try {
       final ext = file.extension ?? 'png';
-      final path = '$empresaId/logo.$ext';
-      final client = Supabase.instance.client;
 
-      await client.storage.from('logos').uploadBinary(
-            path,
-            file.bytes!,
-            fileOptions: FileOptions(
-              upsert: true,
-              contentType: 'image/$ext',
-            ),
+      final url = await ref.read(empresaWriteProvider.notifier).uploadLogo(
+            bytes: file.bytes!,
+            ext: ext,
+            empresaId: empresaId,
           );
-
-      final url = client.storage.from('logos').getPublicUrl(path);
       setState(() => _logoUploadedUrl = url);
     } on StorageException catch (e) {
       setState(() => _errorMessage = 'Error al subir logo: ${e.message}');
@@ -914,11 +851,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
               FilledButton(
                 onPressed: _isLoading ? null : _onComplete,
                 child: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: ProgressRing(strokeWidth: 2),
-                      )
+                    ? const PilarProgressRing.small()
                     : const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -955,8 +888,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
     });
 
     try {
-      final client = Supabase.instance.client;
-
       // ---- 1. Update empresa (nombre, RUC, tipo, dirección, geo, logo) ----
       final empresaData = <String, dynamic>{
         'nombre': _nombreController.text.trim(),
@@ -979,12 +910,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
       if (email.isNotEmpty) empresaData['email'] = email;
       if (telefono.isNotEmpty) empresaData['telefono'] = telefono;
 
-      final result =
-          await client.rpc('admin_update_empresa', params: {'p_data': empresaData});
-
-      if (result is Map && result['ok'] == false) {
-        throw Exception(result['error'] ?? 'Error al actualizar empresa');
-      }
+      await ref
+          .read(empresaWriteProvider.notifier)
+          .updateEmpresa(params: empresaData);
 
       // ---- 2. Update communication config_extra (WhatsApp, Telegram) ----
       final whatsapp = _whatsappController.text.trim();
@@ -994,8 +922,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
         if (whatsapp.isNotEmpty) configData['whatsapp_numero'] = whatsapp;
         if (telegram.isNotEmpty) configData['telegram_id'] = telegram;
 
-        await client.rpc('admin_update_config_extra',
-            params: {'p_data': configData});
+        await ref
+            .read(empresaWriteProvider.notifier)
+            .updateConfigExtra(params: configData);
       }
 
       // ---- 3. Send team invitations ----
@@ -1008,8 +937,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
             orElse: () =>
                 throw Exception('Rol "${_invitaciones[i].rolCodigo}" no encontrado'),
           );
-          await client.functions.invoke(
-            'invite-user',
+          await ref.read(empresaWriteProvider.notifier).inviteUser(
             body: {
               'email': _invitaciones[i].email,
               'rol_id': rol.id,
@@ -1019,7 +947,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
       }
 
       // ---- 4. Refresh session ----
-      await client.auth.refreshSession();
+      await ref.read(supabaseClientProvider).auth.refreshSession();
 
       if (mounted) {
         context.go(PilarRoutes.dashboard);
@@ -1052,7 +980,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizardScreen> {
         ),
         const SizedBox(height: Spacing.xs),
         Padding(
-          padding: const EdgeInsets.only(left: 28),
+          padding: const EdgeInsets.only(left: Spacing.lg),
           child: Text(
             subtitle,
             style: TextStyle(
@@ -1158,7 +1086,7 @@ class _InvitacionRow extends StatelessWidget {
             ),
             const SizedBox(width: Spacing.sm),
             Padding(
-              padding: const EdgeInsets.only(top: 22),
+              padding: const EdgeInsets.only(top: Spacing.ml),
               child: IconButton(
                 icon: const Icon(FluentIcons.delete, size: 16),
                 onPressed: onRemove,

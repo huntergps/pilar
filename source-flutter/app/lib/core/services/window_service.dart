@@ -9,6 +9,7 @@ import 'package:system_theme/system_theme.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config_service.dart' show ConfigKeys;
+import '../theme/pilar_breakpoints.dart';
 
 /// Manages desktop window initialization, sizing, and persistence.
 ///
@@ -66,15 +67,15 @@ class WindowService {
       windowButtonVisibility: false,
     );
 
-    await windowManager.setMinimumSize(const Size(800, 600));
+    await windowManager.setMinimumSize(const Size(PilarBreakpoints.minWindowWidth, PilarBreakpoints.minWindowHeight));
 
     // preventClose: true lets onWindowClose intercept the close event so we
     // can persist window state before actually destroying the window.
     await windowManager.setPreventClose(true);
 
     // Restore saved geometry, or fall back to defaults centered on screen.
-    final width  = (savedWidth  != null && savedWidth  >= 800)  ? savedWidth  : 1280.0;
-    final height = (savedHeight != null && savedHeight >= 600) ? savedHeight : 800.0;
+    final width  = (savedWidth  != null && savedWidth  >= PilarBreakpoints.minWindowWidth)  ? savedWidth  : PilarBreakpoints.defaultWindowWidth;
+    final height = (savedHeight != null && savedHeight >= PilarBreakpoints.minWindowHeight) ? savedHeight : PilarBreakpoints.defaultWindowHeight;
     await windowManager.setSize(Size(width, height));
 
     if (savedX != null && savedY != null) {

@@ -1,4 +1,5 @@
 import 'package:brick_offline_first_with_supabase/brick_offline_first_with_supabase.dart';
+import 'package:brick_sqlite/brick_sqlite.dart';
 import 'package:brick_supabase/brick_supabase.dart';
 
 @ConnectOfflineFirstWithSupabase(
@@ -9,6 +10,7 @@ class UsuarioEmpresaPerfil extends OfflineFirstWithSupabaseModel {
   final String id;
 
   final String usuarioId;
+  @Sqlite(index: true)
   final String empresaId;
   final bool activo;
   final String? nombreDisplay;
@@ -16,6 +18,10 @@ class UsuarioEmpresaPerfil extends OfflineFirstWithSupabaseModel {
   final String? telefono;
   final String? emailContacto;
   final String? zonaHoraria;
+
+  @Supabase(name: 'version', defaultValue: '1')
+  @Sqlite(defaultValue: '1')
+  final int version;
 
   UsuarioEmpresaPerfil({
     required this.id,
@@ -27,5 +33,6 @@ class UsuarioEmpresaPerfil extends OfflineFirstWithSupabaseModel {
     this.telefono,
     this.emailContacto,
     this.zonaHoraria,
+    this.version = 1,
   });
 }

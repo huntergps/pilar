@@ -22,9 +22,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
-import '../models/adjunto_model.dart';
+import 'package:brick_gen/brick_gen.dart';
 import '../providers/adjuntos_provider.dart';
 import '../services/upload_service.dart';
+import '../../core/theme/pilar_spacing.dart';
+import 'loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // Panel principal
@@ -71,7 +73,7 @@ class _AdjuntosPanelState extends ConsumerState<AdjuntosPanel> {
     final adjuntosAsync = ref.watch(adjuntosNotifierProvider(_key));
 
     return adjuntosAsync.when(
-      loading: () => const Center(child: ProgressRing()),
+      loading: () => const PilarLoadingCenter(),
       error: (e, _) => _ErrorView(message: e.toString()),
       data: (adjState) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +87,7 @@ class _AdjuntosPanelState extends ConsumerState<AdjuntosPanel> {
                 : () => _startUpload(context),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
 
           // Barra de progreso (visible durante upload)
           if (adjState.isUploading) ...[
@@ -93,13 +95,13 @@ class _AdjuntosPanelState extends ConsumerState<AdjuntosPanel> {
               progress: adjState.uploadProgress,
               onCancel: () => _cancelToken?.cancel(),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
           ],
 
           // Error (si existe)
           if (adjState.error != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: Spacing.sm),
               child: InfoBar(
                 title: Text('Error al subir: ${adjState.error}'),
                 severity: InfoBarSeverity.error,
@@ -110,7 +112,7 @@ class _AdjuntosPanelState extends ConsumerState<AdjuntosPanel> {
           // Lista de adjuntos
           if (adjState.items.isEmpty && !adjState.isUploading)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: Spacing.md),
               child: Center(
                 child: Text(
                   'Sin adjuntos',
@@ -233,9 +235,9 @@ class _PanelHeader extends StatelessWidget {
           style: theme.typography.bodyStrong,
         ),
         if (count > 0) ...[
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
             decoration: BoxDecoration(
               color: theme.accentColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
@@ -256,7 +258,7 @@ class _PanelHeader extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(FluentIcons.attach, size: 14),
-              SizedBox(width: 6),
+              SizedBox(width: Spacing.sm),
               Text('Adjuntar'),
             ],
           ),
@@ -282,7 +284,7 @@ class _UploadProgressBar extends StatelessWidget {
     final p = progress;
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Spacing.ms),
       decoration: BoxDecoration(
         color: theme.resources.cardBackgroundFillColorDefault,
         borderRadius: BorderRadius.circular(6),
@@ -296,7 +298,7 @@ class _UploadProgressBar extends StatelessWidget {
           Row(
             children: [
               const Icon(FluentIcons.cloud_upload, size: 14),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   p != null ? 'Subiendo: ${p.label}' : 'Preparando upload…',
@@ -310,7 +312,7 @@ class _UploadProgressBar extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: Spacing.sm),
           ProgressBar(value: p != null ? p.fraction * 100 : null),
         ],
       ),
@@ -337,10 +339,10 @@ class _AdjuntoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     final dateLabel =
-        DateFormat('dd/MM/yyyy HH:mm').format(adjunto.createdAt.toLocal());
+        DateFormat('dd/MM/yyyy HH:mm').format((adjunto.createdAt ?? DateTime.now()).toLocal());
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: Spacing.xs),
       child: ListTile.selectable(
         leading: _FileIcon(category: adjunto.iconCategory, ext: adjunto.extension),
         title: Text(adjunto.nombre, maxLines: 1, overflow: TextOverflow.ellipsis),

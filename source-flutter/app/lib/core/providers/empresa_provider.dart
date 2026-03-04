@@ -67,6 +67,7 @@ class EmpresaConfig {
     this.colorSecundario,
     this.loginTitulo,
     required this.monedaFuncional,
+    this.zonaHoraria,
     this.colorForzadoEn,
     this.isFromRemote = false,
   });
@@ -96,6 +97,9 @@ class EmpresaConfig {
   /// Codigo ISO de la moneda funcional, por defecto 'USD'.
   final String monedaFuncional;
 
+  /// Zona horaria IANA de la empresa (ej.: 'America/Guayaquil').
+  final String? zonaHoraria;
+
   /// Timestamp en que el admin forzó el color a todos los usuarios.
   final DateTime? colorForzadoEn;
 
@@ -122,6 +126,7 @@ class EmpresaConfig {
       colorSecundario: json['color_secundario'] as String?,
       loginTitulo: json['login_titulo'] as String?,
       monedaFuncional: json['moneda_funcional'] as String? ?? 'USD',
+      zonaHoraria: json['zona_horaria'] as String?,
       colorForzadoEn: json['color_forzado_en'] != null
           ? DateTime.tryParse(json['color_forzado_en'] as String)
           : null,

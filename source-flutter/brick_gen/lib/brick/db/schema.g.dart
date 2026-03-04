@@ -1,22 +1,63 @@
 // GENERATED CODE DO NOT EDIT
 // This file should be version controlled
 import 'package:brick_sqlite/db.dart';
+part '20260304173319.migration.dart';
 part '20260226174255.migration.dart';
 part '20260302004206.migration.dart';
 part '20260303000100.migration.dart';
+part '20260304131858.migration.dart';
+part '20260304135108.migration.dart';
+part '20260304161353.migration.dart';
+part '20260304170736.migration.dart';
+part '20260304173046.migration.dart';
 
 /// All intelligently-generated migrations from all `@Migratable` classes on disk
 final migrations = <Migration>{
+  const Migration20260304173319(),
   const Migration20260226174255(),
   const Migration20260302004206(),
   const Migration20260303000100(),
+  const Migration20260304131858(),
+  const Migration20260304135108(),
+  const Migration20260304161353(),
+  const Migration20260304170736(),
+  const Migration20260304173046(),
 };
 
 /// A consumable database structure including the latest generated migration.
 final schema = Schema(
-  20260303000100,
+  20260304173046,
   generatorVersion: 1,
   tables: <SchemaTable>{
+    SchemaTable(
+      'Adjunto',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('entidad_tipo', Column.varchar),
+        SchemaColumn('entidad_id', Column.varchar),
+        SchemaColumn('nombre', Column.varchar),
+        SchemaColumn('nombre_original', Column.varchar),
+        SchemaColumn('mime_type', Column.varchar),
+        SchemaColumn('tamanio_bytes', Column.integer),
+        SchemaColumn('storage_path', Column.varchar),
+        SchemaColumn('storage_bucket', Column.varchar),
+        SchemaColumn('descripcion', Column.varchar),
+        SchemaColumn('es_publico', Column.boolean),
+        SchemaColumn('created_at', Column.datetime),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['entidad_tipo'], unique: false),
+        SchemaIndex(columns: ['entidad_id'], unique: false),
+      },
+    ),
     SchemaTable(
       'AlertaEmpresa',
       columns: <SchemaColumn>{
@@ -37,8 +78,118 @@ final schema = Schema(
         SchemaColumn('accion_url', Column.varchar),
         SchemaColumn('estado', Column.varchar),
         SchemaColumn('created_at', Column.datetime),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['empresa_id'], unique: false),
+        SchemaIndex(columns: ['estado'], unique: false),
+      },
+    ),
+    SchemaTable(
+      'ChatMensaje',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('canal_id', Column.varchar),
+        SchemaColumn('usuario_id', Column.varchar),
+        SchemaColumn('cuerpo', Column.varchar),
+        SchemaColumn('created_at', Column.datetime),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['canal_id'], unique: false),
+      },
+    ),
+    SchemaTable(
+      'ChatterMensaje',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('entidad_tipo', Column.varchar),
+        SchemaColumn('entidad_id', Column.varchar),
+        SchemaColumn('tipo', Column.varchar),
+        SchemaColumn('subtype', Column.varchar),
+        SchemaColumn('es_interno', Column.boolean),
+        SchemaColumn('cuerpo', Column.varchar),
+        SchemaColumn('autor_id', Column.varchar),
+        SchemaColumn('autor_nombre', Column.varchar),
+        SchemaColumn('autor_avatar', Column.varchar),
+        SchemaColumn('creado_en', Column.datetime),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['entidad_tipo'], unique: false),
+        SchemaIndex(columns: ['entidad_id'], unique: false),
+      },
+    ),
+    SchemaTable(
+      'ComConversacion',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('cuenta_id', Column.varchar),
+        SchemaColumn('canal', Column.varchar),
+        SchemaColumn('destinatario_ref', Column.varchar),
+        SchemaColumn('destinatario_nombre', Column.varchar),
+        SchemaColumn('ultimo_mensaje_en', Column.datetime),
+        SchemaColumn('valida_hasta', Column.datetime),
+        SchemaColumn('activa', Column.boolean),
+        SchemaColumn('creado_en', Column.datetime),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['activa'], unique: false),
+      },
+    ),
+    SchemaTable(
+      'ComMensaje',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('cuenta_id', Column.varchar),
+        SchemaColumn('conversacion_id', Column.varchar),
+        SchemaColumn('tipo', Column.varchar),
+        SchemaColumn('canal', Column.varchar),
+        SchemaColumn('destinatario_ref', Column.varchar),
+        SchemaColumn('destinatario_nombre', Column.varchar),
+        SchemaColumn('asunto', Column.varchar),
+        SchemaColumn('cuerpo', Column.varchar),
+        SchemaColumn('estado', Column.varchar),
+        SchemaColumn('mensaje_uid', Column.varchar),
+        SchemaColumn('enviado_en', Column.datetime),
+        SchemaColumn('entregado_en', Column.datetime),
+        SchemaColumn('leido_en', Column.datetime),
+        SchemaColumn('creado_en', Column.datetime),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['conversacion_id'], unique: false),
+        SchemaIndex(columns: ['estado'], unique: false),
+      },
     ),
     SchemaTable(
       'Contacto',
@@ -67,8 +218,11 @@ final schema = Schema(
         SchemaColumn('direccion', Column.varchar),
         SchemaColumn('notas', Column.varchar),
         SchemaColumn('activo', Column.boolean),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['activo'], unique: false),
+      },
     ),
     SchemaTable(
       'Empresa',
@@ -88,6 +242,7 @@ final schema = Schema(
         SchemaColumn('color_primario', Column.varchar),
         SchemaColumn('color_secundario', Column.varchar),
         SchemaColumn('estado', Column.varchar),
+        SchemaColumn('version', Column.integer),
       },
       indices: <SchemaIndex>{},
     ),
@@ -108,6 +263,7 @@ final schema = Schema(
         SchemaColumn('icono', Column.varchar),
         SchemaColumn('orden', Column.integer),
         SchemaColumn('activo', Column.boolean),
+        SchemaColumn('version', Column.integer),
       },
       indices: <SchemaIndex>{},
     ),
@@ -125,8 +281,11 @@ final schema = Schema(
         SchemaColumn('empresa_id', Column.varchar),
         SchemaColumn('modulo_id', Column.varchar),
         SchemaColumn('habilitado', Column.boolean),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['empresa_id'], unique: false),
+      },
     ),
     SchemaTable(
       'Notificacion',
@@ -148,8 +307,12 @@ final schema = Schema(
         SchemaColumn('accion_url', Column.varchar),
         SchemaColumn('leida', Column.boolean),
         SchemaColumn('created_at', Column.datetime),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['empresa_id'], unique: false),
+        SchemaIndex(columns: ['leida'], unique: false),
+      },
     ),
     SchemaTable(
       'Producto',
@@ -165,13 +328,16 @@ final schema = Schema(
         SchemaColumn('codigo', Column.varchar),
         SchemaColumn('nombre', Column.varchar),
         SchemaColumn('tipo', Column.varchar),
-        SchemaColumn('precio_venta', Column.Double),
-        SchemaColumn('precio_costo', Column.Double),
+        SchemaColumn('precio_venta', Column.varchar),
+        SchemaColumn('precio_costo', Column.varchar),
         SchemaColumn('descripcion', Column.varchar),
         SchemaColumn('codigo_principal_barras', Column.varchar),
         SchemaColumn('activo', Column.boolean),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['activo'], unique: false),
+      },
     ),
     SchemaTable(
       'ProductoFamilia',
@@ -187,6 +353,27 @@ final schema = Schema(
         SchemaColumn('nombre', Column.varchar),
         SchemaColumn('descripcion', Column.varchar),
         SchemaColumn('activo', Column.boolean),
+        SchemaColumn('version', Column.integer),
+      },
+      indices: <SchemaIndex>{},
+    ),
+    SchemaTable(
+      'Rol',
+      columns: <SchemaColumn>{
+        SchemaColumn(
+          '_brick_id',
+          Column.integer,
+          autoincrement: true,
+          nullable: false,
+          isPrimaryKey: true,
+        ),
+        SchemaColumn('id', Column.varchar),
+        SchemaColumn('codigo', Column.varchar),
+        SchemaColumn('nombre', Column.varchar),
+        SchemaColumn('descripcion', Column.varchar),
+        SchemaColumn('es_sistema', Column.boolean),
+        SchemaColumn('activo', Column.boolean),
+        SchemaColumn('version', Column.integer),
       },
       indices: <SchemaIndex>{},
     ),
@@ -209,8 +396,11 @@ final schema = Schema(
         SchemaColumn('telefono', Column.varchar),
         SchemaColumn('email_contacto', Column.varchar),
         SchemaColumn('zona_horaria', Column.varchar),
+        SchemaColumn('version', Column.integer),
       },
-      indices: <SchemaIndex>{},
+      indices: <SchemaIndex>{
+        SchemaIndex(columns: ['empresa_id'], unique: false),
+      },
     ),
   },
 );

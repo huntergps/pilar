@@ -4,9 +4,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_auth_ui_fluent/supabase_auth_ui_fluent.dart';
 
+import '../../../core/providers/auth_actions_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 /// Full-page centered login screen.
 ///
@@ -45,11 +48,11 @@ class LoginScreen extends ConsumerWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: isDesktop ? 0 : 24,
-                vertical: 48,
+                vertical: Spacing.xxl,
               ),
               child: isDesktop
                   ? Card(
-                      padding: const EdgeInsets.all(32),
+                      padding: const EdgeInsets.all(Spacing.xl),
                       child: _LoginContent(theme: theme),
                     )
                   : _LoginContent(theme: theme),
@@ -73,26 +76,26 @@ void _showEmailConfirmationBanner(BuildContext context, String email) {
   );
 }
 
-class _EmailConfirmationDialog extends StatefulWidget {
+class _EmailConfirmationDialog extends ConsumerStatefulWidget {
   final String email;
   const _EmailConfirmationDialog({required this.email});
 
   @override
-  State<_EmailConfirmationDialog> createState() =>
+  ConsumerState<_EmailConfirmationDialog> createState() =>
       _EmailConfirmationDialogState();
 }
 
-class _EmailConfirmationDialogState extends State<_EmailConfirmationDialog> {
+class _EmailConfirmationDialogState
+    extends ConsumerState<_EmailConfirmationDialog> {
   bool _resending = false;
   bool _resent = false;
 
   Future<void> _resend() async {
     setState(() => _resending = true);
     try {
-      await Supabase.instance.client.auth.resend(
-        type: OtpType.signup,
-        email: widget.email,
-      );
+      await ref
+          .read(authActionsProvider.notifier)
+          .resendConfirmEmail(widget.email);
       if (mounted) setState(() => _resent = true);
     } catch (_) {
       // Si falla el reenvío no bloqueamos al usuario.
@@ -109,7 +112,7 @@ class _EmailConfirmationDialogState extends State<_EmailConfirmationDialog> {
       title: Row(
         children: [
           Icon(FluentIcons.mail, color: theme.accentColor),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           const Text('Confirma tu correo'),
         ],
       ),
@@ -121,16 +124,16 @@ class _EmailConfirmationDialogState extends State<_EmailConfirmationDialog> {
             'Te enviamos un enlace de confirmación a:',
             style: theme.typography.body,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           Text(widget.email, style: theme.typography.bodyStrong),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           Text(
             'Abre el correo y haz clic en el enlace para activar tu cuenta. '
             'Después regresa aquí e inicia sesión.',
             style: theme.typography.body,
           ),
           if (_resent) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             const InfoBar(
               title: Text('Correo reenviado'),
               content: Text('Revisa también la carpeta de spam.'),
@@ -147,12 +150,8 @@ class _EmailConfirmationDialogState extends State<_EmailConfirmationDialog> {
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: ProgressRing(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 6),
+                      PilarProgressRing(size: 12),
+                      SizedBox(width: Spacing.sm),
                       Text('Reenviando...'),
                     ],
                   )
@@ -191,7 +190,7 @@ class _LoginContent extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: Spacing.xl),
 
         // --- Email / password form ---
         SupaEmailAuth(
@@ -229,14 +228,14 @@ class _LoginContent extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // --- Divider "o continúa con" ---
         Row(
           children: [
             const Expanded(child: Divider()),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.ms),
               child: Text(
                 'o continúa con',
                 style: FluentTheme.of(context).typography.caption,
@@ -246,7 +245,7 @@ class _LoginContent extends StatelessWidget {
           ],
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // --- OAuth (Google) ---
         SupaSocialsAuth(

@@ -1,12 +1,13 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:brick_gen/brick_gen.dart';
 
+import '../providers/producto_write_provider.dart';
 import '../providers/productos_provider.dart';
+import '../../../core/providers/brick_write_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Pantalla principal — workspace con pestañas aislado por módulo
@@ -126,27 +127,61 @@ class _ProductosLista extends ConsumerWidget {
       onNew: () => onOpenTab(null),
       onRowTap: onOpenTab,
       onDelete: (p) async {
-        if (!kIsWeb && PilarRepository.isInitialized) {
-          await PilarRepository.instance.upsert<Producto>(Producto(
-            id: p['id'] as String,
-            codigo: p['codigo'] as String?,
-            nombre: p['nombre'] as String? ?? '',
-            tipo: p['tipo'] as String? ?? 'PRODUCTO',
-            precioVenta: (p['precio_venta'] as num?)?.toDouble(),
-            precioCosto: (p['precio_costo'] as num?)?.toDouble(),
-            descripcion: p['descripcion'] as String?,
-            activo: false,
-          ));
-        } else {
-          await Supabase.instance.client.rpc(
-            'entidades_actualizar_producto',
-            params: {
-              'p_id': p['id'] as String,
-              'p_data': {'activo': false},
-            },
-          );
+        final producto = Producto(
+          id: p['id'] as String,
+          codigo: p['codigo'] as String?,
+          nombre: p['nombre'] as String? ?? '',
+          tipo: p['tipo'] as String? ?? 'PRODUCTO',
+          precioVenta: p['precio_venta']?.toString(),
+          precioCosto: p['precio_costo']?.toString(),
+          descripcion: p['descripcion'] as String?,
+          activo: false,
+        );
+        try {
+          await ref.read(productoWriteProvider.notifier).save(producto);
+        } on OfflineWriteException catch (e) {
+          if (context.mounted) {
+            if (e.isConflict) {
+              displayInfoBar(
+                context,
+                builder: (_, close) => InfoBar(
+                  title: const Text('Conflicto'),
+                  content: const Text(
+                    'Otro usuario modificó este registro. '
+                    'Recarga e intenta de nuevo.',
+                  ),
+                  severity: InfoBarSeverity.error,
+                  onClose: close,
+                ),
+              );
+            } else {
+              displayInfoBar(
+                context,
+                builder: (_, close) => InfoBar(
+                  title: const Text('Sin conexión'),
+                  content: const Text(
+                    'Sin conexión. El cambio se guardará '
+                    'cuando recuperes la red.',
+                  ),
+                  severity: InfoBarSeverity.warning,
+                  onClose: close,
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          if (context.mounted) {
+            displayInfoBar(
+              context,
+              builder: (_, close) => InfoBar(
+                title: const Text('Error'),
+                content: Text('No se pudo eliminar el producto: $e'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ),
+            );
+          }
         }
-        ref.read(productosProvider.notifier).refresh();
       },
       deleteConfirmText: (p) =>
           '¿Eliminar "${p['nombre']}"? Esta acción no se puede deshacer.',
@@ -173,7 +208,7 @@ class _ProductosLista extends ConsumerWidget {
 // Pestaña formulario: crear / editar producto
 // ---------------------------------------------------------------------------
 
-class _ProductoForm extends StatefulWidget {
+class _ProductoForm extends ConsumerStatefulWidget {
   final Map<String, dynamic>? producto;
   final VoidCallback onSaved;
   final VoidCallback onCancel;
@@ -185,10 +220,10 @@ class _ProductoForm extends StatefulWidget {
   });
 
   @override
-  State<_ProductoForm> createState() => _ProductoFormState();
+  ConsumerState<_ProductoForm> createState() => _ProductoFormState();
 }
 
-class _ProductoFormState extends State<_ProductoForm> {
+class _ProductoFormState extends ConsumerState<_ProductoForm> {
   final _codigoCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _ventaCtrl = TextEditingController();
@@ -228,8 +263,16 @@ class _ProductoFormState extends State<_ProductoForm> {
       throw 'El nombre es requerido.';
     }
 
-    final pv = double.tryParse(_ventaCtrl.text.replaceAll(',', '.'));
-    final pc = double.tryParse(_costoCtrl.text.replaceAll(',', '.'));
+    final pvText = _ventaCtrl.text.trim().replaceAll(',', '.');
+    final pcText = _costoCtrl.text.trim().replaceAll(',', '.');
+
+    if (pvText.isNotEmpty && double.tryParse(pvText) == null) {
+      throw 'El precio de venta debe ser un número válido.';
+    }
+    if (pcText.isNotEmpty && double.tryParse(pcText) == null) {
+      throw 'El precio de costo debe ser un número válido.';
+    }
+
     final codigoVal = _codigoCtrl.text.trim().isNotEmpty
         ? _codigoCtrl.text.trim()
         : null;
@@ -239,38 +282,25 @@ class _ProductoFormState extends State<_ProductoForm> {
 
     final id = widget.producto?['id'] as String? ?? const Uuid().v4();
 
-    if (!kIsWeb && PilarRepository.isInitialized) {
-      // Offline-first: escribe en SQLite primero, sincroniza con Supabase en background.
-      await PilarRepository.instance.upsert<Producto>(Producto(
-        id: id,
-        codigo: codigoVal,
-        nombre: _nombreCtrl.text.trim(),
-        tipo: _tipo,
-        precioVenta: pv,
-        precioCosto: pc,
-        descripcion: descVal,
-        activo: true,
-      ));
-    } else {
-      // Web: llamada directa a Supabase (no hay SQLite en web).
-      final data = {
-        'codigo': codigoVal,
-        'nombre': _nombreCtrl.text.trim(),
-        'tipo': _tipo,
-        'precio_venta': pv,
-        'precio_costo': pc,
-        'descripcion': descVal,
-      };
-      if (widget.producto != null) {
-        await Supabase.instance.client.rpc(
-          'entidades_actualizar_producto',
-          params: {'p_id': id, 'p_data': data},
-        );
+    final producto = Producto(
+      id: id,
+      codigo: codigoVal,
+      nombre: _nombreCtrl.text.trim(),
+      tipo: _tipo,
+      precioVenta: pvText.isNotEmpty ? pvText : null,
+      precioCosto: pcText.isNotEmpty ? pcText : null,
+      descripcion: descVal,
+      activo: true,
+    );
+
+    try {
+      await ref.read(productoWriteProvider.notifier).save(producto);
+    } on OfflineWriteException catch (e) {
+      if (e.isConflict) {
+        throw 'Conflicto: otro usuario modificó este registro. '
+            'Recarga e intenta de nuevo.';
       } else {
-        await Supabase.instance.client.rpc(
-          'entidades_crear_producto',
-          params: {'p_data': data},
-        );
+        throw 'Sin conexión. El cambio se guardará cuando recuperes la red.';
       }
     }
 
@@ -302,7 +332,7 @@ class _ProductoFormState extends State<_ProductoForm> {
                 onChanged: (v) => setState(() => _tipo = v!),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: Spacing.xs),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -316,7 +346,7 @@ class _ProductoFormState extends State<_ProductoForm> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: Spacing.ms),
                 Expanded(
                   flex: 2,
                   child: InfoLabel(

@@ -1,4 +1,5 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import '../../core/theme/pilar_spacing.dart';
 
 // =============================================================================
 // UserCard — widget reutilizable: avatar circular + nombre + email/subtítulo
@@ -29,7 +30,7 @@ class UserCard extends StatelessWidget {
     this.onTap,
     this.isOnline = false,
     this.dimmed = false,
-    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+    this.padding = const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.ms),
   });
 
   /// Nombre de display (bodyStrong).
@@ -103,8 +104,8 @@ class UserCard extends StatelessWidget {
           children: [
             avatar,
             Positioned(
-              right: 0,
-              bottom: 0,
+              right: Spacing.none,
+              bottom: Spacing.none,
               child: Container(
                 width: avatarRadius * 0.5,
                 height: avatarRadius * 0.5,
@@ -140,7 +141,7 @@ class UserCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (email != null && email!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     email!,
                     style: theme.typography.caption
@@ -163,7 +164,7 @@ class UserCard extends StatelessWidget {
             ),
           ),
           if (trailing != null) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             trailing!,
           ],
         ],

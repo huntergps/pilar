@@ -8,8 +8,8 @@
 //   · Tags clickeables → aplican filtro
 //
 // Responsive:
-//   ≥ 600 px → SfDataGrid (columnas: tipo, nombre, tamaño, tags, fecha, acciones)
-//   < 600 px → ListView de cards
+//   ≥ PilarBreakpoints.mobile → SfDataGrid (columnas: tipo, nombre, tamaño, tags, fecha, acciones)
+//   < PilarBreakpoints.mobile → ListView de cards
 
 import 'dart:async';
 
@@ -17,17 +17,21 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
-import '../../../core/models/adjunto_model.dart';
+import 'package:brick_gen/brick_gen.dart';
+import '../../../core/theme/pilar_breakpoints.dart';
 import '../../../core/providers/adjuntos_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/upload_service.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../providers/archivos_admin_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Tipos de entidad disponibles (compartido entre _FilterBar y upload dialog)
@@ -104,7 +108,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
         case 'tamanio':
           cmp = a.tamanioBytes.compareTo(b.tamanioBytes);
         case 'fecha':
-          cmp = a.createdAt.compareTo(b.createdAt);
+          cmp = (a.createdAt ?? DateTime.now()).compareTo(b.createdAt ?? DateTime.now());
         default:
           return 0;
       }
@@ -186,7 +190,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
         ),
       ),
       content: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(Spacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -211,19 +215,19 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
 
             // ---- Barra de progreso de upload ----
             if (_isUploading) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: Spacing.ms),
               _UploadProgressBar(
                 progress: _uploadProgress,
                 onCancel: () => _cancelToken?.cancel(),
               ),
             ],
 
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Contenido ----
             Expanded(
               child: adjAsync.when(
-                loading: () => const Center(child: ProgressRing()),
+                loading: () => const PilarLoadingCenter(),
                 error: (e, _) => Center(
                   child: InfoBar(
                     title: Text('Error al cargar archivos: $e'),
@@ -232,13 +236,9 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                 ),
                 data: (items) {
                   if (items.isEmpty && !_isUploading) {
-                    return Center(
-                      child: Text(
-                        'Sin archivos',
-                        style: theme.typography.body?.copyWith(
-                          color: theme.resources.textFillColorSecondary,
-                        ),
-                      ),
+                    return const PilarEmptyState(
+                      message: 'Sin archivos',
+                      icon: FluentIcons.document,
                     );
                   }
 
@@ -246,7 +246,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
 
                   return LayoutBuilder(
                     builder: (ctx, constraints) {
-                      if (constraints.maxWidth >= 600) {
+                      if (constraints.maxWidth >= PilarBreakpoints.mobile) {
                         return _ArchivosGrid(
                           items:         sorted,
                           sortColumn:    _sortColumn,
@@ -305,17 +305,17 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
     );
 
     if (confirmed == true) {
-      try {
-        await Supabase.instance.client.rpc('eliminar_adjunto', params: {
-          'p_adjunto_id': adjunto.id,
-        });
+      final result = await ref
+          .read(archivosAdminProvider.notifier)
+          .eliminarAdjunto(adjuntoId: adjunto.id);
+      if (result.ok) {
         ref.invalidate(todosAdjuntosProvider(_params));
-      } catch (e) {
+      } else {
         if (mounted) {
           await displayInfoBar(
             context,
             builder: (_, close) => InfoBar(
-              title: Text('Error al eliminar: $e'),
+              title: Text('Error al eliminar: ${result.error}'),
               severity: InfoBarSeverity.error,
               onClose: close,
             ),
@@ -364,7 +364,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                   category: adjunto.iconCategory,
                   ext: adjunto.extension,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: Spacing.ms),
                 const Expanded(child: Text('Detalle del archivo')),
               ],
             ),
@@ -380,18 +380,18 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                       controller: nombreCtrl,
                       placeholder: 'Nombre del archivo',
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Spacing.ms),
 
                     // Metadatos readonly
                     _MetadataRow(adjunto: adjunto),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Spacing.ms),
 
                     // Tags
                     Text('Etiquetas', style: theme.typography.bodyStrong),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: Spacing.sm),
                     Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
+                      spacing: Spacing.xs,
+                      runSpacing: Spacing.xs,
                       children: [
                         ...currentTags.map((t) => _RemovableTagChip(
                               tag: t,
@@ -432,11 +432,11 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Spacing.ms),
 
                     // Descripción
                     Text('Descripción', style: theme.typography.bodyStrong),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: Spacing.sm),
                     TextBox(
                       controller: descripcionCtrl,
                       placeholder: 'Descripción opcional...',
@@ -469,87 +469,98 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                         isSaving ? null : () => Navigator.pop(dctx),
                     child: const Text('Cancelar'),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Spacing.sm),
                   // Guardar
                   FilledButton(
                     onPressed: isSaving
                         ? null
                         : () async {
                             setDlg(() => isSaving = true);
-                            try {
-                              final client = Supabase.instance.client;
+                            String? errorMsg;
 
-                              // Renombrar si cambió
-                              final newName = nombreCtrl.text.trim();
-                              if (newName.isNotEmpty &&
-                                  newName != adjunto.nombre) {
-                                await client
-                                    .rpc('renombrar_adjunto', params: {
-                                  'p_adjunto_id': adjunto.id,
-                                  'p_nombre': newName,
-                                });
-                              }
+                            // Renombrar si cambió
+                            final newName = nombreCtrl.text.trim();
+                            if (newName.isNotEmpty &&
+                                newName != adjunto.nombre) {
+                              final r = await ref
+                                  .read(archivosAdminProvider.notifier)
+                                  .renombrarAdjunto(
+                                    adjuntoId: adjunto.id,
+                                    nombre: newName,
+                                  );
+                              if (!r.ok) errorMsg = r.error;
+                            }
 
+                            if (errorMsg == null) {
                               // Tags diff
                               final oldSet =
                                   Set<String>.from(adjunto.tags);
                               final newSet =
                                   Set<String>.from(currentTags);
                               for (final t in newSet.difference(oldSet)) {
-                                await client.rpc('agregar_tag_adjunto',
-                                    params: {
-                                      'p_adjunto_id': adjunto.id,
-                                      'p_tag': t,
-                                    });
+                                final r = await ref
+                                    .read(archivosAdminProvider.notifier)
+                                    .agregarTag(
+                                        adjuntoId: adjunto.id, tag: t);
+                                if (!r.ok) {
+                                  errorMsg = r.error;
+                                  break;
+                                }
                               }
-                              for (final t in oldSet.difference(newSet)) {
-                                await client.rpc('quitar_tag_adjunto',
-                                    params: {
-                                      'p_adjunto_id': adjunto.id,
-                                      'p_tag': t,
-                                    });
+                              if (errorMsg == null) {
+                                for (final t in oldSet.difference(newSet)) {
+                                  final r = await ref
+                                      .read(archivosAdminProvider.notifier)
+                                      .quitarTag(
+                                          adjuntoId: adjunto.id, tag: t);
+                                  if (!r.ok) {
+                                    errorMsg = r.error;
+                                    break;
+                                  }
+                                }
                               }
+                            }
 
+                            if (errorMsg == null) {
                               // Descripción si cambió
                               final newDesc =
                                   descripcionCtrl.text.trim();
                               final oldDesc =
                                   adjunto.descripcion ?? '';
                               if (newDesc != oldDesc) {
-                                await client.rpc(
-                                    'actualizar_descripcion_adjunto',
-                                    params: {
-                                      'p_adjunto_id': adjunto.id,
-                                      'p_descripcion': newDesc.isEmpty
+                                final r = await ref
+                                    .read(archivosAdminProvider.notifier)
+                                    .actualizarDescripcion(
+                                      adjuntoId: adjunto.id,
+                                      descripcion: newDesc.isEmpty
                                           ? null
                                           : newDesc,
-                                    });
+                                    );
+                                if (!r.ok) errorMsg = r.error;
                               }
+                            }
 
-                              if (dctx.mounted) Navigator.pop(dctx);
-                              ref.invalidate(
-                                  todosAdjuntosProvider(_params));
-                            } catch (e) {
+                            if (errorMsg != null) {
                               setDlg(() => isSaving = false);
                               if (mounted) {
                                 displayInfoBar(
                                   context,
                                   builder: (_, close) => InfoBar(
-                                    title:
-                                        Text('Error al guardar: $e'),
+                                    title: Text(
+                                        'Error al guardar: $errorMsg'),
                                     severity: InfoBarSeverity.error,
                                     onClose: close,
                                   ),
                                 );
                               }
+                            } else {
+                              if (dctx.mounted) Navigator.pop(dctx);
+                              ref.invalidate(
+                                  todosAdjuntosProvider(_params));
                             }
                           },
                     child: isSaving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: ProgressRing(strokeWidth: 2),
-                          )
+                        ? const PilarProgressRing.small()
                         : const Text('Guardar'),
                   ),
                 ],
@@ -573,31 +584,9 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
   /// Retorna lista de {id, nombre}. Si la tabla no existe, retorna [].
   Future<List<Map<String, dynamic>>> _searchEntidad(
       String tipo, String query, String empresaId) async {
-    const tableMap = {
-      'contacto': ('contactos', 'nombre_completo'),
-      'producto': ('productos', 'nombre'),
-      'factura': ('facturas', 'numero'),
-      'orden_venta': ('ordenes_venta', 'numero'),
-      'orden_compra': ('ordenes_compra', 'numero'),
-      'empleado': ('empleados', 'nombre_completo'),
-    };
-    final info = tableMap[tipo];
-    if (info == null) return [];
-    final (tableName, nameField) = info;
-    try {
-      final rows = await Supabase.instance.client
-          .from(tableName)
-          .select('id, $nameField')
-          .eq('empresa_id', empresaId)
-          .ilike(nameField, '%$query%')
-          .limit(10);
-      return (rows as List).map((r) => {
-            'id': r['id'] as String,
-            'nombre': r[nameField]?.toString() ?? r['id'] as String,
-          }).toList();
-    } catch (_) {
-      return [];
-    }
+    return ref
+        .read(archivosAdminProvider.notifier)
+        .searchEntidad(tipo: tipo, query: query, empresaId: empresaId);
   }
 
   Future<void> _mostrarUploadDialog() async {
@@ -627,7 +616,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                 children: [
                   // ---- Tipo de entidad ----
                   const Text('Asociar a'),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.xs),
                   ComboBox<String>(
                     value: selectedTipo,
                     isExpanded: true,
@@ -645,12 +634,12 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                       }
                     }),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Spacing.ms),
 
                   // ---- Buscador de entidad (solo cuando no es empresa) ----
                   if (needsSearch) ...[
                     Text('Buscar $selectedTipo'),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: Spacing.xs),
                     AutoSuggestBox<String>(
                       controller: entidadCtrl,
                       placeholder: 'Escribe para buscar...',
@@ -675,7 +664,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                     ),
                     if (selectedEntidadId == null)
                       Padding(
-                        padding: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.only(top: Spacing.xs),
                         child: Text(
                           'Selecciona un registro o el archivo se asociará a la empresa.',
                           style: TextStyle(
@@ -683,7 +672,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                               color: FluentTheme.of(dialogCtx).inactiveColor),
                         ),
                       ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Spacing.ms),
                   ],
 
                   // ---- Selector de archivo ----
@@ -697,7 +686,7 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
                         },
                       ),
                       if (selectedFile != null) ...[
-                        const SizedBox(width: 10),
+                        const SizedBox(width: Spacing.ms),
                         Expanded(
                           child: Text(
                             selectedFile!.name,
@@ -762,16 +751,16 @@ class _ArchivosScreenState extends ConsumerState<ArchivosScreen> {
       await progressCtrl.close();
       await sub.cancel();
 
-      await Supabase.instance.client.rpc('registrar_adjunto', params: {
-        'p_empresa_id'      : empresaId,
-        'p_entidad_tipo'    : tipoFinal,
-        'p_entidad_id'      : entidadId,
-        'p_nombre'          : result.nombreOriginal,
-        'p_nombre_original' : result.nombreOriginal,
-        'p_mime_type'       : result.mimeType,
-        'p_tamanio_bytes'   : result.tamanioBytes,
-        'p_storage_path'    : result.storagePath,
-      });
+      await ref.read(archivosAdminProvider.notifier).registrarAdjunto(
+            empresaId: empresaId,
+            entidadTipo: tipoFinal,
+            entidadId: entidadId,
+            nombre: result.nombreOriginal,
+            nombreOriginal: result.nombreOriginal,
+            mimeType: result.mimeType,
+            tamanioBytes: result.tamanioBytes,
+            storagePath: result.storagePath,
+          );
 
       if (mounted) ref.invalidate(todosAdjuntosProvider(_params));
     } on UploadException catch (e) {
@@ -837,8 +826,8 @@ class _FilterBar extends StatelessWidget {
         filterTipo != null || tagCtrl.text.isNotEmpty || searchCtrl.text.isNotEmpty;
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: Spacing.sm,
+      runSpacing: Spacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         // Búsqueda por nombre
@@ -848,7 +837,7 @@ class _FilterBar extends StatelessWidget {
             controller: searchCtrl,
             placeholder: 'Buscar por nombre...',
             prefix: const Padding(
-              padding: EdgeInsets.only(left: 8),
+              padding: EdgeInsets.only(left: Spacing.sm),
               child: Icon(FluentIcons.search, size: 14),
             ),
             onChanged: onSearch,
@@ -1031,7 +1020,7 @@ class _ColHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
         child: Text(
           text,
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -1065,7 +1054,7 @@ class _SortableColHeader extends StatelessWidget {
     return GestureDetector(
       onTap: () => onSort(columnName),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
         child: Row(
           children: [
             Text(
@@ -1078,7 +1067,7 @@ class _SortableColHeader extends StatelessWidget {
               ),
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Icon(
               icon,
               size: 11,
@@ -1126,7 +1115,7 @@ class _ArchivosDataSource extends DataGridSource {
         DataGridCell(columnName: 'tags',     value: a.tags.join(', ')),
         DataGridCell(
           columnName: 'fecha',
-          value: DateFormat('dd/MM/yy HH:mm').format(a.createdAt.toLocal()),
+          value: DateFormat('dd/MM/yy HH:mm').format((a.createdAt ?? DateTime.now()).toLocal()),
         ),
         DataGridCell(columnName: 'acciones', value: a),
       ]);
@@ -1182,12 +1171,12 @@ class _ArchivosDataSource extends DataGridSource {
 
           case 'tags':
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.xs),
               child: adjunto.tags.isEmpty
                   ? const SizedBox.shrink()
                   : Wrap(
-                      spacing: 4,
-                      runSpacing: 2,
+                      spacing: Spacing.xs,
+                      runSpacing: Spacing.xxs,
                       children: adjunto.tags
                           .map((t) => _ClickableTagChip(
                                 tag: t,
@@ -1199,7 +1188,7 @@ class _ArchivosDataSource extends DataGridSource {
 
           default:
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xs),
               child: Text(
                 cell.value.toString(),
                 overflow: TextOverflow.ellipsis,
@@ -1214,7 +1203,7 @@ class _ArchivosDataSource extends DataGridSource {
 }
 
 // ---------------------------------------------------------------------------
-// Vista ListView (< 600 px)
+// Vista ListView (< PilarBreakpoints.mobile)
 // ---------------------------------------------------------------------------
 
 class _ArchivosList extends StatelessWidget {
@@ -1238,7 +1227,7 @@ class _ArchivosList extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.separated(
       itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 4),
+      separatorBuilder: (_, __) => const SizedBox(height: Spacing.xs),
       itemBuilder: (ctx, i) => _ArchivoCard(
         adjunto:     items[i],
         onEliminar:  () => onEliminar(items[i]),
@@ -1271,12 +1260,12 @@ class _ArchivoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme     = FluentTheme.of(context);
-    final dateLabel = DateFormat('dd/MM/yy').format(adjunto.createdAt.toLocal());
+    final dateLabel = DateFormat('dd/MM/yy').format((adjunto.createdAt ?? DateTime.now()).toLocal());
     final isPreviewable = adjunto.iconCategory == 'image' ||
         adjunto.iconCategory == 'pdf';
 
     return Card(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Spacing.ms),
       child: Row(
         children: [
           Expanded(
@@ -1289,7 +1278,7 @@ class _ArchivoCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: Spacing.xxs),
                 Text(
                   '${adjunto.entidadTipo} · ${adjunto.tamanioLabel} · $dateLabel',
                   style: theme.typography.caption?.copyWith(
@@ -1297,9 +1286,9 @@ class _ArchivoCard extends StatelessWidget {
                   ),
                 ),
                 if (adjunto.tags.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.xs),
                   Wrap(
-                    spacing: 4,
+                    spacing: Spacing.xs,
                     children: adjunto.tags
                         .map((t) => _ClickableTagChip(
                               tag: t,
@@ -1365,7 +1354,7 @@ class _ClickableTagChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
         decoration: BoxDecoration(
           color: theme.accentColor.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(8),
@@ -1393,7 +1382,7 @@ class _RemovableTagChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     return Container(
-      padding: const EdgeInsets.only(left: 8, right: 4, top: 2, bottom: 2),
+      padding: const EdgeInsets.only(left: Spacing.sm, right: Spacing.xs, top: Spacing.xxs, bottom: Spacing.xxs),
       decoration: BoxDecoration(
         color: theme.accentColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
@@ -1408,7 +1397,7 @@ class _RemovableTagChip extends StatelessWidget {
               fontSize: 11,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           GestureDetector(
             onTap: onRemove,
             child: Icon(FluentIcons.cancel, size: 10, color: theme.accentColor),
@@ -1435,7 +1424,7 @@ class _UploadProgressBar extends StatelessWidget {
     final p     = progress;
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Spacing.ms),
       decoration: BoxDecoration(
         color: theme.resources.cardBackgroundFillColorDefault,
         borderRadius: BorderRadius.circular(6),
@@ -1447,7 +1436,7 @@ class _UploadProgressBar extends StatelessWidget {
           Row(
             children: [
               const Icon(FluentIcons.cloud_upload, size: 14),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   p != null ? 'Subiendo: ${p.label}' : 'Preparando upload…',
@@ -1461,7 +1450,7 @@ class _UploadProgressBar extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: Spacing.sm),
           ProgressBar(value: p != null ? p.fraction * 100 : null),
         ],
       ),
@@ -1530,10 +1519,10 @@ class _MetadataRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme     = FluentTheme.of(context);
     final dateLabel = DateFormat('dd/MM/yyyy HH:mm')
-        .format(adjunto.createdAt.toLocal());
+        .format((adjunto.createdAt ?? DateTime.now()).toLocal());
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Spacing.ms),
       decoration: BoxDecoration(
         color: theme.resources.subtleFillColorTransparent,
         borderRadius: BorderRadius.circular(6),
@@ -1562,7 +1551,7 @@ class _MetaItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xxs),
       child: Row(
         children: [
           SizedBox(
@@ -1619,7 +1608,7 @@ class _PreviaDialog extends StatelessWidget {
           children: [
             // ---- Header ----
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
               decoration: BoxDecoration(
                 color: theme.accentColor.withValues(alpha: 0.08),
                 borderRadius:
@@ -1636,7 +1625,7 @@ class _PreviaDialog extends StatelessWidget {
                     category: adjunto.iconCategory,
                     ext: adjunto.extension,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Spacing.ms),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1715,7 +1704,7 @@ class _ImagePreview extends StatelessWidget {
                       value: total != null ? done / total * 100 : null,
                     ),
                     if (total != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                       Text(
                         '${(done / total * 100).toStringAsFixed(0)} %',
                         style: FluentTheme.of(ctx).typography.caption?.copyWith(
@@ -1732,7 +1721,7 @@ class _ImagePreview extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(FluentIcons.error_badge, size: 48, color: Colors.red),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Spacing.ms),
                   Text(
                     'No se pudo cargar la imagen',
                     style: FluentTheme.of(ctx)
@@ -1809,8 +1798,8 @@ class _PdfPreviewState extends State<_PdfPreview> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ProgressRing(),
-                SizedBox(height: 12),
+                PilarProgressRing(),
+                SizedBox(height: Spacing.ms),
                 Text('Cargando PDF…'),
               ],
             ),
@@ -1823,12 +1812,12 @@ class _PdfPreviewState extends State<_PdfPreview> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(FluentIcons.error_badge, size: 48, color: Colors.red),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.ms),
                 Text(
                   'Error al cargar el PDF',
                   style: theme.typography.body,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: Spacing.xs),
                 Text(
                   _error!,
                   style: theme.typography.caption?.copyWith(
@@ -1842,11 +1831,11 @@ class _PdfPreviewState extends State<_PdfPreview> {
         // Indicador de página (esquina inferior derecha)
         if (!_loading && _error == null)
           Positioned(
-            bottom: 12,
-            right: 12,
+            bottom: Spacing.ms,
+            right: Spacing.ms,
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xs),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.55),
                 borderRadius: BorderRadius.circular(12),

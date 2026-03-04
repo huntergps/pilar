@@ -69,6 +69,18 @@ class PilarRepository extends OfflineFirstWithSupabaseRepository {
         .deleteUnprocessedRequest(id);
   }
 
+  /// Fuerza un reintento inmediato de todos los requests pendientes en cola.
+  ///
+  /// Llama a [RestOfflineRequestQueue.start] que procesa la cola de SQLite
+  /// y reenvía cada request al servidor. Si el servidor está disponible,
+  /// los items se eliminan de la cola al completarse con éxito.
+  ///
+  /// [start] es síncrono (lanza el procesamiento en background), por lo que
+  /// este método retorna inmediatamente después de disparar la cola.
+  void retryOfflineQueue() {
+    offlineRequestQueue.start();
+  }
+
   // ── Static configure ─────────────────────────────────────────────────────
 
   static void configure({

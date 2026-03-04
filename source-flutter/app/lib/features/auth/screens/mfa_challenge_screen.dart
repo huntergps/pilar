@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/providers/auth_actions_provider.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 /// Pantalla de verificacion MFA (TOTP) post-login.
 ///
@@ -30,15 +34,13 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
 
   /// Si la sesion ya es AAL2, redirige al dashboard directamente.
   void _checkAalLevel() {
-    try {
-      final aal = Supabase.instance.client.auth.mfa
-          .getAuthenticatorAssuranceLevel();
+    ref.read(mfaAssuranceLevelProvider.future).then((aal) {
       if (aal.currentLevel == AuthenticatorAssuranceLevels.aal2 && mounted) {
         context.go(PilarRoutes.dashboard);
       }
-    } catch (_) {
+    }).catchError((_) {
       // Ignore — stay on MFA screen.
-    }
+    });
   }
 
   Future<void> _verify() async {
@@ -54,8 +56,8 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
     });
 
     try {
-      final auth = Supabase.instance.client.auth;
-      final factors = await auth.mfa.listFactors();
+      final auth = ref.read(supabaseClientProvider).auth;
+      final factors = await ref.read(mfaFactorsProvider.future);
       final totp = factors.totp.where((f) => f.status == FactorStatus.verified);
 
       if (totp.isEmpty) {
@@ -107,26 +109,26 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xxl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Icon(FluentIcons.lock, size: 48, color: theme.accentColor),
-                const SizedBox(height: 24),
+                const SizedBox(height: Spacing.lg),
                 Text(
                   'Verificacion en dos pasos',
                   style: theme.typography.title,
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 Text(
                   'Ingresa el codigo de 6 digitos de tu app autenticadora',
                   style: theme.typography.body
                       ?.copyWith(color: theme.inactiveColor),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: Spacing.xl),
                 TextBox(
                   controller: _codeCtrl,
                   placeholder: '000000',
@@ -140,7 +142,7 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
                   ),
                   onSubmitted: (_) => _verify(),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: Spacing.ml),
                 if (_error != null) ...[
                   InfoBar(
                     title: const Text('Error'),
@@ -148,7 +150,7 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
                     severity: InfoBarSeverity.error,
                     onClose: () => setState(() => _error = null),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Spacing.md),
                 ],
                 FilledButton(
                   onPressed: _verifying ? null : _verify,
@@ -157,18 +159,14 @@ class _MfaChallengeScreenState extends ConsumerState<MfaChallengeScreen> {
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: ProgressRing(strokeWidth: 2),
-                            ),
-                            SizedBox(width: 8),
+                            PilarProgressRing(size: 14),
+                            SizedBox(width: Spacing.sm),
                             Text('Verificando...'),
                           ],
                         )
                       : const Text('Verificar'),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: Spacing.lg),
                 Text(
                   'No tienes acceso a tu app autenticadora?\nContacta al administrador de tu empresa.',
                   style: theme.typography.caption

@@ -5,6 +5,7 @@ import 'package:supabase_auth_ui_fluent/supabase_auth_ui_fluent.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 /// Screen that lets the user set a new password after clicking a recovery link.
 ///
@@ -50,7 +51,7 @@ class ResetPasswordScreen extends ConsumerWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(Spacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -59,7 +60,7 @@ class ResetPasswordScreen extends ConsumerWidget {
                       style: FluentTheme.of(context).typography.body,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: Spacing.lg),
                     SupaResetPassword(
                       onSuccess: (_) => context.go(PilarRoutes.login),
                       localization: const SupaResetPasswordLocalization(

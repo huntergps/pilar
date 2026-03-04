@@ -4,27 +4,16 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sfpdf;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pilar_print/pilar_print.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/config/pilar_constants.dart';
 import '../../../core/providers/usuario_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../providers/impresoras_admin_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Providers locales
 // ---------------------------------------------------------------------------
-
-/// Lista de impresoras virtuales de la empresa (reloadable).
-///
-/// Provider público para poder hacer override en tests:
-/// ```dart
-/// impresorasScreenProvider.overrideWith((_) async => [...]);
-/// ```
-final impresorasScreenProvider =
-    FutureProvider.autoDispose<List<ImpresoraVirtual>>((ref) async {
-  final rows = await Supabase.instance.client
-      .rpc('impresoras_get_catalogo')
-      .then((data) => (data as List).cast<Map<String, dynamic>>());
-  return rows.map(ImpresoraVirtual.fromJson).toList();
-});
 
 /// Configuración local guardada por nombre de impresora virtual.
 final _configLocalProvider =
@@ -63,7 +52,7 @@ class ImpresorasScreen extends ConsumerWidget {
         data: (impresoras) => impresoras.isEmpty
             ? _EmptyState(tieneAdmin: tieneAdmin, onCrear: () => _showCrearDialog(context, ref))
             : _ImpresorasList(impresoras: impresoras, tieneAdmin: tieneAdmin),
-        loading: () => const Center(child: ProgressRing()),
+        loading: () => const PilarLoadingCenter(),
         error: (e, _) => Center(
           child: InfoBar(
             title: const Text('Error al cargar impresoras'),
@@ -97,12 +86,12 @@ class _ImpresorasList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.md),
       children: [
         // ---- Catálogo de empresa ----
         Text('Catálogo de empresa',
             style: FluentTheme.of(context).typography.subtitle),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         ...impresoras.map(
           (imp) => _ImpresoraCard(
             impresora: imp,
@@ -156,7 +145,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
     final config = configAsync.valueOrNull;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: Spacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -167,7 +156,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
                 _iconForTipo(widget.impresora.tipoDoc),
                 color: theme.accentColor,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.ms),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -182,7 +171,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
               ),
               // Badge tipo de documento
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
                 decoration: BoxDecoration(
                   color: theme.accentColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
@@ -193,15 +182,15 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
                       ?.copyWith(color: theme.accentColor),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               IconButton(
                 icon: Icon(
                     _expanded ? FluentIcons.chevron_up : FluentIcons.chevron_down),
                 onPressed: () => setState(() => _expanded = !_expanded),
               ),
               if (widget.tieneAdmin) ...[
-                const SizedBox(width: 4),
-                const SizedBox(height: 20, child: Divider(direction: Axis.vertical)),
+                const SizedBox(width: Spacing.xs),
+                const SizedBox(height: Spacing.ml, child: Divider(direction: Axis.vertical)),
                 IconButton(
                   icon: Icon(FluentIcons.delete,
                       color: Colors.red.normal, size: 16),
@@ -214,9 +203,9 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
           // ---- Config local (expandible) ----
           if (_expanded) ...[
             const Divider(),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             Text('Mi dispositivo', style: theme.typography.bodyStrong),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             _ConfigLocalForm(
               impresora: widget.impresora,
               config: config,
@@ -351,11 +340,10 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
       ),
     );
     if (confirm == true && context.mounted) {
-      await Supabase.instance.client
-          .from('impresoras_virtuales')
-          .update({'activo': false})
-          .eq('id', widget.impresora.id);
-      widget.onDeleted();
+      final result = await ref
+          .read(impresorasAdminProvider.notifier)
+          .desactivarImpresora(impresoraId: widget.impresora.id);
+      if (result.ok) widget.onDeleted();
     }
   }
 
@@ -384,7 +372,7 @@ class _ImpresoraCardState extends ConsumerState<_ImpresoraCard> {
         style: sfpdf.PdfFontStyle.bold);
     final fontSmall = sfpdf.PdfStandardFont(sfpdf.PdfFontFamily.helvetica, 10);
     page.graphics.drawString(
-      'PILAR ERP — Página de prueba',
+      '$kAppName — Página de prueba',
       font,
       brush: sfpdf.PdfSolidBrush(sfpdf.PdfColor(0, 0, 0)),
       bounds: Rect.fromLTWH(40, 40, page.size.width - 80, 30),
@@ -512,7 +500,7 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
             },
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
 
         // ---- Campos según tipo ----
         if (_tipoConexion == TipoConexion.tcp) ...[
@@ -522,9 +510,9 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
               Expanded(
                 child: TextBox(controller: _ipController, placeholder: '192.168.1.100'),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.ms),
               const Text('Puerto:'),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               SizedBox(
                 width: 72,
                 child: TextBox(controller: _puertoController, placeholder: '9100'),
@@ -534,7 +522,7 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
         ] else if (_tipoConexion == TipoConexion.bluetooth) ...[
           Row(
             children: [
-              if (_loadingBt) const ProgressRing(strokeWidth: 2),
+              if (_loadingBt) const PilarProgressRing.small(),
               if (!_loadingBt && _btDevices.isEmpty)
                 Button(
                   onPressed: _loadBtDevices,
@@ -565,12 +553,12 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
               placeholder: 'ws://localhost:8182  o  http://192.168.1.50:3000/print',
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           const Text(
             'ws:// o wss:// → QZ Tray (WebSocket)\nhttp:// o https:// → Servidor HTTP personalizado',
             style: TextStyle(fontSize: 11),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           InfoLabel(
             label: 'Nombre de impresora en el gateway (opcional)',
             child: TextBox(
@@ -583,14 +571,14 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
             label: 'Impresora del sistema operativo',
             child: _loadingOsPrinters
                 ? const Row(children: [
-                    ProgressRing(strokeWidth: 2),
-                    SizedBox(width: 8),
+                    PilarProgressRing.small(),
+                    SizedBox(width: Spacing.sm),
                     Text('Cargando impresoras...'),
                   ])
                 : _osPrinters.isEmpty
                     ? Row(children: [
                         const Text('No se encontraron impresoras.'),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: Spacing.sm),
                         Button(
                           onPressed: _loadOsPrinters,
                           child: const Text('Reintentar'),
@@ -608,7 +596,7 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
                             value: null,
                             child: Row(children: [
                               Icon(FluentIcons.preview, size: 14),
-                              SizedBox(width: 6),
+                              SizedBox(width: Spacing.sm),
                               Text('Vista previa / diálogo del OS'),
                             ]),
                           ),
@@ -623,26 +611,25 @@ class _ConfigLocalFormState extends ConsumerState<_ConfigLocalForm> {
                         },
                       ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           const Text(
             'Si no seleccionas una impresora, se abrirá el diálogo del OS al imprimir.',
             style: TextStyle(fontSize: 11),
           ),
         ],
 
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         Row(
           children: [
             Button(
               onPressed: _guardar,
               child: const Text('Guardar'),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             FilledButton(
               onPressed: (_configSaved && !widget.probando) ? widget.onProbar : null,
               child: widget.probando
-                  ? const SizedBox(
-                      width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+                  ? const PilarProgressRing.small()
                   : const Text('Probar'),
             ),
           ],
@@ -748,7 +735,7 @@ class _CrearImpresoraDialogState extends ConsumerState<_CrearImpresoraDialog> {
               placeholder: 'ej: ticket_pos, etiqueta_producto, factura_a4',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Descripción (opcional)',
             child: TextBox(
@@ -756,7 +743,7 @@ class _CrearImpresoraDialogState extends ConsumerState<_CrearImpresoraDialog> {
               placeholder: 'Descripción para identificar el uso',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Tipo de documento',
             child: ComboBox<TipoDocumento>(
@@ -799,8 +786,7 @@ class _CrearImpresoraDialogState extends ConsumerState<_CrearImpresoraDialog> {
         FilledButton(
           onPressed: _saving ? null : _guardar,
           child: _saving
-              ? const SizedBox(
-                  width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+              ? const PilarProgressRing.small()
               : const Text('Crear'),
         ),
       ],
@@ -812,17 +798,16 @@ class _CrearImpresoraDialogState extends ConsumerState<_CrearImpresoraDialog> {
     if (nombre.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final empresaId = Supabase.instance.client.auth.currentSession
-          ?.user.appMetadata['empresa_id'] as String?;
-      if (empresaId == null) throw Exception('No hay empresa activa');
-      await Supabase.instance.client.from('impresoras_virtuales').insert({
-        'empresa_id': empresaId,
-        'nombre': nombre,
-        'descripcion': _descripcionController.text.trim().isEmpty
-            ? null
-            : _descripcionController.text.trim(),
-        'tipo_doc': _tipoDoc.name,
-      });
+      final result = await ref
+          .read(impresorasAdminProvider.notifier)
+          .crearImpresora(
+            nombre: nombre,
+            descripcion: _descripcionController.text.trim().isEmpty
+                ? null
+                : _descripcionController.text.trim(),
+            tipoDoc: _tipoDoc.name,
+          );
+      if (!result.ok) throw Exception(result.error ?? 'Error al crear impresora');
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -858,15 +843,15 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(FluentIcons.print, size: 48),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           Text(
             'No hay impresoras configuradas',
             style: FluentTheme.of(context).typography.subtitle,
           ),
-          const SizedBox(height: 8),
-          const Text('Crea impresoras virtuales para gestionar la impresión en PILAR ERP.'),
+          const SizedBox(height: Spacing.sm),
+          const Text('Crea impresoras virtuales para gestionar la impresión en $kAppName.'),
           if (tieneAdmin) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
             FilledButton(
               onPressed: onCrear,
               child: const Text('Crear primera impresora'),

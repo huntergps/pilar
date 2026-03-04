@@ -21,7 +21,9 @@ import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/providers/chatter_provider.dart';
+import '../../core/theme/pilar_spacing.dart';
+import 'loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // Tipos de entidad disponibles
@@ -117,25 +119,16 @@ class _ChatterVincularDialogState
     });
 
     try {
-      final data = await Supabase.instance.client.rpc(
-        'chatter_buscar_entidad',
-        params: {
-          'p_tipo': _tipoSeleccionado,
-          'p_busqueda': query.trim().isEmpty ? null : query.trim(),
-          'p_limit': 20,
-        },
-      ) as List;
+      final resultados = await ref.read(
+        chatterBuscarEntidadProvider((
+          tipo: _tipoSeleccionado,
+          busqueda: query.trim().isEmpty ? null : query.trim(),
+        )).future,
+      );
 
       if (!mounted) return;
       setState(() {
-        _resultados = data.map((e) {
-          final m = e as Map<String, dynamic>;
-          return (
-            id: m['entidad_id'] as String,
-            etiqueta: m['etiqueta'] as String? ?? m['entidad_id'] as String,
-            secundario: m['secundario'] as String?,
-          );
-        }).toList();
+        _resultados = resultados;
         _cargando = false;
       });
     } catch (e) {
@@ -169,13 +162,10 @@ class _ChatterVincularDialogState
     setState(() => _confirmando = true);
     try {
       if (widget.conversacionId != null) {
-        await Supabase.instance.client.rpc(
-          'com_vincular_conversacion',
-          params: {
-            'p_conversacion_id': widget.conversacionId,
-            'p_entidad_tipo': _tipoSeleccionado,
-            'p_entidad_id': sel.id,
-          },
+        await ref.read(comVincularConversacionProvider.notifier).vincular(
+          conversacionId: widget.conversacionId!,
+          entidadTipo: _tipoSeleccionado,
+          entidadId: sel.id,
         );
       }
       widget.onVincular?.call(_tipoSeleccionado, sel.id);
@@ -210,12 +200,12 @@ class _ChatterVincularDialogState
               title: Text(_error!),
               severity: InfoBarSeverity.error,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: Spacing.ms),
           ],
 
           // Selector de tipo
           Text('Tipo de registro', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           ComboBox<String>(
             value: _tipoSeleccionado,
             isExpanded: true,
@@ -229,20 +219,20 @@ class _ChatterVincularDialogState
                 .toList(),
             onChanged: _onTipoCambiado,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
 
           // Campo de búsqueda
           Text('Buscar', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             placeholder: 'Escribe nombre, número, RUC...',
             onChanged: _onBusquedaChanged,
             prefix: const Padding(
-              padding: EdgeInsets.only(left: 8),
+              padding: EdgeInsets.only(left: Spacing.sm),
               child: Icon(FluentIcons.search, size: 13),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Spacing.ms),
 
           // Resultados
           SizedBox(
@@ -261,11 +251,7 @@ class _ChatterVincularDialogState
               ? _confirmar
               : null,
           child: _confirmando
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing(size: 14)
               : const Text('Vincular'),
         ),
       ],
@@ -274,7 +260,7 @@ class _ChatterVincularDialogState
 
   Widget _buildResultados(FluentThemeData theme) {
     if (_cargando) {
-      return const Center(child: ProgressRing());
+      return const PilarLoadingCenter();
     }
 
     if (_resultados.isEmpty) {
@@ -297,8 +283,8 @@ class _ChatterVincularDialogState
         return GestureDetector(
           onTap: () => setState(() => _seleccionado = r),
           child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 3),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            margin: const EdgeInsets.symmetric(vertical: Spacing.xxs),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
             decoration: BoxDecoration(
               color: seleccionado
                   ? theme.accentColor.withValues(alpha: 0.10)
@@ -316,7 +302,7 @@ class _ChatterVincularDialogState
                   checked: seleccionado,
                   onChanged: (_) => setState(() => _seleccionado = r),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

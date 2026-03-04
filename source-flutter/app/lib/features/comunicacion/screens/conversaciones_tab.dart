@@ -2,34 +2,22 @@ import 'dart:async';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
 import '../../../core/widgets/chatter_vincular_dialog.dart';
+import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
 import '../../entidades/widgets/contacto_picker.dart';
-import '../models/com_conversacion.dart';
-import '../models/com_mensaje.dart';
+import 'package:brick_gen/brick_gen.dart';
 import '../providers/conversaciones_provider.dart';
 import '../providers/mensajes_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Invoca el Edge Function sender del canal para envío inmediato.
-/// Fire-and-forget — errores se ignoran (el cron actúa como fallback).
-void _invocarSender(String canal) {
-  final fnName = switch (canal) {
-    'telegram' => 'com-telegram-sender',
-    'whatsapp' => 'com-whatsapp-sender',
-    _ => null,
-  };
-  if (fnName == null) return;
-  Supabase.instance.client.functions.invoke(fnName, body: {}).ignore();
-}
 
 /// Retorna el ícono y color según el canal de comunicación.
 ({IconData icon, Color color}) _canalMeta(String canal) {
@@ -114,7 +102,7 @@ class _PanelLista extends ConsumerWidget {
       children: [
         // ---- Encabezado de scope ----
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.xs),
           child: Row(
             children: [
               Icon(
@@ -122,7 +110,7 @@ class _PanelLista extends ConsumerWidget {
                 size: 16,
                 color: theme.inactiveColor,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   esEmpresa ? 'Mensajes de empresa' : 'Mis mensajes',
@@ -154,7 +142,7 @@ class _PanelLista extends ConsumerWidget {
         // ---- Lista ----
         Expanded(
           child: conversaciones.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: const Text('Error cargando conversaciones'),
@@ -169,12 +157,12 @@ class _PanelLista extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(FluentIcons.chat, size: 48),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: Spacing.ms),
                       Text(
                         'Sin conversaciones',
                         style: FluentTheme.of(context).typography.subtitle,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: Spacing.xs),
                       const Text('Pulsa + para iniciar una conversación'),
                     ],
                   ),
@@ -211,9 +199,9 @@ class _FiltroCanal extends ConsumerWidget {
     ];
 
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       child: Wrap(
-        spacing: 6,
+        spacing: Spacing.sm,
         children: canales
             .map(
               (c) => Button(
@@ -273,9 +261,9 @@ class _ConvListTile extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           _CanalBadge(canal: conv.canal, color: meta.color),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           // Indicador ventana WA
           if (conv.canal == 'whatsapp')
             Container(
@@ -333,7 +321,7 @@ class _PanelDetalle extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(FluentIcons.chat, size: 64),
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
             Text(
               'Selecciona una conversación',
               style: FluentTheme.of(context).typography.subtitle,
@@ -359,7 +347,7 @@ class _PanelDetalleMovil extends ConsumerWidget {
       children: [
         // Botón volver
         Padding(
-          padding: const EdgeInsets.only(left: 8, top: 8),
+          padding: const EdgeInsets.only(left: Spacing.sm, top: Spacing.sm),
           child: Row(
             children: [
               IconButton(
@@ -434,10 +422,8 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
   Future<void> _desvincularConversacion() async {
     setState(() => _desvinculando = true);
     try {
-      await Supabase.instance.client.rpc('com_desvincular_conversacion',
-          params: {'p_conversacion_id': widget.conv.id});
+      await ref.read(conversacionesProvider.notifier).desvincularConversacion(widget.conv.id);
       if (mounted) {
-        ref.invalidate(conversacionesProvider);
         await displayInfoBar(
           context,
           builder: (ctx, close) => InfoBar(
@@ -496,16 +482,12 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
                     child: Icon(meta.icon, color: meta.color, size: 18),
                   ),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                      horizontal: Spacing.md, vertical: Spacing.ms),
                 ),
               ),
               // Botón vincular / desvincular
               if (_desvinculando)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+                const PilarProgressRing(size: 20)
               else if (conv.entidadId == null)
                 Button(
                   onPressed: _mostrarDialogVincular,
@@ -513,7 +495,7 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(FluentIcons.link, size: 14),
-                      SizedBox(width: 6),
+                      SizedBox(width: Spacing.sm),
                       Text('Vincular a registro'),
                     ],
                   ),
@@ -525,12 +507,12 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(FluentIcons.remove_link, size: 14),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: Spacing.sm),
                       Text('Vinculada a ${conv.entidadTipo ?? ''}'),
                     ],
                   ),
                 ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               // Botón refrescar
               IconButton(
                 icon: const Icon(FluentIcons.refresh),
@@ -555,7 +537,7 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
         // ---- Thread de mensajes ----
         Expanded(
           child: mensajesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: const Text('Error cargando mensajes'),
@@ -575,7 +557,7 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
               }
               return ListView.builder(
                 controller: _scrollCtrl,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(Spacing.ms),
                 itemCount: mensajes.length,
                 itemBuilder: (ctx, i) => _MensajeBubble(msg: mensajes[i]),
               );
@@ -609,7 +591,7 @@ class _CanalBadge extends StatelessWidget {
       _ => canal.substring(0, 2).toUpperCase(),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
@@ -642,7 +624,7 @@ class _MensajeBubble extends StatelessWidget {
     final theme = FluentTheme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Align(
         alignment:
             esOutbound ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
@@ -650,7 +632,7 @@ class _MensajeBubble extends StatelessWidget {
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.65,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           decoration: BoxDecoration(
             color: esOutbound
                 ? theme.accentColor.withValues(alpha: 0.18)
@@ -674,13 +656,13 @@ class _MensajeBubble extends StatelessWidget {
               // Asunto (email)
               if (msg.asunto != null && msg.asunto!.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.only(bottom: Spacing.xs),
                   child: Text(msg.asunto!, style: theme.typography.bodyStrong),
                 ),
               // Media adjuntos
               if (msg.tieneMedia)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.only(bottom: Spacing.sm),
                   child: _MediaWidget(adjunto: msg.adjuntos.first),
                 ),
               // Cuerpo (texto o caption)
@@ -704,7 +686,7 @@ class _MensajeBubble extends StatelessWidget {
                   msg.cuerpo!.startsWith('📎') || msg.cuerpo!.startsWith('⭕') ||
                   msg.cuerpo!.startsWith('🎭')))
                 Text(msg.cuerpo ?? '', style: theme.typography.body),
-              const SizedBox(height: 4),
+              const SizedBox(height: Spacing.xs),
               // Footer: timestamp + estado
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -715,7 +697,7 @@ class _MensajeBubble extends StatelessWidget {
                         ?.copyWith(color: theme.inactiveColor, fontSize: 10),
                   ),
                   if (esOutbound) ...[
-                    const SizedBox(width: 4),
+                    const SizedBox(width: Spacing.xs),
                     _EstadoIcon(estado: msg.estado, esFallido: msg.esFallido),
                   ],
                 ],
@@ -749,7 +731,7 @@ class _MediaWidget extends StatelessWidget {
               ? child
               : const SizedBox(
                   width: 220, height: 140,
-                  child: Center(child: ProgressRing()),
+                  child: PilarLoadingCenter(),
                 ),
           errorBuilder: (_, __, ___) => const SizedBox(
             width: 220, height: 100,
@@ -796,7 +778,7 @@ class _MediaTile extends StatelessWidget {
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         decoration: BoxDecoration(
           color: theme.resources.subtleFillColorSecondary,
           borderRadius: BorderRadius.circular(8),
@@ -806,7 +788,7 @@ class _MediaTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 20),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
             Flexible(
               child: Text(
                 label,
@@ -814,7 +796,7 @@ class _MediaTile extends StatelessWidget {
                 style: theme.typography.caption,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: Spacing.sm),
             const Icon(FluentIcons.download, size: 14),
           ],
         ),
@@ -874,26 +856,10 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
     final texto = _ctrl.text.trim();
     if (texto.isEmpty || _enviando) return;
 
-    final conv = widget.conv;
-    final empresaId = ref.read(empresaActivaIdProvider);
-    if (empresaId == null) return;
-
     setState(() => _enviando = true);
     try {
-      await Supabase.instance.client.from('com_mensajes').insert({
-        'empresa_id': empresaId,
-        'cuenta_id': conv.cuentaId,
-        'conversacion_id': conv.id,
-        'tipo': 'outbound',
-        'canal': conv.canal,
-        'destinatario_ref': conv.destinatarioRef,
-        'cuerpo': texto,
-        'estado': 'pendiente',
-      });
+      await ref.read(conversacionesProvider.notifier).enviarMensaje(widget.conv, texto);
       _ctrl.clear();
-      // Invocar el sender inmediatamente para envío en tiempo real.
-      // Fire-and-forget: el cron es el fallback; no bloqueamos la UI.
-      _invocarSender(conv.canal);
     } on Exception catch (e) {
       if (mounted) {
         await displayInfoBar(
@@ -918,7 +884,7 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
         widget.conv.ventanaWaActiva || widget.conv.canal != 'whatsapp';
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       decoration: BoxDecoration(
         color: FluentTheme.of(context).micaBackgroundColor,
         border: Border(
@@ -944,9 +910,9 @@ class _ComposicionBarState extends ConsumerState<_ComposicionBar> {
                     style: TextStyle(fontStyle: FontStyle.italic),
                   ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           if (_enviando)
-            const SizedBox(width: 36, height: 36, child: ProgressRing())
+            const PilarProgressRing(size: Spacing.xl)
           else
             IconButton(
               icon: const Icon(FluentIcons.send),
@@ -1012,46 +978,17 @@ class _NuevaConversacionDialogState
 
     setState(() => _enviando = true);
     try {
-      // 1. UPSERT conversación (crea o reutiliza si ya existe para ese canal+cuenta+dest)
-      final convData = await Supabase.instance.client
-          .from('com_conversaciones')
-          .upsert(
-            {
-              'empresa_id': empresaId,
-              'cuenta_id': _cuentaId,
-              'canal': _canal,
-              'destinatario_ref': dest,
-              if (_nombreCtrl.text.trim().isNotEmpty)
-                'destinatario_nombre': _nombreCtrl.text.trim(),
-              if (_contactoId != null) 'contacto_id': _contactoId,
-              'activo': true,
-              'ultimo_mensaje_en': DateTime.now().toIso8601String(),
-            },
-            onConflict: 'empresa_id,cuenta_id,destinatario_ref',
-          )
-          .select('id')
-          .single();
+      final convId = await ref.read(conversacionesProvider.notifier).iniciarConversacion(
+        empresaId: empresaId,
+        cuentaId: _cuentaId!,
+        canal: _canal,
+        destinatarioRef: dest,
+        destinatarioNombre: _nombreCtrl.text.trim().isNotEmpty ? _nombreCtrl.text.trim() : null,
+        contactoId: _contactoId,
+        cuerpo: cuerpo,
+      );
 
-      final convId = convData['id'] as String;
-
-      // 2. INSERT mensaje outbound (estado pendiente → cron/sender lo envía)
-      await Supabase.instance.client.from('com_mensajes').insert({
-        'empresa_id': empresaId,
-        'cuenta_id': _cuentaId,
-        'conversacion_id': convId,
-        'tipo': 'outbound',
-        'canal': _canal,
-        'destinatario_ref': dest,
-        'cuerpo': cuerpo,
-        'estado': 'pendiente',
-      });
-
-      // 3. Invocar sender inmediatamente (fire-and-forget)
-      _invocarSender(_canal);
-
-      // 4. Seleccionar la conversación recién creada
       ref.read(convSeleccionadaProvider.notifier).state = convId;
-      ref.invalidate(conversacionesProvider);
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -1112,19 +1049,19 @@ class _NuevaConversacionDialogState
                         children: [
                           Icon(c.icon, size: 14,
                               color: _canal == c.value ? Colors.white : null),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: Spacing.xs),
                           Text(c.label,
                               style: TextStyle(
                                   color: _canal == c.value ? Colors.white : null)),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: Spacing.sm),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Cuenta ----
             InfoLabel(
@@ -1132,7 +1069,7 @@ class _NuevaConversacionDialogState
               child: cuentasAsync.when(
                 loading: () => const SizedBox(
                   height: 32,
-                  child: Center(child: ProgressRing(strokeWidth: 2)),
+                  child: PilarLoadingCenter(),
                 ),
                 error: (e, _) => Text('Error: $e'),
                 data: (cuentas) {
@@ -1167,7 +1104,7 @@ class _NuevaConversacionDialogState
                 },
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Contacto (opcional) ----
             InfoLabel(
@@ -1180,7 +1117,7 @@ class _NuevaConversacionDialogState
                 }),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Destinatario ----
             InfoLabel(
@@ -1194,7 +1131,7 @@ class _NuevaConversacionDialogState
                     : '@usuario o 123456789',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Nombre ----
             InfoLabel(
@@ -1204,7 +1141,7 @@ class _NuevaConversacionDialogState
                 placeholder: 'Nombre para mostrar (opcional)',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
 
             // ---- Mensaje ----
             InfoLabel(
@@ -1223,7 +1160,7 @@ class _NuevaConversacionDialogState
 
             // ---- Aviso WhatsApp ----
             if (_canal == 'whatsapp') ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: Spacing.sm),
               const InfoBar(
                 title: Text('WhatsApp Business'),
                 content: Text(
@@ -1245,11 +1182,7 @@ class _NuevaConversacionDialogState
         FilledButton(
           onPressed: _enviando ? null : _enviar,
           child: _enviando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing.small()
               : const Text('Enviar'),
         ),
       ],

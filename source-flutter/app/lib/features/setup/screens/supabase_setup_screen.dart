@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/supabase_config.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 /// First-run screen shown when no Supabase credentials are configured.
 ///
@@ -109,11 +110,11 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
     return ScaffoldPage(
       content: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(Spacing.lg),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
             child: Card(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(Spacing.xl),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -121,14 +122,14 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
                   Text('Configurar servidor',
                       style: theme.typography.titleLarge,
                       textAlign: TextAlign.center),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: Spacing.sm),
                   Text(
                     'Ingresa las credenciales de tu proyecto Supabase.\n'
                     'Las encontrarás en Project Settings → API.',
                     style: theme.typography.body,
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: Spacing.xl),
 
                   // ---- URL ----
                   InfoLabel(
@@ -140,7 +141,7 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
                       keyboardType: TextInputType.url,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Spacing.md),
 
                   // ---- Anon key ----
                   InfoLabel(
@@ -160,7 +161,7 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.lg),
 
                   // ---- Error ----
                   if (_error != null) ...[
@@ -169,7 +170,7 @@ class _SupabaseSetupScreenState extends ConsumerState<SupabaseSetupScreen> {
                       content: Text(_error!),
                       severity: InfoBarSeverity.error,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Spacing.md),
                   ],
 
                   // ---- Save button ----

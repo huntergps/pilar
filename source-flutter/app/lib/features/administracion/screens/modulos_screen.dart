@@ -1,9 +1,10 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../../core/providers/modulos_provider.dart';
+import '../providers/admin_providers.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -33,7 +34,7 @@ class ModulosScreen extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(FluentIcons.tiles, size: 48, color: theme.inactiveColor),
-              const SizedBox(height: 16),
+              const SizedBox(height: Spacing.md),
               Text('No hay módulos disponibles',
                   style: theme.typography.body),
             ],
@@ -51,7 +52,7 @@ class ModulosScreen extends ConsumerWidget {
               .toList();
 
           return ListView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(Spacing.lg),
             children: [
               if (infra.isNotEmpty) ...[
                 _GroupHeader(
@@ -59,9 +60,9 @@ class ModulosScreen extends ConsumerWidget {
                   subtitle: 'Siempre activos — no desactivables',
                   theme: theme,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 ...infra.map((m) => _ModuloTile(modulo: m)),
-                const SizedBox(height: 24),
+                const SizedBox(height: Spacing.lg),
               ],
               if (core.isNotEmpty) ...[
                 _GroupHeader(
@@ -69,9 +70,9 @@ class ModulosScreen extends ConsumerWidget {
                   subtitle: 'Módulos principales del ERP',
                   theme: theme,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 ...core.map((m) => _ModuloTile(modulo: m)),
-                const SizedBox(height: 24),
+                const SizedBox(height: Spacing.lg),
               ],
               if (auxiliares.isNotEmpty) ...[
                 _GroupHeader(
@@ -79,7 +80,7 @@ class ModulosScreen extends ConsumerWidget {
                   subtitle: 'Módulos opcionales activables por empresa',
                   theme: theme,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 ...auxiliares.map((m) => _ModuloTile(modulo: m)),
               ],
             ],
@@ -114,7 +115,7 @@ class _GroupHeader extends StatelessWidget {
         Text(subtitle,
             style: theme.typography.caption
                 ?.copyWith(color: theme.inactiveColor)),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         const Divider(),
       ],
     );
@@ -173,23 +174,21 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
     setState(() => _loading = true);
 
     try {
-      final rpc = newValue ? 'admin_activate_module' : 'admin_deactivate_module';
-      final result = await Supabase.instance.client.rpc(
-        rpc,
-        params: {'p_modulo_id': widget.modulo.id},
+      final resultado = await ref.read(modulosAdminProvider.notifier).toggleModulo(
+        moduloId: widget.modulo.id,
+        activar: newValue,
       );
 
-      if (result is Map && result['ok'] == true) {
+      if (resultado.ok) {
         ref.invalidate(todosModulosProvider);
         ref.invalidate(modulosActivosProvider);
       } else {
-        final error = result is Map ? result['error'] : 'Error desconocido';
         if (mounted) {
           displayInfoBar(
             context,
             builder: (_, close) => InfoBar(
               title: Text(newValue ? 'Error al activar módulo' : 'Error al desactivar módulo'),
-              content: Text(_errorMessage(error?.toString())),
+              content: Text(_errorMessage(resultado.error)),
               severity: InfoBarSeverity.error,
               onClose: close,
             ),
@@ -232,7 +231,7 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
     final isInfra = widget.modulo.tipo == 'infraestructura';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: Spacing.sm),
       child: Card(
         child: Row(
           children: [
@@ -253,14 +252,14 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
                 size: 22,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: Spacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(widget.modulo.nombre,
                       style: theme.typography.bodyStrong),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     _tipoLabel(widget.modulo.tipo),
                     style: theme.typography.caption
@@ -269,13 +268,9 @@ class _ModuloTileState extends ConsumerState<_ModuloTile> {
                 ],
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: Spacing.md),
             if (_loading)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: ProgressRing(strokeWidth: 2),
-              )
+              const PilarProgressRing(size: 20)
             else if (isInfra)
               Tooltip(
                 message: 'Siempre activo',

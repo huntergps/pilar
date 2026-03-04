@@ -1,13 +1,14 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:brick_gen/brick_gen.dart';
 
-import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/presencia_provider.dart' show EstadoPresencia;
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
 import '../providers/chat_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // ChatScope — controla qué secciones se muestran en el panel de canales
@@ -97,7 +98,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.ms),
           child: Row(
             children: [
               Text(headerLabel, style: theme.typography.subtitle),
@@ -116,7 +117,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
         // Contenido
         Expanded(
           child: canalesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: const Text('Error'),
@@ -150,7 +151,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
                             : FluentIcons.people,
                         size: 40,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                       Text(
                         scope == ChatScope.personal
                             ? 'Sin mensajes directos'
@@ -174,7 +175,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
                     ),
                     if (_canalesExpandido)
                       ...grupos.map((c) => _CanalTile(canal: c)),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: Spacing.xs),
                   ],
 
                   // ---- Sección: Mensajes directos (ocultar en scope empresa) ----
@@ -190,7 +191,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
                     if (_directosExpandido && directos.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
+                            horizontal: Spacing.md, vertical: Spacing.sm),
                         child: Text(
                           'Sin mensajes directos',
                           style: theme.typography.caption?.copyWith(
@@ -262,16 +263,10 @@ class _NuevoCanalGrupalDialogState
       _errorNombre = null;
     });
     try {
-      final result = await Supabase.instance.client.rpc(
-        'create_canal_grupo',
-        params: {
-          'p_nombre': nombre,
-          'p_miembro_ids': _seleccionados.toList(),
-        },
-      ) as Map<String, dynamic>;
-
-      final canalId = result['canal_id'] as String;
-      widget.parentRef.invalidate(chatCanalesProvider);
+      final canalId = await ref.read(chatActionsProvider.notifier).crearCanalGrupo(
+        nombre: nombre,
+        miembroIds: _seleccionados.toList(),
+      );
       widget.parentRef.read(canalSeleccionadoProvider.notifier).state = canalId;
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -313,39 +308,39 @@ class _NuevoCanalGrupalDialogState
                 enabled: !_creando,
                 onChanged: (_) => setState(() => _errorNombre = null),
                 prefix: const Padding(
-                  padding: EdgeInsets.only(left: 8),
+                  padding: EdgeInsets.only(left: Spacing.sm),
                   child: Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
             if (_errorNombre != null)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: Spacing.xs),
                 child: Text(
                   _errorNombre!,
                   style: TextStyle(
                       color: Colors.red, fontSize: 12),
                 ),
               ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             Text('Agregar miembros',
                 style: theme.typography.bodyStrong),
-            const SizedBox(height: 6),
+            const SizedBox(height: Spacing.sm),
             TextBox(
               controller: _searchCtrl,
               placeholder: 'Buscar usuario...',
               enabled: !_creando,
               onChanged: (v) => setState(() => _busqueda = v.toLowerCase()),
               prefix: const Padding(
-                padding: EdgeInsets.only(left: 8),
+                padding: EdgeInsets.only(left: Spacing.sm),
                 child: Icon(FluentIcons.search, size: 14),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: Spacing.sm),
             SizedBox(
               height: 220,
               child: miembrosAsync.when(
-                loading: () => const Center(child: ProgressRing()),
+                loading: () => const PilarLoadingCenter(),
                 error: (e, _) => Center(child: Text(e.toString())),
                 data: (miembros) {
                   final filtrados = _busqueda.isEmpty
@@ -438,7 +433,7 @@ class _NuevoCanalGrupalDialogState
             ),
             if (_seleccionados.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.only(top: Spacing.sm),
                 child: Text(
                   '${_seleccionados.length} miembro${_seleccionados.length == 1 ? '' : 's'} seleccionado${_seleccionados.length == 1 ? '' : 's'}',
                   style: theme.typography.caption?.copyWith(
@@ -458,8 +453,7 @@ class _NuevoCanalGrupalDialogState
         FilledButton(
           onPressed: _creando ? null : _crear,
           child: _creando
-              ? const SizedBox(
-                  width: 16, height: 16, child: ProgressRing())
+              ? const PilarProgressRing.small()
               : const Text('Crear canal'),
         ),
       ],
@@ -510,15 +504,15 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
               placeholder: 'Buscar usuario...',
               onChanged: (v) => setState(() => _busqueda = v.toLowerCase()),
               prefix: const Padding(
-                padding: EdgeInsets.only(left: 8),
+                padding: EdgeInsets.only(left: Spacing.sm),
                 child: Icon(FluentIcons.search, size: 14),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             SizedBox(
               height: 280,
               child: miembrosAsync.when(
-                loading: () => const Center(child: ProgressRing()),
+                loading: () => const PilarLoadingCenter(),
                 error: (e, _) => Center(
                   child: InfoBar(
                     title: const Text('Error'),
@@ -576,8 +570,8 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
               ),
             ),
             if (_creando) ...[
-              const SizedBox(height: 8),
-              const Center(child: ProgressRing()),
+              const SizedBox(height: Spacing.sm),
+              const PilarLoadingCenter(),
             ],
           ],
         ),
@@ -594,7 +588,7 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
   Future<void> _abrirDm(String otroUsuarioId) async {
     setState(() => _creando = true);
     try {
-      final canalId = await _getOrCreateDm(otroUsuarioId);
+      final canalId = await ref.read(chatActionsProvider.notifier).getOrCreateDm(otroUsuarioId);
       if (mounted) Navigator.pop(context);
       widget.parentRef.read(canalSeleccionadoProvider.notifier).state = canalId;
       widget.parentRef.invalidate(chatCanalesProvider);
@@ -616,14 +610,6 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
     }
   }
 
-  /// Devuelve el [canal_id] del DM existente o crea uno nuevo vía RPC.
-  Future<String> _getOrCreateDm(String otroId) async {
-    final result = await Supabase.instance.client.rpc(
-      'get_or_create_dm_canal',
-      params: {'p_otro_usuario_id': otroId},
-    ) as Map<String, dynamic>;
-    return result['canal_id'] as String;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -647,7 +633,7 @@ class _SeccionHeader extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         child: Row(
           children: [
             Icon(
@@ -657,7 +643,7 @@ class _SeccionHeader extends StatelessWidget {
               size: 12,
               color: theme.inactiveColor,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Text(
               label.toUpperCase(),
               style: theme.typography.caption?.copyWith(
@@ -704,14 +690,7 @@ class _CanalTile extends ConsumerWidget {
       selected: seleccionado,
       onSelectionChange: (_) async {
         ref.read(canalSeleccionadoProvider.notifier).state = id;
-        final usuarioId = ref.read(usuarioActualProvider)?.id;
-        if (usuarioId != null) {
-          await Supabase.instance.client.rpc(
-            'mark_messages_read',
-            params: {'canal_id': id, 'usuario_id': usuarioId},
-          );
-          ref.invalidate(chatCanalesProvider);
-        }
+        await ref.read(chatActionsProvider.notifier).marcarLeido(id);
       },
       leading: esDirecto
           ? _AvatarMini(nombre: displayName, avatarUrl: otroAvatar)
@@ -777,7 +756,7 @@ class _PanelMensajes extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(FluentIcons.people, size: 64),
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
             Text(
               'Selecciona un canal',
               style: FluentTheme.of(context).typography.subtitle,
@@ -800,7 +779,7 @@ class _PanelMensajesMovil extends ConsumerWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 8, top: 8),
+          padding: const EdgeInsets.only(left: Spacing.sm, top: Spacing.sm),
           child: Row(
             children: [
               IconButton(
@@ -852,7 +831,7 @@ class _CanalMensajesView extends ConsumerWidget {
       children: [
         // ---- Header canal ----
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
           color: theme.micaBackgroundColor,
           child: Row(
             children: [
@@ -860,7 +839,7 @@ class _CanalMensajesView extends ConsumerWidget {
                 _AvatarMini(nombre: nombre, avatarUrl: otroAvatar, radius: 14)
               else
                 const Icon(FluentIcons.people, size: 18),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               Text(
                 esDirecto ? nombre : '# $nombre',
                 style: theme.typography.bodyStrong,
@@ -878,7 +857,7 @@ class _CanalMensajesView extends ConsumerWidget {
                         color: EstadoPresencia.online.color,
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: Spacing.xs),
                     Text(
                       '${presencia.length} online',
                       style: theme.typography.caption
@@ -893,7 +872,7 @@ class _CanalMensajesView extends ConsumerWidget {
         // ---- Mensajes ----
         Expanded(
           child: mensajesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => Center(
               child: InfoBar(
                 title: const Text('Error cargando mensajes'),
@@ -914,7 +893,7 @@ class _CanalMensajesView extends ConsumerWidget {
                 );
               }
               return ListView.builder(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(Spacing.ms),
                 itemCount: mensajes.length,
                 itemBuilder: (ctx, i) {
                   final msg = mensajes[i];
@@ -940,7 +919,7 @@ class _CanalMensajesView extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _ChatMensajeTile extends ConsumerWidget {
-  final Map<String, dynamic> msg;
+  final ChatMensaje msg;
   final Map<String, EstadoPresencia> presencia;
 
   const _ChatMensajeTile({required this.msg, required this.presencia});
@@ -948,13 +927,13 @@ class _ChatMensajeTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usuarioId = ref.read(usuarioActualProvider)?.id ?? '';
-    final autorId = msg['user_id'] as String? ?? '';
+    final autorId = msg.usuarioId;
     final esPropio = autorId == usuarioId;
-    final tipo = msg['tipo'] as String? ?? 'texto';
-    final cuerpo = msg['cuerpo'] as String? ?? '';
-    final nombreAutor = msg['nombre_display'] as String? ??
-        msg['autor_nombre'] as String? ??
-        'Usuario';
+    const tipo = 'texto';
+    final cuerpo = msg.cuerpo ?? '';
+    final nombreAutor = msg.usuarioId.length > 6
+        ? msg.usuarioId.substring(0, 6)
+        : msg.usuarioId;
     final estadoAutor = presencia[autorId];
     final estaOnline = estadoAutor != null;
     final colorEstado = estadoAutor?.color ?? EstadoPresencia.online.color;
@@ -963,7 +942,7 @@ class _ChatMensajeTile extends ConsumerWidget {
     // Mensajes de sistema — centrados, itálica
     if (tipo == 'sistema') {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
         child: Center(
           child: Text(
             cuerpo,
@@ -977,7 +956,7 @@ class _ChatMensajeTile extends ConsumerWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment:
@@ -994,8 +973,8 @@ class _ChatMensajeTile extends ConsumerWidget {
                 ),
                 if (estaOnline)
                   Positioned(
-                    right: 0,
-                    bottom: 0,
+                    right: Spacing.none,
+                    bottom: Spacing.none,
                     child: Tooltip(
                       message: estadoAutor.label,
                       child: Container(
@@ -1011,7 +990,7 @@ class _ChatMensajeTile extends ConsumerWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.sm),
           ],
           Flexible(
             child: Column(
@@ -1020,7 +999,7 @@ class _ChatMensajeTile extends ConsumerWidget {
               children: [
                 if (!esPropio)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
+                    padding: const EdgeInsets.only(bottom: Spacing.xxs),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1030,7 +1009,7 @@ class _ChatMensajeTile extends ConsumerWidget {
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         if (estaOnline) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: Spacing.xs),
                           Tooltip(
                             message: estadoAutor.label,
                             child: Container(
@@ -1048,7 +1027,7 @@ class _ChatMensajeTile extends ConsumerWidget {
                   ),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                      horizontal: Spacing.ms, vertical: Spacing.sm),
                   decoration: BoxDecoration(
                     color: esPropio
                         ? theme.accentColor.withValues(alpha: 0.15)
@@ -1069,7 +1048,7 @@ class _ChatMensajeTile extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(FluentIcons.lightbulb, size: 14),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: Spacing.xs),
                             Flexible(child: Text(cuerpo)),
                           ],
                         )
@@ -1111,21 +1090,13 @@ class _ChatInputState extends ConsumerState<_ChatInput> {
     final texto = _ctrl.text.trim();
     if (texto.isEmpty || _enviando) return;
 
-    final usuarioId = ref.read(usuarioActualProvider)?.id;
-    final empresaId = ref.read(empresaActivaIdProvider);
-    if (usuarioId == null || empresaId == null) return;
-
     setState(() => _enviando = true);
     try {
-      await Supabase.instance.client.from('chat_mensajes').insert({
-        'canal_id': widget.canalId,
-        'user_id': usuarioId,
-        'empresa_id': empresaId,
-        'cuerpo': texto,
-        'tipo': 'texto',
-      });
+      await ref.read(chatActionsProvider.notifier).enviarMensaje(
+        canalId: widget.canalId,
+        cuerpo: texto,
+      );
       _ctrl.clear();
-      ref.invalidate(chatMensajesProvider(widget.canalId));
     } on Exception catch (e) {
       if (mounted) {
         await displayInfoBar(
@@ -1146,7 +1117,7 @@ class _ChatInputState extends ConsumerState<_ChatInput> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(Spacing.sm),
       decoration: BoxDecoration(
         color: FluentTheme.of(context).micaBackgroundColor,
         border: Border(
@@ -1167,9 +1138,9 @@ class _ChatInputState extends ConsumerState<_ChatInput> {
               textInputAction: TextInputAction.newline,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           if (_enviando)
-            const SizedBox(width: 36, height: 36, child: ProgressRing())
+            const PilarProgressRing(size: Spacing.xl)
           else
             IconButton(
               icon: const Icon(FluentIcons.send),

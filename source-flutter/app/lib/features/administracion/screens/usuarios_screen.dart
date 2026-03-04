@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,9 +9,13 @@ import 'package:syncfusion_flutter_core/theme.dart';
 
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/providers/perfil_provider.dart';
+import '../../../core/utils/timezones.dart';
 import '../../../core/widgets/user_card.dart';
+import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../providers/admin_providers.dart';
+import '../providers/usuarios_admin_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,27 +34,6 @@ String _formatAcceso(String? iso) {
     return iso;
   }
 }
-
-// Zonas horarias comunes (América Latina + globales)
-const _zonasHorarias = [
-  'America/Guayaquil',
-  'America/Bogota',
-  'America/Lima',
-  'America/Santiago',
-  'America/Buenos_Aires',
-  'America/Caracas',
-  'America/La_Paz',
-  'America/Asuncion',
-  'America/Montevideo',
-  'America/Sao_Paulo',
-  'America/Mexico_City',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/Madrid',
-  'UTC',
-];
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -131,9 +112,9 @@ class _UsuariosScreenState extends ConsumerState<UsuariosScreen> {
             children: [
               Icon(FluentIcons.people,
                   size: 48, color: FluentTheme.of(context).inactiveColor),
-              const SizedBox(height: 16),
+              const SizedBox(height: Spacing.md),
               const Text('No hay usuarios en esta empresa'),
-              const SizedBox(height: 12),
+              const SizedBox(height: Spacing.ms),
               FilledButton(
                 onPressed: () => _showInviteDialog(context),
                 child: const Text('Invitar el primero'),
@@ -202,6 +183,8 @@ class _DesktopGridState extends ConsumerState<_DesktopGrid> {
       onGestionar: _showGestionarDialog,
       onSetPassword: _showSetPasswordDialog,
       onSelect: widget.onSelect,
+      onCancelarInvitacion: _handleCancelarInvitacion,
+      onDelete: _handleDelete,
     );
   }
 
@@ -219,23 +202,201 @@ class _DesktopGridState extends ConsumerState<_DesktopGrid> {
       return;
     }
     _source.startToggling(userId);
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_toggle_usuario_activo',
-        params: {'p_usuario_id': userId, 'p_activo': value},
-      );
-      if (result is Map && result['ok'] == true) {
-        widget.onRefresh();
-      } else {
-        final err = result is Map ? result['error'] : null;
-        if (mounted) _showError(_toggleErrorMsg(err?.toString()));
-      }
-    } catch (e) {
-      if (mounted) _showError(e.toString());
-    } finally {
-      _source.stopToggling(userId);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .toggleActivo(userId: userId, activo: value);
+    _source.stopToggling(userId);
+    if (result.ok) {
+      widget.onRefresh();
+    } else {
+      if (mounted) _showError(_toggleErrorMsg(result.error));
     }
   }
+
+  Future<void> _handleCancelarInvitacion(String email) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlg) => ContentDialog(
+        title: const Text('¿Cancelar invitación?'),
+        content: Text(
+          'Se cancelará la invitación enviada a "$email". '
+          'El enlace de invitación dejará de funcionar.',
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.of(dlg).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: const ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+            ),
+            onPressed: () => Navigator.of(dlg).pop(true),
+            child: const Text('Cancelar invitación'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .cancelarInvitacion(email: email);
+    if (!mounted) return;
+    if (result.ok) {
+      widget.onRefresh();
+      displayInfoBar(
+        context,
+        builder: (_, close) => InfoBar(
+          title: const Text('Invitación cancelada'),
+          severity: InfoBarSeverity.success,
+          onClose: close,
+        ),
+      );
+    } else {
+      _showError(_cancelErrorMsg(result.error));
+    }
+  }
+
+  String _cancelErrorMsg(String? code) => switch (code) {
+        'PERMISSION_DENIED' => 'Sin permiso para cancelar invitaciones.',
+        'INVITACION_NOT_FOUND' =>
+          'Invitación no encontrada o ya fue procesada.',
+        _ => code ?? 'Error desconocido',
+      };
+
+  Future<void> _handleDelete(Map<String, dynamic> usuario) async {
+    final nombre = usuario['nombre'] as String? ??
+        usuario['email'] as String? ??
+        '';
+    final userId = usuario['usuario_id'] as String? ?? '';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlg) => ContentDialog(
+        title: const Text('¿Quitar usuario de la empresa?'),
+        content: Text(
+          'Se desactivará el acceso de "$nombre" a esta empresa. '
+          'Podrás reactivarlo en el futuro si es necesario.',
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.of(dlg).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: const ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+            ),
+            onPressed: () => Navigator.of(dlg).pop(true),
+            child: const Text('Quitar de empresa'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final removeResult = await ref
+        .read(usuariosAdminProvider.notifier)
+        .removeFromEmpresa(userId: userId);
+
+    if (!mounted) return;
+
+    if (!removeResult.ok) {
+      _showError(_deleteErrorMsg(removeResult.error));
+      return;
+    }
+
+    widget.onRefresh();
+
+    // ── Sin otras empresas → ofrecer eliminación completa ──
+    if (removeResult.orphan && mounted) {
+      final deleteAuth = await showDialog<bool>(
+        context: context,
+        builder: (dlg2) => ContentDialog(
+          title: const Text('Usuario sin empresa'),
+          content: Text(
+            '"$nombre" ya no pertenece a ninguna empresa. '
+            '¿Deseas eliminarlo completamente del sistema?',
+          ),
+          actions: [
+            Button(
+              onPressed: () => Navigator.of(dlg2).pop(false),
+              child: const Text('Solo quitar'),
+            ),
+            FilledButton(
+              style: const ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+              ),
+              onPressed: () => Navigator.of(dlg2).pop(true),
+              child: const Text('Eliminar del sistema'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (deleteAuth == true) {
+        final delResult = await ref
+            .read(usuariosAdminProvider.notifier)
+            .deleteFromAuth(userId: userId);
+        if (!mounted) return;
+        if (delResult.ok) {
+          displayInfoBar(context,
+              builder: (_, close) => InfoBar(
+                    title: const Text('Usuario eliminado del sistema'),
+                    severity: InfoBarSeverity.success,
+                    onClose: close,
+                  ));
+        } else {
+          final detalle = _buildTieneDatosMsg(delResult.mensajes, delResult.adjuntos);
+          displayInfoBar(context,
+              builder: (_, close) => InfoBar(
+                    title: const Text('Quitado de empresa, no del sistema'),
+                    content: Text(
+                        'El usuario fue desactivado pero no se puede eliminar completamente.$detalle'),
+                    severity: InfoBarSeverity.warning,
+                    onClose: close,
+                  ));
+        }
+      } else {
+        // El admin eligió "Solo quitar"
+        displayInfoBar(context,
+            builder: (_, close) => InfoBar(
+                  title: const Text('Usuario quitado de la empresa'),
+                  severity: InfoBarSeverity.success,
+                  onClose: close,
+                ));
+      }
+    } else if (mounted) {
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Usuario quitado de la empresa'),
+                severity: InfoBarSeverity.success,
+                onClose: close,
+              ));
+    }
+  }
+
+
+  String _deleteErrorMsg(String? code,
+          {int? mensajes, int? adjuntos}) =>
+      switch (code) {
+        'PERMISSION_DENIED' => 'Sin permiso para eliminar usuarios.',
+        'CANNOT_REMOVE_YOURSELF' => 'No puedes quitarte a ti mismo.',
+        'USER_NOT_IN_EMPRESA' => 'El usuario no pertenece a esta empresa.',
+        'USER_HAS_ACTIVE_MEMBERSHIPS' =>
+          'El usuario aún tiene membresías activas en otras empresas.',
+        'TIENE_DATOS' => 'No se puede eliminar: el usuario tiene '
+            '${mensajes != null && mensajes > 0 ? '$mensajes mensaje(s)' : ''}'
+            '${mensajes != null && mensajes > 0 && adjuntos != null && adjuntos > 0 ? ' y ' : ''}'
+            '${adjuntos != null && adjuntos > 0 ? '$adjuntos archivo(s) subido(s)' : ''}'
+            ' asociados.',
+        _ => code ?? 'Error desconocido',
+      };
 
   void _showGestionarDialog(Map<String, dynamic> usuario) {
     showDialog<void>(
@@ -285,7 +446,7 @@ class _DesktopGridState extends ConsumerState<_DesktopGrid> {
 
     Widget headerCell(String label, {Alignment align = Alignment.centerLeft}) =>
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms),
           alignment: align,
           child: Text(label, style: headerStyle),
         );
@@ -330,7 +491,7 @@ class _DesktopGridState extends ConsumerState<_DesktopGrid> {
           ),
           GridColumn(
             columnName: 'acciones',
-            width: 108,
+            width: 140,
             label: const SizedBox.shrink(),
           ),
         ],
@@ -351,6 +512,8 @@ class _UsuariosDataSource extends DataGridSource {
     required this.onGestionar,
     required this.onSetPassword,
     required this.onSelect,
+    required this.onCancelarInvitacion,
+    required this.onDelete,
   }) : _usuarios = List.from(usuarios);
 
   List<Map<String, dynamic>> _usuarios;
@@ -359,6 +522,8 @@ class _UsuariosDataSource extends DataGridSource {
   final void Function(Map<String, dynamic> usuario) onGestionar;
   final void Function(Map<String, dynamic> usuario) onSetPassword;
   final void Function(Map<String, dynamic> usuario) onSelect;
+  final Future<void> Function(String email) onCancelarInvitacion;
+  final Future<void> Function(Map<String, dynamic> usuario) onDelete;
   final Set<String> _toggling = {};
 
   void update(List<Map<String, dynamic>> newList) {
@@ -416,12 +581,12 @@ class _UsuariosDataSource extends DataGridSource {
 
         // ---- Roles ----
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
           child: roles.isEmpty
               ? const _GreyText('Sin rol')
               : Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
+                  spacing: Spacing.xs,
+                  runSpacing: Spacing.xs,
                   children: roles
                       .map((r) => _RolBadge(nombre: r['nombre'] as String? ?? ''))
                       .toList(),
@@ -430,7 +595,7 @@ class _UsuariosDataSource extends DataGridSource {
 
         // ---- Último acceso ----
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms),
           child: _AccesoCell(ultimoAcceso: acceso),
         ),
 
@@ -441,10 +606,7 @@ class _UsuariosDataSource extends DataGridSource {
               : esYo
                   ? const SizedBox.shrink()
                   : isToggling
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: ProgressRing(strokeWidth: 2))
+                      ? const PilarProgressRing(size: 20)
                       : ToggleSwitch(
                           checked: activo,
                           onChanged: (v) => onToggle(userId, v),
@@ -454,7 +616,13 @@ class _UsuariosDataSource extends DataGridSource {
         // ---- Acciones ----
         Center(
           child: esPendiente
-              ? const SizedBox.shrink()
+              ? Tooltip(
+                  message: 'Cancelar invitación',
+                  child: IconButton(
+                    icon: const Icon(FluentIcons.delete, size: 16),
+                    onPressed: () => onCancelarInvitacion(email),
+                  ),
+                )
               : Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
@@ -479,6 +647,15 @@ class _UsuariosDataSource extends DataGridSource {
                         child: IconButton(
                           icon: const Icon(FluentIcons.password_field, size: 16),
                           onPressed: () => onSetPassword(u),
+                        ),
+                      ),
+                      Tooltip(
+                        message: 'Eliminar usuario',
+                        child: IconButton(
+                          icon: Icon(FluentIcons.delete,
+                              size: 16,
+                              color: Colors.red.normal),
+                          onPressed: () => onDelete(u),
                         ),
                       ),
                     ],
@@ -518,32 +695,7 @@ class _UsuarioCell extends StatelessWidget {
       avatarRadius: 22,
       dimmed: !activo,
       trailing: esYo ? _TuChip() : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    );
-  }
-}
-
-class _AvatarInitial extends StatelessWidget {
-  const _AvatarInitial({
-    required this.initial,
-    required this.activo,
-    required this.theme,
-  });
-  final String initial;
-  final bool activo;
-  final FluentThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        initial,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: activo ? theme.accentColor : theme.inactiveColor,
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
     );
   }
 }
@@ -558,7 +710,7 @@ class _AccesoCell extends StatelessWidget {
     return Row(
       children: [
         Icon(FluentIcons.clock, size: 12, color: theme.inactiveColor),
-        const SizedBox(width: 4),
+        const SizedBox(width: Spacing.xs),
         Flexible(
           child: Text(
             _formatAcceso(ultimoAcceso),
@@ -579,7 +731,7 @@ class _RolBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = FluentTheme.of(context).accentColor;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(4),
@@ -597,7 +749,7 @@ class _TuChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = FluentTheme.of(context).accentColor;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xs, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(3),
@@ -633,7 +785,7 @@ class _InvitadoBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
@@ -741,43 +893,35 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
       _loading = true;
       _loadError = null;
     });
-    try {
-      final data = await Supabase.instance.client.rpc(
-        'admin_get_perfil_usuario',
-        params: {'p_usuario_id': widget.usuarioId},
-      );
-      final map = Map<String, dynamic>.from(data as Map);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .getPerfil(userId: widget.usuarioId);
 
-      if (map.containsKey('error')) {
-        setState(() {
-          _loading = false;
-          _loadError = map['error'] as String? ?? 'Error desconocido';
-        });
-        return;
-      }
-
-      _avatarUrl = map['avatar_url'] as String?;
-      _emailLogin = map['email_login'] as String?;
-      _originalEmailLogin = _emailLogin;
-      _emailLoginCtrl.text = _emailLogin ?? '';
-      _nombreGlobal = map['nombre_global'] as String?;
-      _nombreCtrl.text = map['nombre_display'] as String? ?? '';
-      _telefonoCtrl.text = map['telefono'] as String? ?? '';
-      _emailCtrl.text = map['email_contacto'] as String? ?? '';
-      _zonaHoraria = map['zona_horaria'] as String? ?? 'America/Guayaquil';
-
-      // Roles desde la lista
-      _selectedRoles = _parseRoles(widget.usuarioData['roles'])
-          .map((r) => r['id'] as String)
-          .toSet();
-
-      setState(() => _loading = false);
-    } catch (e) {
+    if (result.error != null) {
       setState(() {
         _loading = false;
-        _loadError = e.toString();
+        _loadError = result.error;
       });
+      return;
     }
+
+    final map = result.data!;
+    _avatarUrl = map['avatar_url'] as String?;
+    _emailLogin = map['email_login'] as String?;
+    _originalEmailLogin = _emailLogin;
+    _emailLoginCtrl.text = _emailLogin ?? '';
+    _nombreGlobal = map['nombre_global'] as String?;
+    _nombreCtrl.text = map['nombre_display'] as String? ?? '';
+    _telefonoCtrl.text = map['telefono'] as String? ?? '';
+    _emailCtrl.text = map['email_contacto'] as String? ?? '';
+    _zonaHoraria = map['zona_horaria'] as String? ?? 'America/Guayaquil';
+
+    // Roles desde la lista
+    _selectedRoles = _parseRoles(widget.usuarioData['roles'])
+        .map((r) => r['id'] as String)
+        .toSet();
+
+    setState(() => _loading = false);
   }
 
   Future<void> _savePerfil() async {
@@ -790,55 +934,57 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
       _perfilMsg = null;
       _perfilSuccess = false;
     });
-    try {
-      // 1. Guardar campos de perfil
-      final result = await Supabase.instance.client.rpc(
-        'admin_update_perfil_usuario',
-        params: {
-          'p_usuario_id': widget.usuarioId,
-          'p_data': {
+
+    // 1. Guardar campos de perfil
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .updatePerfil(
+          userId: widget.usuarioId,
+          data: {
             'nombre_display': _nombreCtrl.text.trim(),
             'telefono': _telefonoCtrl.text.trim(),
             'email_contacto': _emailCtrl.text.trim(),
             if (_zonaHoraria != null) 'zona_horaria': _zonaHoraria!,
           },
-        },
-      );
-      final map = Map<String, dynamic>.from(result as Map);
-      if (map['ok'] != true) {
-        setState(() => _perfilMsg = _errorLabel(map['error']?.toString()));
+        );
+
+    if (!mounted) return;
+
+    if (!result.ok) {
+      setState(() {
+        _perfilMsg = _errorLabel(result.error);
+        _savingPerfil = false;
+      });
+      return;
+    }
+
+    // 2. Cambiar email de acceso si fue modificado
+    final newEmail = _emailLoginCtrl.text.trim().toLowerCase();
+    final currentEmail = (_originalEmailLogin ?? '').toLowerCase();
+    if (newEmail.isNotEmpty && newEmail != currentEmail) {
+      final emailResult = await ref
+          .read(usuariosAdminProvider.notifier)
+          .changeEmail(userId: widget.usuarioId, newEmail: newEmail);
+      if (!mounted) return;
+      if (!emailResult.ok) {
+        setState(() {
+          _perfilMsg = _errorLabel(emailResult.error);
+          _savingPerfil = false;
+        });
         return;
       }
-
-      // 2. Cambiar email de acceso si fue modificado
-      final newEmail = _emailLoginCtrl.text.trim().toLowerCase();
-      final currentEmail = (_originalEmailLogin ?? '').toLowerCase();
-      if (newEmail.isNotEmpty && newEmail != currentEmail) {
-        final emailResult = await Supabase.instance.client.rpc(
-          'change_email_usuario',
-          params: {'p_usuario_id': widget.usuarioId, 'p_new_email': newEmail},
-        );
-        final emailMap = Map<String, dynamic>.from(emailResult as Map);
-        if (emailMap['ok'] != true) {
-          setState(() => _perfilMsg = _errorLabel(emailMap['error']?.toString()));
-          return;
-        }
-        setState(() {
-          _originalEmailLogin = newEmail;
-          _emailLogin = newEmail;
-        });
-      }
-
       setState(() {
-        _perfilSuccess = true;
-        _perfilMsg = 'Datos guardados correctamente';
+        _originalEmailLogin = newEmail;
+        _emailLogin = newEmail;
       });
-      widget.onRefresh();
-    } catch (e) {
-      setState(() => _perfilMsg = e.toString());
-    } finally {
-      if (mounted) setState(() => _savingPerfil = false);
     }
+
+    setState(() {
+      _perfilSuccess = true;
+      _perfilMsg = 'Datos guardados correctamente';
+      _savingPerfil = false;
+    });
+    widget.onRefresh();
   }
 
   Future<void> _saveAll() async {
@@ -856,28 +1002,22 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
       _rolesMsg = null;
       _rolesSuccess = false;
     });
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_set_roles_usuario',
-        params: {
-          'p_usuario_id': widget.usuarioId,
-          'p_rol_ids': _selectedRoles.toList(),
-        },
-      );
-      final map = Map<String, dynamic>.from(result as Map);
-      if (map['ok'] == true) {
-        setState(() {
-          _rolesSuccess = true;
-          _rolesMsg = 'Roles actualizados';
-        });
-        widget.onRefresh();
-      } else {
-        setState(() => _rolesMsg = _errorLabel(map['error']?.toString()));
-      }
-    } catch (e) {
-      setState(() => _rolesMsg = e.toString());
-    } finally {
-      if (mounted) setState(() => _savingRoles = false);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .setRoles(userId: widget.usuarioId, rolIds: _selectedRoles.toList());
+    if (!mounted) return;
+    if (result.ok) {
+      setState(() {
+        _rolesSuccess = true;
+        _rolesMsg = 'Roles actualizados';
+        _savingRoles = false;
+      });
+      widget.onRefresh();
+    } else {
+      setState(() {
+        _rolesMsg = _errorLabel(result.error);
+        _savingRoles = false;
+      });
     }
   }
 
@@ -908,30 +1048,24 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
       _passwordMsg = null;
       _passwordSuccess = false;
     });
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_set_user_password',
-        params: {
-          'p_user_id': widget.usuarioId,
-          'p_password': _password,
-        },
-      );
-      final map = Map<String, dynamic>.from(result as Map);
-      if (map['ok'] == true) {
-        setState(() {
-          _passwordSuccess = true;
-          _passwordMsg = 'Contraseña actualizada';
-          _password = '';
-          _confirmPassword = '';
-          _passwordSectionKey++; // Fuerza recreación de los TextEditingControllers
-        });
-      } else {
-        setState(() => _passwordMsg = _errorLabel(map['error']?.toString()));
-      }
-    } catch (e) {
-      setState(() => _passwordMsg = e.toString());
-    } finally {
-      if (mounted) setState(() => _savingPassword = false);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .setPassword(userId: widget.usuarioId, password: _password);
+    if (!mounted) return;
+    if (result.ok) {
+      setState(() {
+        _passwordSuccess = true;
+        _passwordMsg = 'Contraseña actualizada';
+        _password = '';
+        _confirmPassword = '';
+        _passwordSectionKey++; // Fuerza recreación de los TextEditingControllers
+        _savingPassword = false;
+      });
+    } else {
+      setState(() {
+        _passwordMsg = _errorLabel(result.error);
+        _savingPassword = false;
+      });
     }
   }
 
@@ -980,93 +1114,73 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
     }
 
     setState(() => _removingFromEmpresa = true);
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_remove_user_from_empresa',
-        params: {'p_usuario_id': widget.usuarioId},
-      );
-      final map = Map<String, dynamic>.from(result as Map);
+    final removeResult = await ref
+        .read(usuariosAdminProvider.notifier)
+        .removeFromEmpresa(userId: widget.usuarioId);
 
-      if (map['ok'] != true) {
-        if (mounted) {
-          setState(() => _removingFromEmpresa = false);
+    if (!mounted) return;
+
+    if (!removeResult.ok) {
+      setState(() => _removingFromEmpresa = false);
+      displayInfoBar(
+        context,
+        builder: (_, close) => InfoBar(
+          title: const Text('Error'),
+          content: Text(_errorLabel(removeResult.error)),
+          severity: InfoBarSeverity.error,
+          onClose: close,
+        ),
+      );
+      return;
+    }
+
+    if (removeResult.orphan && mounted) {
+      final deleteAuth = await showDialog<bool>(
+        context: context,
+        builder: (_) => ContentDialog(
+          title: const Text('Usuario sin empresa'),
+          content: Text(
+            '"$nombre" ya no pertenece a ninguna empresa. '
+            '¿Deseas eliminarlo completamente del sistema? '
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: [
+            Button(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Solo quitar'),
+            ),
+            FilledButton(
+              style: const ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar del sistema'),
+            ),
+          ],
+        ),
+      );
+
+      if (deleteAuth == true && mounted) {
+        final delResult = await ref
+            .read(usuariosAdminProvider.notifier)
+            .deleteFromAuth(userId: widget.usuarioId);
+        if (!delResult.ok && mounted) {
           displayInfoBar(
             context,
             builder: (_, close) => InfoBar(
-              title: const Text('Error'),
-              content: Text(_errorLabel(map['error']?.toString())),
-              severity: InfoBarSeverity.error,
+              title: const Text('No se pudo eliminar'),
+              content: Text(_errorLabel(delResult.error)),
+              severity: InfoBarSeverity.warning,
               onClose: close,
             ),
           );
         }
-        return;
       }
+    }
 
-      final isOrphan = map['orphan'] == true;
-      if (isOrphan && mounted) {
-        final deleteAuth = await showDialog<bool>(
-          context: context,
-          builder: (_) => ContentDialog(
-            title: const Text('Usuario sin empresa'),
-            content: Text(
-              '"$nombre" ya no pertenece a ninguna empresa. '
-              '¿Deseas eliminarlo completamente del sistema? '
-              'Esta acción no se puede deshacer.',
-            ),
-            actions: [
-              Button(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Solo quitar'),
-              ),
-              FilledButton(
-                style: const ButtonStyle(
-                  backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
-                ),
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Eliminar del sistema'),
-              ),
-            ],
-          ),
-        );
-
-        if (deleteAuth == true && mounted) {
-          final delResult = await Supabase.instance.client.rpc(
-            'admin_delete_user_from_auth',
-            params: {'p_usuario_id': widget.usuarioId},
-          );
-          final delMap = Map<String, dynamic>.from(delResult as Map);
-          if (delMap['ok'] != true && mounted) {
-            displayInfoBar(
-              context,
-              builder: (_, close) => InfoBar(
-                title: const Text('No se pudo eliminar'),
-                content: Text(_errorLabel(delMap['error']?.toString())),
-                severity: InfoBarSeverity.warning,
-                onClose: close,
-              ),
-            );
-          }
-        }
-      }
-
-      if (mounted) {
-        widget.onRefresh();
-        Navigator.of(context).maybePop();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _removingFromEmpresa = false);
-        displayInfoBar(
-          context,
-          builder: (_, close) => InfoBar(
-            title: const Text('Error'),
-            content: Text(e.toString()),
-            severity: InfoBarSeverity.error,
-            onClose: close,
-          ),
-        );
-      }
+    if (mounted) {
+      widget.onRefresh();
+      Navigator.of(context).maybePop();
     }
   }
 
@@ -1081,56 +1195,29 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
 
     setState(() => _uploadingAvatar = true);
 
-    try {
-      final empresaId = Supabase.instance.client.auth.currentSession
-              ?.user.appMetadata['empresa_id'] as String? ??
-          'default';
-      final path = '${widget.usuarioId}/$empresaId/avatar.jpg';
+    final uploadResult = await ref
+        .read(usuariosAdminProvider.notifier)
+        .uploadAvatar(userId: widget.usuarioId, bytes: bytes);
 
-      await Supabase.instance.client.storage
-          .from('avatares')
-          .uploadBinary(
-            path,
-            Uint8List.fromList(bytes),
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: true,
-            ),
-          );
+    if (!mounted) return;
 
-      final url = Supabase.instance.client.storage
-          .from('avatares')
-          .getPublicUrl(path);
-
-      final urlWithBust = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
-
-      // Guardar avatar_url en el perfil
-      await Supabase.instance.client.rpc(
-        'admin_update_perfil_usuario',
-        params: {
-          'p_usuario_id': widget.usuarioId,
-          'p_data': {'avatar_url': urlWithBust},
-        },
+    if (uploadResult.error != null) {
+      setState(() => _uploadingAvatar = false);
+      displayInfoBar(
+        context,
+        builder: (_, close) => InfoBar(
+          title: const Text('Error'),
+          content: Text('Error al subir la imagen: ${uploadResult.error}'),
+          severity: InfoBarSeverity.error,
+          onClose: close,
+        ),
       );
-
+    } else {
       setState(() {
-        _avatarUrl = urlWithBust;
+        _avatarUrl = uploadResult.url;
         _uploadingAvatar = false;
       });
       widget.onRefresh();
-    } catch (e) {
-      if (mounted) {
-        setState(() => _uploadingAvatar = false);
-        displayInfoBar(
-          context,
-          builder: (_, close) => InfoBar(
-            title: const Text('Error'),
-            content: Text('Error al subir la imagen: $e'),
-            severity: InfoBarSeverity.error,
-            onClose: close,
-          ),
-        );
-      }
     }
   }
 
@@ -1168,11 +1255,11 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
             children: [
               Icon(FluentIcons.error,
                   color: theme.resources.systemFillColorCritical),
-              const SizedBox(height: 8),
+              const SizedBox(height: Spacing.sm),
               Text(_loadError!,
                   style: TextStyle(
                       color: theme.resources.systemFillColorCritical)),
-              const SizedBox(height: 12),
+              const SizedBox(height: Spacing.ms),
               Button(onPressed: _loadPerfil, child: const Text('Reintentar')),
             ],
           ),
@@ -1282,8 +1369,8 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                             ),
                 ),
                 Positioned(
-                  right: 0,
-                  bottom: 0,
+                  right: Spacing.none,
+                  bottom: Spacing.none,
                   child: Container(
                     width: size * 0.28,
                     height: size * 0.28,
@@ -1313,7 +1400,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(FluentIcons.password_field, size: 16),
-            SizedBox(width: 8),
+            SizedBox(width: Spacing.sm),
             Text('Cambiar contraseña'),
           ],
         ),
@@ -1322,7 +1409,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
       Widget dialogContent;
       if (_loading) {
         dialogContent = const SizedBox(
-            height: 120, child: Center(child: ProgressRing()));
+            height: 120, child: PilarLoadingCenter());
       } else if (_loadError != null) {
         dialogContent = errorWidget();
       } else if (isWide) {
@@ -1337,7 +1424,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                   child: Column(
                     children: [
                       avatarCircle(110),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Spacing.sm),
                       _uploadingAvatar
                           ? Text(
                               'Subiendo…',
@@ -1354,7 +1441,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                                 textAlign: TextAlign.center,
                               ),
                             ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: Spacing.md),
                       Text(
                         nombre,
                         style: theme.typography.bodyStrong,
@@ -1362,7 +1449,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                         overflow: TextOverflow.ellipsis,
                         maxLines: 2,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: Spacing.xs),
                       Text(
                         email,
                         style: theme.typography.caption
@@ -1373,7 +1460,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: Spacing.ml),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1381,12 +1468,12 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                       datosSection,
                       if (!widget.esYo) ...[
                         const Divider(),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: Spacing.xs),
                         Text('Roles', style: theme.typography.bodyStrong),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Spacing.sm),
                         rolesSection,
                       ],
-                      const SizedBox(height: 12),
+                      const SizedBox(height: Spacing.ms),
                       cambiarContra,
                     ],
                   ),
@@ -1402,7 +1489,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(child: avatarCircle(80)),
-              const SizedBox(height: 6),
+              const SizedBox(height: Spacing.sm),
               Center(
                 child: _uploadingAvatar
                     ? Text(
@@ -1419,16 +1506,16 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                         ),
                       ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: Spacing.ml),
               datosSection,
               if (!widget.esYo) ...[
                 const Divider(),
-                const SizedBox(height: 4),
+                const SizedBox(height: Spacing.xs),
                 Text('Roles', style: theme.typography.bodyStrong),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 rolesSection,
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: Spacing.ms),
               cambiarContra,
             ],
           ),
@@ -1468,11 +1555,8 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                       ? const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: ProgressRing(strokeWidth: 2)),
-                            SizedBox(width: 8),
+                            PilarProgressRing(size: 14),
+                            SizedBox(width: Spacing.sm),
                             Text('Quitando…'),
                           ],
                         )
@@ -1491,18 +1575,15 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                         : () => Navigator.of(context).maybePop(),
                     child: const Text('Cerrar'),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Spacing.sm),
                   FilledButton(
                     onPressed: isSaving || _loading ? null : _saveAll,
                     child: (_savingPerfil || _savingRoles)
                         ? const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: ProgressRing(strokeWidth: 2)),
-                              SizedBox(width: 8),
+                              PilarProgressRing(size: 14),
+                              SizedBox(width: Spacing.sm),
                               Text('Guardando…'),
                             ],
                           )
@@ -1539,11 +1620,11 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
         // ---- Contenido scrollable ----
         Expanded(
           child: _loading
-              ? const Center(child: ProgressRing())
+              ? const PilarLoadingCenter()
               : _loadError != null
                   ? errorWidget()
                   : SingleChildScrollView(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(Spacing.ms),
                       child: Column(
                         children: [
                           // ── Datos de contacto ──
@@ -1552,7 +1633,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                             header: const Text('Datos de contacto'),
                             content: datosSection,
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: Spacing.sm),
 
                           // ── Roles (solo admin y no para sí mismo) ──
                           if (!widget.esYo) ...[
@@ -1561,7 +1642,7 @@ class _EditarUsuarioPanelState extends ConsumerState<_EditarUsuarioPanel> {
                               header: const Text('Roles'),
                               content: rolesSection,
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: Spacing.sm),
                           ],
 
                           // ── Contraseña ──
@@ -1607,7 +1688,7 @@ class _PanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.ms, Spacing.sm, Spacing.ms),
       child: Row(
         children: [
           // Avatar 80px con cámara overlay
@@ -1624,7 +1705,7 @@ class _PanelHeader extends StatelessWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: uploadingAvatar
-                      ? const Center(child: ProgressRing(strokeWidth: 3))
+                      ? const PilarLoadingCenter()
                       : avatarUrl != null
                           ? Image.network(
                               avatarUrl!,
@@ -1646,8 +1727,8 @@ class _PanelHeader extends StatelessWidget {
                             ),
                 ),
                 Positioned(
-                  right: 0,
-                  bottom: 0,
+                  right: Spacing.none,
+                  bottom: Spacing.none,
                   child: Container(
                     width: 24,
                     height: 24,
@@ -1664,7 +1745,7 @@ class _PanelHeader extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: Spacing.ms),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1672,7 +1753,7 @@ class _PanelHeader extends StatelessWidget {
                 Text(nombre,
                     style: theme.typography.bodyStrong,
                     overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
+                const SizedBox(height: Spacing.xxs),
                 Text(email,
                     style: theme.typography.caption
                         ?.copyWith(color: theme.inactiveColor),
@@ -1739,7 +1820,7 @@ class _DatosContactoSection extends StatelessWidget {
             enabled: !saving,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         InfoLabel(
           label: 'Teléfono',
           child: TextBox(
@@ -1749,7 +1830,7 @@ class _DatosContactoSection extends StatelessWidget {
             keyboardType: TextInputType.phone,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         InfoLabel(
           label: 'Email de contacto',
           child: TextBox(
@@ -1759,7 +1840,7 @@ class _DatosContactoSection extends StatelessWidget {
             keyboardType: TextInputType.emailAddress,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         InfoLabel(
           label: 'Email de acceso',
           child: Tooltip(
@@ -1773,20 +1854,20 @@ class _DatosContactoSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         InfoLabel(
           label: 'Zona horaria',
           child: ComboBox<String>(
             value: zonaHoraria,
             isExpanded: true,
-            items: _zonasHorarias
-                .map((z) => ComboBoxItem<String>(value: z, child: Text(z)))
+            items: kZonasHorarias
+                .map((z) => ComboBoxItem<String>(value: z.$1, child: Text(z.$2)))
                 .toList(),
             onChanged: saving ? null : onZonaChanged,
           ),
         ),
         if (msg != null) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: Spacing.ms),
           InfoBar(
             title: Text(success ? 'Guardado' : 'Error'),
             content: Text(msg!),
@@ -1796,18 +1877,15 @@ class _DatosContactoSection extends StatelessWidget {
           ),
         ],
         if (showSaveButton) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           FilledButton(
             onPressed: saving ? null : onSave,
             child: saving
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: ProgressRing(strokeWidth: 2)),
-                      SizedBox(width: 8),
+                      PilarProgressRing(size: 14),
+                      SizedBox(width: Spacing.sm),
                       Text('Guardando…'),
                     ],
                   )
@@ -1861,7 +1939,7 @@ class _RolesSection extends ConsumerWidget {
                           ? null
                           : () => onToggleRole(r.id, !selectedRoles.contains(r.id)),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        padding: const EdgeInsets.symmetric(vertical: Spacing.xxs),
                         child: Row(
                           children: [
                             Checkbox(
@@ -1870,7 +1948,7 @@ class _RolesSection extends ConsumerWidget {
                                   ? null
                                   : (v) => onToggleRole(r.id, v == true),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Spacing.sm),
                             Text(r.nombre, style: theme.typography.body),
                           ],
                         ),
@@ -1878,15 +1956,13 @@ class _RolesSection extends ConsumerWidget {
                     ))
                 .toList(),
           ),
-          loading: () => const Center(
-              child: SizedBox(
-                  width: 24, height: 24, child: ProgressRing(strokeWidth: 2))),
+          loading: () => const Center(child: PilarProgressRing()),
           error: (e, _) => Text('Error cargando roles: $e',
               style: TextStyle(
                   color: theme.resources.systemFillColorCritical)),
         ),
         if (msg != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           InfoBar(
             title: Text(success ? 'Guardado' : 'Error'),
             content: Text(msg!),
@@ -1895,18 +1971,15 @@ class _RolesSection extends ConsumerWidget {
           ),
         ],
         if (showSaveButton) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           FilledButton(
             onPressed: saving ? null : onSave,
             child: saving
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: ProgressRing(strokeWidth: 2)),
-                      SizedBox(width: 8),
+                      PilarProgressRing(size: 14),
+                      SizedBox(width: Spacing.sm),
                       Text('Guardando…'),
                     ],
                   )
@@ -1971,7 +2044,7 @@ class _PasswordSectionState extends State<_PasswordSection> {
             onChanged: widget.onPasswordChanged,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.ms),
         InfoLabel(
           label: 'Confirmar contraseña',
           child: PasswordBox(
@@ -1982,7 +2055,7 @@ class _PasswordSectionState extends State<_PasswordSection> {
           ),
         ),
         if (widget.msg != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           InfoBar(
             title: Text(widget.success ? 'Guardado' : 'Error'),
             content: Text(widget.msg!),
@@ -1992,18 +2065,15 @@ class _PasswordSectionState extends State<_PasswordSection> {
             onClose: widget.onDismiss,
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         Button(
           onPressed: widget.saving ? null : widget.onSave,
           child: widget.saving
               ? const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: ProgressRing(strokeWidth: 2)),
-                    SizedBox(width: 8),
+                    PilarProgressRing(size: 14),
+                    SizedBox(width: Spacing.sm),
                     Text('Cambiando…'),
                   ],
                 )
@@ -2015,7 +2085,7 @@ class _PasswordSectionState extends State<_PasswordSection> {
 }
 
 // ===========================================================================
-// Mobile list (< 600 px)
+// Mobile list (< PilarBreakpoints.mobile)
 // ===========================================================================
 
 class _MobileList extends StatelessWidget {
@@ -2034,9 +2104,9 @@ class _MobileList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.md),
       itemCount: usuarios.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
       itemBuilder: (_, i) => _UsuarioCard(
         usuario: usuarios[i],
         currentUserId: currentUserId,
@@ -2066,6 +2136,7 @@ class _UsuarioCard extends ConsumerStatefulWidget {
 
 class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
   bool _toggling = false;
+  bool _canceling = false;
 
   String get _userId => widget.usuario['usuario_id'] as String? ?? '';
   String get _email => widget.usuario['email'] as String? ?? '';
@@ -2092,38 +2163,199 @@ class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
       return;
     }
     setState(() => _toggling = true);
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_toggle_usuario_activo',
-        params: {'p_usuario_id': _userId, 'p_activo': v},
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .toggleActivo(userId: _userId, activo: v);
+    if (!mounted) return;
+    if (result.ok) {
+      widget.onRefresh();
+    } else {
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Error'),
+                content: Text(result.error ?? 'Error'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ));
+    }
+    setState(() => _toggling = false);
+  }
+
+  bool _deleting = false;
+
+  Future<void> _deleteUser() async {
+    if (_deleting) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlg) => ContentDialog(
+        title: const Text('¿Quitar usuario de la empresa?'),
+        content: Text(
+          'Se desactivará el acceso de "$_nombre" a esta empresa.',
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.of(dlg).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: const ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+            ),
+            onPressed: () => Navigator.of(dlg).pop(true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    setState(() => _deleting = true);
+
+    final removeResult = await ref
+        .read(usuariosAdminProvider.notifier)
+        .removeFromEmpresa(userId: _userId);
+
+    if (!mounted) return;
+
+    if (!removeResult.ok) {
+      setState(() => _deleting = false);
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Error'),
+                content: Text(removeResult.error ?? 'Error'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ));
+      return;
+    }
+
+    widget.onRefresh();
+
+    if (removeResult.orphan && mounted) {
+      final deleteAuth = await showDialog<bool>(
+        context: context,
+        builder: (dlg2) => ContentDialog(
+          title: const Text('Usuario sin empresa'),
+          content: Text(
+              '"$_nombre" ya no pertenece a ninguna empresa. ¿Eliminar del sistema?'),
+          actions: [
+            Button(
+              onPressed: () => Navigator.of(dlg2).pop(false),
+              child: const Text('Solo quitar'),
+            ),
+            FilledButton(
+              style: const ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+              ),
+              onPressed: () => Navigator.of(dlg2).pop(true),
+              child: const Text('Eliminar del sistema'),
+            ),
+          ],
+        ),
       );
-      if (result is Map && result['ok'] == true) {
-        widget.onRefresh();
-      } else {
-        if (mounted) {
+
+      if (!mounted) return;
+
+      if (deleteAuth == true) {
+        final delResult = await ref
+            .read(usuariosAdminProvider.notifier)
+            .deleteFromAuth(userId: _userId);
+        if (!mounted) return;
+        if (delResult.ok) {
           displayInfoBar(context,
               builder: (_, close) => InfoBar(
-                    title: const Text('Error'),
-                    content: Text((result is Map ? result['error'] : null)
-                            ?.toString() ??
-                        'Error'),
-                    severity: InfoBarSeverity.error,
+                    title: const Text('Usuario eliminado del sistema'),
+                    severity: InfoBarSeverity.success,
+                    onClose: close,
+                  ));
+        } else {
+          final detalle = _buildTieneDatosMsg(delResult.mensajes, delResult.adjuntos);
+          displayInfoBar(context,
+              builder: (_, close) => InfoBar(
+                    title: const Text('Quitado de empresa, no del sistema'),
+                    content: Text(
+                        'El usuario fue desactivado pero no se puede eliminar completamente.$detalle'),
+                    severity: InfoBarSeverity.warning,
                     onClose: close,
                   ));
         }
-      }
-    } catch (e) {
-      if (mounted) {
+      } else {
         displayInfoBar(context,
             builder: (_, close) => InfoBar(
-                  title: const Text('Error'),
-                  content: Text(e.toString()),
-                  severity: InfoBarSeverity.error,
+                  title: const Text('Usuario quitado de la empresa'),
+                  severity: InfoBarSeverity.success,
                   onClose: close,
                 ));
       }
-    } finally {
-      if (mounted) setState(() => _toggling = false);
+      setState(() => _deleting = false);
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _deleting = false);
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Usuario quitado de la empresa'),
+                severity: InfoBarSeverity.success,
+                onClose: close,
+              ));
+    }
+  }
+
+  Future<void> _cancelInvitacion() async {
+    if (_canceling) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlg) => ContentDialog(
+        title: const Text('¿Cancelar invitación?'),
+        content: Text(
+          'Se cancelará la invitación enviada a "$_email". '
+          'El enlace de invitación dejará de funcionar.',
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.of(dlg).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: const ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(Color(0xFFC42B1C)),
+            ),
+            onPressed: () => Navigator.of(dlg).pop(true),
+            child: const Text('Cancelar invitación'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    setState(() => _canceling = true);
+
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .cancelarInvitacion(email: _email);
+
+    if (!mounted) return;
+    setState(() => _canceling = false);
+
+    if (result.ok) {
+      widget.onRefresh();
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Invitación cancelada'),
+                severity: InfoBarSeverity.success,
+                onClose: close,
+              ));
+    } else {
+      displayInfoBar(context,
+          builder: (_, close) => InfoBar(
+                title: const Text('Error'),
+                content: Text(result.error ?? 'Error desconocido'),
+                severity: InfoBarSeverity.error,
+                onClose: close,
+              ));
     }
   }
 
@@ -2171,7 +2403,7 @@ class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
                         ),
                       ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.ms),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2183,7 +2415,7 @@ class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
                             overflow: TextOverflow.ellipsis),
                       ),
                       if (_esYo) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: Spacing.sm),
                         _TuChip(),
                       ],
                     ]),
@@ -2196,42 +2428,73 @@ class _UsuarioCardState extends ConsumerState<_UsuarioCard> {
               ),
               if (!_esYo && !_esPendiente)
                 _toggling
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: ProgressRing(strokeWidth: 2))
+                    ? const PilarProgressRing(size: 20)
                     : ToggleSwitch(checked: _activo, onChanged: _toggle),
             ],
           ),
           if (_roles.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: Spacing.xs,
+              runSpacing: Spacing.xs,
               children: _roles
                   .map((r) => _RolBadge(nombre: r['nombre'] as String? ?? ''))
                   .toList(),
             ),
           ],
-          const SizedBox(height: 6),
+          const SizedBox(height: Spacing.sm),
           Row(children: [
             Icon(FluentIcons.clock, size: 11, color: theme.inactiveColor),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Text(_formatAcceso(_acceso),
                 style: TextStyle(fontSize: 11, color: theme.inactiveColor)),
             const Spacer(),
-            if (!_esPendiente)
+            if (_esPendiente)
+              Button(
+                onPressed: _canceling ? null : _cancelInvitacion,
+                style: const ButtonStyle(
+                    padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xs))),
+                child: _canceling
+                    ? const PilarProgressRing(size: 12)
+                    : const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(FluentIcons.delete, size: 13),
+                        SizedBox(width: Spacing.xs),
+                        Text('Cancelar invitación',
+                            style: TextStyle(fontSize: 12)),
+                      ]),
+              )
+            else ...[
               Button(
                 onPressed: () => widget.onEdit(widget.usuario),
                 style: const ButtonStyle(
                     padding: WidgetStatePropertyAll(
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 4))),
+                        EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xs))),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(FluentIcons.edit_contact, size: 13),
-                  SizedBox(width: 4),
+                  SizedBox(width: Spacing.xs),
                   Text('Editar', style: TextStyle(fontSize: 12)),
                 ]),
               ),
+              if (!_esYo) ...[
+                const SizedBox(width: Spacing.xs),
+                Button(
+                  onPressed: _deleting ? null : _deleteUser,
+                  style: const ButtonStyle(
+                      padding: WidgetStatePropertyAll(
+                          EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xs))),
+                  child: _deleting
+                      ? const PilarProgressRing(size: 12)
+                      : Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(FluentIcons.delete,
+                              size: 13, color: Colors.red.normal),
+                          const SizedBox(width: Spacing.xs),
+                          const Text('Eliminar',
+                              style: TextStyle(fontSize: 12)),
+                        ]),
+                ),
+              ],
+            ],
           ]),
         ],
       ),
@@ -2286,25 +2549,18 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
       _loading = true;
       _error = null;
     });
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_set_roles_usuario',
-        params: {
-          'p_usuario_id': _userId,
-          'p_rol_ids': _selected.toList(),
-        },
-      );
-      if (result is Map && result['ok'] == true) {
-        widget.onChanged();
-        if (mounted) Navigator.pop(context);
-      } else {
-        final err = result is Map ? result['error'] : null;
-        setState(() => _error = _errorMsg(err?.toString()));
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .setRoles(userId: _userId, rolIds: _selected.toList());
+    if (!mounted) return;
+    if (result.ok) {
+      widget.onChanged();
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _error = _errorMsg(result.error);
+        _loading = false;
+      });
     }
   }
 
@@ -2333,7 +2589,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
             style: theme.typography.caption
                 ?.copyWith(color: theme.inactiveColor),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           rolesAsync.when(
             data: (roles) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2349,7 +2605,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
                                   }
                                 }),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
                           child: Row(
                             children: [
                               Checkbox(
@@ -2364,7 +2620,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
                                           }
                                         }),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: Spacing.sm),
                               Text(r.nombre, style: theme.typography.body),
                             ],
                           ),
@@ -2372,11 +2628,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
                       ))
                   .toList(),
             ),
-            loading: () => const Center(
-                child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: ProgressRing(strokeWidth: 2))),
+            loading: () => const Center(child: PilarProgressRing()),
             error: (e, _) => Text(
               'Error cargando roles: $e',
               style: TextStyle(
@@ -2384,7 +2636,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Error'),
               content: Text(_error!),
@@ -2401,8 +2653,7 @@ class _GestionarRolesDialogState extends ConsumerState<_GestionarRolesDialog> {
         FilledButton(
           onPressed: _loading ? null : _save,
           child: _loading
-              ? const SizedBox(
-                  width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+              ? const PilarProgressRing.small()
               : const Text('Guardar'),
         ),
       ],
@@ -2446,21 +2697,17 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
       _loading = true;
       _error = null;
     });
-    try {
-      final result = await Supabase.instance.client.rpc(
-        'admin_set_user_password',
-        params: {'p_user_id': widget.userId, 'p_password': _password},
-      );
-      if (result is Map && result['ok'] == true) {
-        if (mounted) Navigator.pop(context);
-      } else {
-        final code = result is Map ? result['error'] as String? : null;
-        setState(() => _error = _errorMsg(code));
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .setPassword(userId: widget.userId, password: _password);
+    if (!mounted) return;
+    if (result.ok) {
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _error = _errorMsg(result.error);
+        _loading = false;
+      });
     }
   }
 
@@ -2486,7 +2733,7 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
             style:
                 theme.typography.caption?.copyWith(color: theme.inactiveColor),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           InfoLabel(
             label: 'Nueva contraseña',
             child: PasswordBox(
@@ -2495,7 +2742,7 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
               onChanged: (v) => _password = v,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Confirmar contraseña',
             child: PasswordBox(
@@ -2505,7 +2752,7 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Error'),
               content: Text(_error!),
@@ -2522,8 +2769,7 @@ class _SetPasswordDialogState extends ConsumerState<_SetPasswordDialog> {
         FilledButton(
           onPressed: _loading ? null : _save,
           child: _loading
-              ? const SizedBox(
-                  width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+              ? const PilarProgressRing.small()
               : const Text('Guardar'),
         ),
       ],
@@ -2579,52 +2825,32 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
       _successMessage = null;
     });
 
-    try {
-      // Helper para invocar — reutilizado en el retry tras refresh
-      Future<FunctionResponse> doInvoke() =>
-          Supabase.instance.client.functions.invoke(
-            'invite-user',
-            body: {'email': email, 'rol_id': _selectedRolId},
-          );
+    final result = await ref
+        .read(usuariosAdminProvider.notifier)
+        .invitarUsuario(email: email, rolId: _selectedRolId!);
 
-      FunctionResponse response;
-      try {
-        response = await doInvoke();
-      } on FunctionException catch (fe) {
-        // JWT inválido/revocado → refrescar sesión y reintentar una vez
-        if (fe.status == 401) {
-          await Supabase.instance.client.auth.refreshSession();
-          response = await doInvoke();
-        } else {
-          rethrow;
-        }
-      }
+    if (!mounted) return;
 
-      final data = response.data as Map<String, dynamic>?;
-
-      if (response.status != 200 || data?['ok'] != true) {
-        throw Exception(
-            data?['message'] ?? 'Error al enviar invitación (${response.status})');
-      }
-
-      if (data!['tipo'] == 'USUARIO_EXISTENTE') {
-        widget.onInvited();
-        if (mounted) Navigator.pop(context);
-        return;
-      }
-
+    if (!result.ok) {
       setState(() {
-        _successMessage =
-            'Invitación enviada a $email. El usuario recibirá un correo para activar su cuenta.';
+        _errorMessage = result.message;
         _loading = false;
       });
-      widget.onInvited();
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
+      return;
     }
+
+    if (result.tipo == 'USUARIO_EXISTENTE') {
+      widget.onInvited();
+      Navigator.pop(context);
+      return;
+    }
+
+    setState(() {
+      _successMessage =
+          'Invitación enviada a $email. El usuario recibirá un correo para activar su cuenta.';
+      _loading = false;
+    });
+    widget.onInvited();
   }
 
   @override
@@ -2641,7 +2867,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
             'Si el usuario ya tiene cuenta en PILAR se agregará directamente. '
             'Si no, recibirá un correo de invitación.',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           InfoLabel(
             label: 'Correo electrónico *',
             child: TextBox(
@@ -2652,7 +2878,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
               onChanged: (_) => setState(() {}),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
           InfoLabel(
             label: 'Rol inicial *',
             child: rolesAsync.when(
@@ -2671,7 +2897,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
               ),
               loading: () => const SizedBox(
                   height: 32,
-                  child: Center(child: ProgressRing(strokeWidth: 2))),
+                  child: PilarLoadingCenter()),
               error: (e, _) => Text(
                 'Error cargando roles: $e',
                 style: TextStyle(
@@ -2683,7 +2909,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
             ),
           ),
           if (_errorMessage != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Error'),
               content: Text(_errorMessage!),
@@ -2691,7 +2917,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
             ),
           ],
           if (_successMessage != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.ms),
             InfoBar(
               title: const Text('Invitación enviada'),
               content: Text(_successMessage!),
@@ -2711,13 +2937,27 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
             onPressed:
                 (_loading || !_emailValido || _selectedRolId == null) ? null : _submit,
             child: _loading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: ProgressRing(strokeWidth: 2))
+                ? const PilarProgressRing.small()
                 : const Text('Enviar invitación'),
           ),
       ],
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de nivel de archivo
+// ---------------------------------------------------------------------------
+
+String _buildTieneDatosMsg(int mensajes, int adjuntos) {
+  final parts = <String>[];
+  if (mensajes > 0) {
+    parts.add('$mensajes mensaje${mensajes == 1 ? '' : 's'} de chat');
+  }
+  if (adjuntos > 0) {
+    parts.add(
+        '$adjuntos archivo${adjuntos == 1 ? '' : 's'} subido${adjuntos == 1 ? '' : 's'}');
+  }
+  if (parts.isEmpty) return ' Tiene datos relacionados en el sistema.';
+  return ' Tiene: ${parts.join(' y ')}.';
 }

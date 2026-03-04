@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Internal data model
@@ -67,10 +68,10 @@ class AdminPanelScreen extends ConsumerWidget {
     return ScaffoldPage(
       header: const PageHeader(title: Text('Administración')),
       content: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(Spacing.lg),
         child: Wrap(
-          spacing: 16,
-          runSpacing: 16,
+          spacing: Spacing.md,
+          runSpacing: Spacing.md,
           children:
               _sections.map((s) => _AdminCard(section: s)).toList(),
         ),
@@ -107,7 +108,7 @@ class _AdminCard extends StatelessWidget {
                   ? theme.accentColor.withValues(alpha: 0.08)
                   : null,
             ),
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(Spacing.ml),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -124,9 +125,9 @@ class _AdminCard extends StatelessWidget {
                     color: theme.accentColor,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.ms),
                 Text(section.title, style: theme.typography.bodyStrong),
-                const SizedBox(height: 4),
+                const SizedBox(height: Spacing.xs),
                 Text(
                   section.subtitle,
                   style: theme.typography.caption,

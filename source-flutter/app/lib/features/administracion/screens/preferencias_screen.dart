@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/providers/theme_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // SharedPreferences keys for data-grid preferences
@@ -101,7 +103,7 @@ class _PreferenciasScreenState extends ConsumerState<PreferenciasScreen> {
     if (!_loaded) {
       return const ScaffoldPage(
         header: PageHeader(title: Text('Preferencias')),
-        content: Center(child: ProgressRing()),
+        content: const PilarLoadingCenter(),
       );
     }
 
@@ -137,12 +139,12 @@ class _PreferenciasScreenState extends ConsumerState<PreferenciasScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Color de acento', style: theme.typography.body),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 _ColorSwatchRow(
                   selected: _accentColor,
                   onSelected: (c) => setState(() => _accentColor = c),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: Spacing.sm),
                 Text(
                   _accentColor == null
                       ? 'Usando color de la empresa o del sistema operativo.'
@@ -213,8 +215,8 @@ class _ColorSwatchRow extends StatelessWidget {
     final bodyColor = theme.typography.body?.color ?? Colors.white;
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: Spacing.sm,
+      runSpacing: Spacing.sm,
       children: [
         // "Sin color" option — fallback to empresa / OS
         Tooltip(

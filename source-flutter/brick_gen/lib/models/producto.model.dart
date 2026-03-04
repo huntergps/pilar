@@ -17,8 +17,13 @@ class Producto extends OfflineFirstWithSupabaseModel {
   final String? codigo;
   final String nombre;
   final String tipo;
-  final double? precioVenta;
-  final double? precioCosto;
+  /// Precio de venta almacenado como String para preservar precisión decimal.
+  /// Usar `Decimal.parse(precioVenta ?? '0')` para aritmética monetaria.
+  final String? precioVenta;
+
+  /// Precio de costo almacenado como String para preservar precisión decimal.
+  /// Usar `Decimal.parse(precioCosto ?? '0')` para aritmética monetaria.
+  final String? precioCosto;
   final String? descripcion;
 
   /// Código de barras principal (EAN13, UPC) — acceso rápido sin JOIN.
@@ -40,7 +45,14 @@ class Producto extends OfflineFirstWithSupabaseModel {
   @Sqlite(ignore: true)
   final String? categoriaId;
 
+  @Sqlite(index: true)
   final bool activo;
+
+  /// Versión del registro — bloqueo optimista (LWW para maestros).
+  /// Se incrementa en la BD con cada UPDATE. Brick lo sincroniza en SQLite.
+  @Supabase(name: 'version', defaultValue: '1')
+  @Sqlite(defaultValue: '1')
+  final int version;
 
   Producto({
     required this.id,
@@ -56,6 +68,7 @@ class Producto extends OfflineFirstWithSupabaseModel {
     this.familiaId,
     this.categoriaId,
     required this.activo,
+    this.version = 1,
   });
 
   Map<String, dynamic> toMap() => {
@@ -71,5 +84,6 @@ class Producto extends OfflineFirstWithSupabaseModel {
         'familia_id': familiaId,
         'categoria_id': categoriaId,
         'activo': activo,
+        'version': version,
       };
 }

@@ -1,7 +1,9 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/config/pilar_constants.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 /// Pantalla de arranque mostrada mientras [main] inicializa la app.
 ///
@@ -42,7 +44,7 @@ class SplashScreen extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: isDesktop ? 0 : 24,
-                vertical: 48,
+                vertical: Spacing.xxl,
               ),
               child: isDesktop
                   ? _SplashContent(
@@ -93,7 +95,7 @@ class _SplashContent extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 40),
+        const SizedBox(height: Spacing.xl),
 
         // ── Barra de progreso ───────────────────────────────────────────────
         ProgressBar(
@@ -101,7 +103,7 @@ class _SplashContent extends StatelessWidget {
           strokeWidth: 3,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
 
         // ── Texto de estado ─────────────────────────────────────────────────
         AnimatedSwitcher(
@@ -116,11 +118,11 @@ class _SplashContent extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
 
         // ── Versión / subtítulo (igual que el footer del login) ─────────────
         Text(
-          'PILAR ERP',
+          kAppName,
           style: theme.typography.caption?.copyWith(
             color: theme.resources.textFillColorDisabled,
           ),

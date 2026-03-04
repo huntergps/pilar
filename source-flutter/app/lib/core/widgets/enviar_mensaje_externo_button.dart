@@ -19,7 +19,9 @@
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../providers/chatter_provider.dart';
+import '../../core/theme/pilar_spacing.dart';
+import 'loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // Widget principal (botón)
@@ -94,7 +96,7 @@ class _EnviarMensajeExternoButtonState
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(FluentIcons.send, size: 14),
-          SizedBox(width: 8),
+          SizedBox(width: Spacing.sm),
           Text('Enviar mensaje'),
         ],
       ),
@@ -159,25 +161,17 @@ class _EnviarMensajeExternoDialogState
     setState(() => _cargandoCuentas = true);
     try {
       // El tipo en DB puede ser 'whatsapp', 'telegram', 'email_smtp', 'email_api'
-      final tipoFiltro = switch (_canal) {
-        'email' => null, // email puede ser smtp o api: cargamos todos
-        _ => _canal,
+      final tipos = switch (_canal) {
+        'email' => ['email_smtp', 'email_api'],
+        _ => [_canal],
       };
 
-      final query = Supabase.instance.client
-          .from('com_cuentas')
-          .select('id, nombre, tipo')
-          .eq('activo', true);
-
-      final rows = tipoFiltro != null
-          ? await query.eq('tipo', tipoFiltro)
-          : await query.inFilter('tipo', ['email_smtp', 'email_api']);
+      final rows = await ref.read(comCuentasPorTipoProvider(tipos).future);
 
       if (!mounted) return;
       setState(() {
-        _cuentas = List<Map<String, dynamic>>.from(rows as List);
-        _cuentaId =
-            _cuentas.isNotEmpty ? _cuentas.first['id'] as String : null;
+        _cuentas = rows;
+        _cuentaId = rows.isNotEmpty ? rows.first['id'] as String : null;
         _cargandoCuentas = false;
       });
     } catch (e) {
@@ -252,20 +246,15 @@ class _EnviarMensajeExternoDialogState
         _ => _canal,
       };
 
-      await Supabase.instance.client.rpc(
-        'com_send_desde_entidad',
-        params: {
-          'p_entidad_tipo': widget.config.entidadTipo,
-          'p_entidad_id': widget.config.entidadId,
-          'p_canal': canalRpc,
-          'p_cuenta_id': cuentaId,
-          'p_destinatario_ref': destinatario,
-          'p_cuerpo': cuerpo,
-          if (_nombreCtrl.text.trim().isNotEmpty)
-            'p_destinatario_nombre': _nombreCtrl.text.trim(),
-          if (widget.config.contactoId != null)
-            'p_contacto_id': widget.config.contactoId,
-        },
+      await ref.read(comSendDesdeEntidadProvider.notifier).enviar(
+        entidadTipo: widget.config.entidadTipo,
+        entidadId: widget.config.entidadId,
+        canal: canalRpc,
+        cuentaId: cuentaId,
+        destinatarioRef: destinatario,
+        cuerpo: cuerpo,
+        destinatarioNombre: _nombreCtrl.text.trim().isNotEmpty ? _nombreCtrl.text.trim() : null,
+        contactoId: widget.config.contactoId,
       );
 
       if (mounted) {
@@ -312,27 +301,27 @@ class _EnviarMensajeExternoDialogState
               title: Text(_error!),
               severity: InfoBarSeverity.error,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: Spacing.ms),
           ],
 
           // Selector de canal
           Text('Canal', style: theme.typography.bodyStrong),
-          const SizedBox(height: 6),
+          const SizedBox(height: Spacing.sm),
           _CanalSelector(
             canal: _canal,
             onChanged: _onCanalChanged,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: Spacing.md),
 
           // Cuenta de envío
           Text('Cuenta de envío', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           _buildCuentaSelector(theme),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
 
           // Destinatario
           Text('Destinatario', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             controller: _destinatarioCtrl,
             placeholder: switch (_canal) {
@@ -341,23 +330,23 @@ class _EnviarMensajeExternoDialogState
               _ => 'correo@ejemplo.com',
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
 
           // Nombre (opcional)
           Text(
             'Nombre (opcional)',
             style: theme.typography.bodyStrong,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             controller: _nombreCtrl,
             placeholder: 'Nombre del destinatario',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.ms),
 
           // Cuerpo del mensaje
           Text('Mensaje', style: theme.typography.bodyStrong),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           TextBox(
             controller: _cuerpoCtrl,
             placeholder: 'Escribe el mensaje...',
@@ -365,7 +354,7 @@ class _EnviarMensajeExternoDialogState
             minLines: 3,
             expands: false,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Spacing.ms),
 
           // InfoBar informativo
           const InfoBar(
@@ -385,16 +374,12 @@ class _EnviarMensajeExternoDialogState
         FilledButton(
           onPressed: _enviando ? null : _enviar,
           child: _enviando
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing(size: 14)
               : const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text('Enviar'),
-                    SizedBox(width: 6),
+                    SizedBox(width: Spacing.sm),
                     Icon(FluentIcons.send, size: 12),
                   ],
                 ),
@@ -405,11 +390,7 @@ class _EnviarMensajeExternoDialogState
 
   Widget _buildCuentaSelector(FluentThemeData theme) {
     if (_cargandoCuentas) {
-      return const SizedBox(
-        height: 20,
-        width: 20,
-        child: ProgressRing(strokeWidth: 2),
-      );
+      return const PilarProgressRing(size: 20);
     }
 
     if (_cuentas.isEmpty) {
@@ -459,7 +440,7 @@ class _CanalSelector extends StatelessWidget {
           seleccionado: canal == 'whatsapp',
           onTap: () => onChanged('whatsapp'),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: Spacing.sm),
         _CanalButton(
           label: 'Telegram',
           icon: FluentIcons.send,
@@ -468,7 +449,7 @@ class _CanalSelector extends StatelessWidget {
           seleccionado: canal == 'telegram',
           onTap: () => onChanged('telegram'),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: Spacing.sm),
         _CanalButton(
           label: 'Email',
           icon: FluentIcons.mail,
@@ -507,7 +488,7 @@ class _CanalButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
         decoration: BoxDecoration(
           color: seleccionado
               ? color.withValues(alpha: 0.12)
@@ -530,7 +511,7 @@ class _CanalButton extends StatelessWidget {
                   ? color
                   : theme.resources.textFillColorSecondary,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: Spacing.sm),
             Text(
               label,
               style: theme.typography.caption?.copyWith(

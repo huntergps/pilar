@@ -1,12 +1,13 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:brick_gen/brick_gen.dart';
 
 import '../providers/contactos_provider.dart';
+import '../providers/contacto_write_provider.dart';
+import '../../../core/providers/brick_write_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
 
 // ---------------------------------------------------------------------------
 // Pantalla principal — workspace con pestañas aislado por módulo
@@ -73,10 +74,7 @@ class _ContactosWorkspaceState extends ConsumerState<_ContactosWorkspace> {
       icon: isNew ? FluentIcons.add : FluentIcons.edit,
       body: _ContactoForm(
         contacto: contacto,
-        onSaved: () {
-          ref.read(contactosProvider.notifier).refresh();
-          tabs.close(id);
-        },
+        onSaved: () => tabs.close(id),
         onCancel: () => tabs.close(id),
       ),
     ));
@@ -132,32 +130,37 @@ class _ContactosLista extends ConsumerWidget {
       onNew: () => onOpenTab(null),
       onRowTap: onOpenTab,
       onDelete: (c) async {
-        if (!kIsWeb && PilarRepository.isInitialized) {
-          await PilarRepository.instance.upsert<Contacto>(Contacto(
-            id: c['id'] as String,
-            razonSocial: c['razon_social'] as String? ?? '',
-            nombreComercial: c['nombre_comercial'] as String?,
-            numeroId: c['numero_id'] as String?,
-            tipoEntidad: c['tipo_entidad'] as String? ?? 'PERSONA_NATURAL',
-            tipoIdentificacion: c['tipo_identificacion'] as String? ?? '05',
-            esCliente: c['es_cliente'] as bool? ?? false,
-            esProveedor: c['es_proveedor'] as bool? ?? false,
-            esEmpleado: c['es_empleado'] as bool? ?? false,
-            email: c['email'] as String?,
-            telefono: c['telefono'] as String?,
-            celular: c['celular'] as String?,
-            activo: false,
-          ));
-        } else {
-          await Supabase.instance.client.rpc(
-            'entidades_actualizar_contacto',
-            params: {
-              'p_id': c['id'] as String,
-              'p_data': {'activo': false},
-            },
-          );
+        final contacto = Contacto(
+          id: c['id'] as String,
+          razonSocial: c['razon_social'] as String? ?? '',
+          nombreComercial: c['nombre_comercial'] as String?,
+          numeroId: c['numero_id'] as String?,
+          tipoEntidad: c['tipo_entidad'] as String? ?? 'PERSONA_NATURAL',
+          tipoIdentificacion: c['tipo_identificacion'] as String? ?? '05',
+          esCliente: c['es_cliente'] as bool? ?? false,
+          esProveedor: c['es_proveedor'] as bool? ?? false,
+          esEmpleado: c['es_empleado'] as bool? ?? false,
+          email: c['email'] as String?,
+          telefono: c['telefono'] as String?,
+          celular: c['celular'] as String?,
+          activo: false,
+        );
+        try {
+          await ref.read(contactoWriteProvider.notifier).delete(contacto);
+        } on OfflineWriteException catch (e) {
+          if (context.mounted) {
+            displayInfoBar(
+              context,
+              builder: (_, close) => InfoBar(
+                title: Text(e.isConflict
+                    ? 'Conflicto: otro usuario modificó este registro.'
+                    : 'Sin conexión: se eliminará cuando recuperes la red.'),
+                severity: e.isConflict ? InfoBarSeverity.error : InfoBarSeverity.warning,
+                onClose: close,
+              ),
+            );
+          }
         }
-        ref.read(contactosProvider.notifier).refresh();
       },
       deleteConfirmText: (c) =>
           '¿Eliminar a "${c['razon_social']}"? Esta acción no se puede deshacer.',
@@ -176,7 +179,7 @@ class _ContactosLista extends ConsumerWidget {
 // Pestaña formulario: crear / editar contacto
 // ---------------------------------------------------------------------------
 
-class _ContactoForm extends StatefulWidget {
+class _ContactoForm extends ConsumerStatefulWidget {
   final Map<String, dynamic>? contacto;
   final VoidCallback onSaved;
   final VoidCallback onCancel;
@@ -188,10 +191,10 @@ class _ContactoForm extends StatefulWidget {
   });
 
   @override
-  State<_ContactoForm> createState() => _ContactoFormState();
+  ConsumerState<_ContactoForm> createState() => _ContactoFormState();
 }
 
-class _ContactoFormState extends State<_ContactoForm> {
+class _ContactoFormState extends ConsumerState<_ContactoForm> {
   final _razonCtrl = TextEditingController();
   final _comercialCtrl = TextEditingController();
   final _idCtrl = TextEditingController();
@@ -240,64 +243,36 @@ class _ContactoFormState extends State<_ContactoForm> {
 
     final id = widget.contacto?['id'] as String? ?? const Uuid().v4();
 
-    if (!kIsWeb && PilarRepository.isInitialized) {
-      // Offline-first: escribe en SQLite primero, sincroniza con Supabase en background.
-      await PilarRepository.instance.upsert<Contacto>(Contacto(
-        id: id,
-        razonSocial: _razonCtrl.text.trim(),
-        nombreComercial: _comercialCtrl.text.trim().isNotEmpty
-            ? _comercialCtrl.text.trim()
-            : null,
-        numeroId:
-            _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
-        tipoEntidad: _tipoEntidad,
-        tipoIdentificacion: _tipoIdentificacion,
-        esCliente: _esCliente,
-        esProveedor: _esProveedor,
-        esEmpleado: widget.contacto?['es_empleado'] as bool? ?? false,
-        email:
-            _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
-        telefono: _telefonoCtrl.text.trim().isNotEmpty
-            ? _telefonoCtrl.text.trim()
-            : null,
-        celular: _celularCtrl.text.trim().isNotEmpty
-            ? _celularCtrl.text.trim()
-            : null,
-        activo: true,
-      ));
-    } else {
-      // Web: llamada directa a Supabase (no hay SQLite en web).
-      final data = {
-        'razon_social': _razonCtrl.text.trim(),
-        'nombre_comercial': _comercialCtrl.text.trim().isNotEmpty
-            ? _comercialCtrl.text.trim()
-            : null,
-        'numero_id':
-            _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
-        'tipo_entidad': _tipoEntidad,
-        'tipo_identificacion': _tipoIdentificacion,
-        'es_cliente': _esCliente,
-        'es_proveedor': _esProveedor,
-        'email': _emailCtrl.text.trim().isNotEmpty
-            ? _emailCtrl.text.trim()
-            : null,
-        'telefono': _telefonoCtrl.text.trim().isNotEmpty
-            ? _telefonoCtrl.text.trim()
-            : null,
-        'celular': _celularCtrl.text.trim().isNotEmpty
-            ? _celularCtrl.text.trim()
-            : null,
-      };
-      if (widget.contacto != null) {
-        await Supabase.instance.client.rpc(
-          'entidades_actualizar_contacto',
-          params: {'p_id': id, 'p_data': data},
-        );
+    final contacto = Contacto(
+      id: id,
+      razonSocial: _razonCtrl.text.trim(),
+      nombreComercial: _comercialCtrl.text.trim().isNotEmpty
+          ? _comercialCtrl.text.trim()
+          : null,
+      numeroId: _idCtrl.text.trim().isNotEmpty ? _idCtrl.text.trim() : null,
+      tipoEntidad: _tipoEntidad,
+      tipoIdentificacion: _tipoIdentificacion,
+      esCliente: _esCliente,
+      esProveedor: _esProveedor,
+      esEmpleado: widget.contacto?['es_empleado'] as bool? ?? false,
+      email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+      telefono: _telefonoCtrl.text.trim().isNotEmpty
+          ? _telefonoCtrl.text.trim()
+          : null,
+      celular: _celularCtrl.text.trim().isNotEmpty
+          ? _celularCtrl.text.trim()
+          : null,
+      activo: true,
+    );
+
+    try {
+      await ref.read(contactoWriteProvider.notifier).save(contacto);
+    } on OfflineWriteException catch (e) {
+      if (e.isConflict) {
+        throw 'Conflicto: otro usuario modificó este registro. '
+            'Recarga los datos e intenta de nuevo.';
       } else {
-        await Supabase.instance.client.rpc(
-          'entidades_crear_contacto',
-          params: {'p_data': data},
-        );
+        throw 'Sin conexión: el cambio se guardará cuando recuperes la red.';
       }
     }
 
@@ -404,7 +379,7 @@ class _ContactoFormState extends State<_ContactoForm> {
                   onChanged: (v) => setState(() => _esCliente = v ?? false),
                   content: const Text('Es cliente'),
                 ),
-                const SizedBox(width: 24),
+                const SizedBox(width: Spacing.lg),
                 Checkbox(
                   checked: _esProveedor,
                   onChanged: (v) => setState(() => _esProveedor = v ?? false),

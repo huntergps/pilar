@@ -7,6 +7,8 @@ import '../../../core/providers/modulos_provider.dart';
 import '../providers/dashboard_kpis_provider.dart';
 import '../widgets/empresa_card.dart';
 import '../widgets/module_launcher_grid.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 // ---------------------------------------------------------------------------
 // KPI widgets
@@ -22,7 +24,7 @@ class _KpiRow extends StatelessWidget {
       height: 88,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.lg),
         children: [
           _KpiCard(icon: FluentIcons.contact,  label: 'Contactos',     value: kpis.contactos),
           _KpiCard(icon: FluentIcons.product,  label: 'Productos',     value: kpis.productos),
@@ -46,9 +48,9 @@ class _KpiCard extends StatelessWidget {
     final theme = FluentTheme.of(context);
     return Container(
       width: 130,
-      margin: const EdgeInsets.only(right: 12),
+      margin: const EdgeInsets.only(right: Spacing.ms),
       child: Card(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(Spacing.ms),
         child: Row(
           children: [
             Container(
@@ -60,7 +62,7 @@ class _KpiCard extends StatelessWidget {
               ),
               child: Icon(icon, size: 18, color: theme.accentColor),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: Spacing.ms),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +119,7 @@ class DashboardScreen extends ConsumerWidget {
               return kpisAsync.when(
                 loading: () => const SizedBox(
                   height: 80,
-                  child: Center(child: ProgressRing()),
+                  child: PilarLoadingCenter(),
                 ),
                 error: (_, __) => const SizedBox.shrink(),
                 data: (kpis) => _KpiRow(kpis: kpis),
@@ -139,12 +141,12 @@ class DashboardScreen extends ConsumerWidget {
                       size: 48,
                       color: theme.inactiveColor,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Spacing.md),
                     Text(
                       'No hay módulos activos',
                       style: theme.typography.body,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
                     Text(
                       'Contacta al administrador para activar módulos',
                       style: theme.typography.caption,

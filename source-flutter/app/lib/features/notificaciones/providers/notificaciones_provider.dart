@@ -202,3 +202,38 @@ final notificacionesProvider = StreamProvider<List<NotificacionItem>>((ref) asyn
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// NotificacionesNotifier — operaciones de escritura
+// ---------------------------------------------------------------------------
+
+/// Notifier para marcar notificaciones como leídas.
+///
+/// Uso:
+/// ```dart
+/// await ref.read(notificacionesWriteProvider.notifier).marcarLeida(id);
+/// await ref.read(notificacionesWriteProvider.notifier).marcarTodasLeidas();
+/// ```
+class NotificacionesNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<void> marcarLeida(String notificacionId) async {
+    await Supabase.instance.client.rpc(
+      'marcar_notificacion_leida',
+      params: {'p_notificacion_id': notificacionId},
+    );
+    ref.invalidate(notificacionesProvider);
+    ref.invalidate(notificacionesBadgeProvider);
+  }
+
+  Future<void> marcarTodasLeidas() async {
+    await Supabase.instance.client.rpc('marcar_todas_notificaciones_leidas');
+    ref.invalidate(notificacionesProvider);
+    ref.invalidate(notificacionesBadgeProvider);
+  }
+}
+
+final notificacionesWriteProvider =
+    AsyncNotifierProvider<NotificacionesNotifier, void>(
+        NotificacionesNotifier.new);

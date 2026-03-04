@@ -7,34 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
-
-// ---------------------------------------------------------------------------
-// Providers de roles para cuentas
-// ---------------------------------------------------------------------------
-
-/// Roles asignados a una cuenta específica (acceso restringido por rol).
-/// Retorna lista de maps con: rol_id, roles.nombre, roles.codigo.
-final cuentaRolesProvider =
-    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
-        (ref, cuentaId) async {
-  final rows = await Supabase.instance.client
-      .from('com_cuentas_roles')
-      .select('rol_id, roles(nombre, codigo)')
-      .eq('cuenta_id', cuentaId) as List;
-  return rows.cast<Map<String, dynamic>>();
-});
-
-/// Todos los roles del sistema disponibles para asignar a cuentas.
-final rolesEmpresaProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  ref.watch(authStateProvider);
-  final rows = await Supabase.instance.client
-      .from('roles')
-      .select('id, nombre, codigo')
-      .filter('empresa_id', 'is', null)
-      .order('nombre') as List;
-  return rows.cast<Map<String, dynamic>>();
-});
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/loading_spinner.dart';
+import '../providers/cuentas_comunicacion_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers globales
@@ -49,101 +24,6 @@ String _generateWebhookSecret() {
     (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
   ).join();
 }
-
-/// Llama a `com-telegram-setup` para registrar el webhook en Telegram.
-/// Retorna el mensaje de resultado (vacío si éxito).
-Future<String?> _callTelegramSetup(String accountId) async {
-  try {
-    await Supabase.instance.client.functions.invoke(
-      'com-telegram-setup',
-      body: {'account_id': accountId},
-    );
-    return null; // éxito
-  } catch (e) {
-    return e.toString();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Modelo
-// ---------------------------------------------------------------------------
-
-class CuentaItem {
-  final String id;
-  final String nombre;
-  final String tipo;
-  final bool activo;
-  final bool esDefecto;
-  final Map<String, dynamic> configJson;
-  final Map<String, dynamic> metaJson;
-  final String? usuarioId;
-  final String? usuarioNombre;
-  final bool esPersonal;
-
-  const CuentaItem({
-    required this.id,
-    required this.nombre,
-    required this.tipo,
-    required this.activo,
-    required this.esDefecto,
-    required this.configJson,
-    this.metaJson = const {},
-    this.usuarioId,
-    this.usuarioNombre,
-    required this.esPersonal,
-  });
-
-  /// true si el webhook de Telegram fue registrado exitosamente.
-  bool get telegramWebhookOk =>
-      tipo == 'telegram' && (metaJson['webhook_ok'] as bool? ?? false);
-
-  factory CuentaItem.fromMap(Map<String, dynamic> m) {
-    final uid = m['usuario_id'] as String?;
-    return CuentaItem(
-      id: m['id'] as String,
-      nombre: m['nombre'] as String? ?? '',
-      tipo: m['tipo'] as String? ?? '',
-      activo: m['activo'] as bool? ?? false,
-      esDefecto: m['es_defecto'] as bool? ?? false,
-      configJson: (m['config_json'] as Map?)?.cast<String, dynamic>() ?? {},
-      metaJson: (m['meta_json'] as Map?)?.cast<String, dynamic>() ?? {},
-      usuarioId: uid,
-      usuarioNombre: m['usuario_nombre'] as String?,
-      esPersonal: m['es_personal'] as bool? ?? (uid != null),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
-final comCuentasProvider =
-    FutureProvider.autoDispose<List<CuentaItem>>((ref) async {
-  ref.watch(authStateProvider);
-  try {
-    final data = await Supabase.instance.client
-        .rpc('com_get_todas_cuentas') as List;
-    return data
-        .cast<Map<String, dynamic>>()
-        .map(CuentaItem.fromMap)
-        .toList();
-  } catch (_) {
-    // Fallback: query directa (no admin o RPC no disponible)
-    final session = Supabase.instance.client.auth.currentSession;
-    final empresaId = session?.user.appMetadata['empresa_id'] as String?;
-    final query = Supabase.instance.client
-        .from('com_cuentas')
-        .select('id, nombre, tipo, activo, es_defecto, config_json, meta_json, usuario_id');
-    final data = (empresaId != null
-            ? await query.eq('empresa_id', empresaId).order('nombre')
-            : await query.order('nombre')) as List;
-    return data
-        .cast<Map<String, dynamic>>()
-        .map(CuentaItem.fromMap)
-        .toList();
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,7 +88,7 @@ class _CuentasComunicacionScreenState
         ),
       ),
       content: cuentasAsync.when(
-        loading: () => const Center(child: ProgressRing()),
+        loading: () => const PilarLoadingCenter(),
         error: (e, _) => Center(
           child: InfoBar(
             title: const Text('Error cargando cuentas'),
@@ -224,16 +104,16 @@ class _CuentasComunicacionScreenState
                 children: [
                   Icon(FluentIcons.plug_connected, size: 48,
                       color: theme.accentColor),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Spacing.md),
                   Text('Sin cuentas configuradas',
                       style: theme.typography.subtitle),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: Spacing.sm),
                   Text(
                     'Agrega una cuenta de WhatsApp, Email o Telegram\npara enviar notificaciones a tus clientes.',
                     style: theme.typography.body,
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.lg),
                   FilledButton(
                     child: const Text('Agregar primera cuenta'),
                     onPressed: () => _showCuentaDialog(context),
@@ -267,7 +147,7 @@ class _CuentasComunicacionScreenState
           }
 
           return ListView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(Spacing.lg),
             children: [
               // ── Cuentas de la empresa ─────────────────────────────────────
               if (empresariales.isNotEmpty) ...[
@@ -276,7 +156,7 @@ class _CuentasComunicacionScreenState
                   label: 'Cuentas de la empresa',
                   color: theme.accentColor,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.ms),
                 for (final tipo in _tipoOrden)
                   if (porTipo.containsKey(tipo)) ...[
                     _SectionHeader(
@@ -286,7 +166,7 @@ class _CuentasComunicacionScreenState
                       onAdd: () =>
                           _showCuentaDialog(context, tipoInicial: tipo),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
                     for (final cuenta in porTipo[tipo]!)
                       _CuentaCard(
                         cuenta: cuenta,
@@ -304,7 +184,7 @@ class _CuentasComunicacionScreenState
                             ? () => _registrarWebhook(cuenta)
                             : null,
                       ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Spacing.md),
                   ],
               ],
 
@@ -314,10 +194,10 @@ class _CuentasComunicacionScreenState
                 label: 'Mis cuentas personales',
                 color: theme.resources.textFillColorPrimary,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: Spacing.ms),
               if (personales.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.only(bottom: Spacing.md),
                   child: Text(
                     'No tienes cuentas personales. '
                     'Usa "Nueva cuenta" y selecciona "Personal".',
@@ -335,7 +215,7 @@ class _CuentasComunicacionScreenState
                       onAdd: () =>
                           _showCuentaDialog(context, tipoInicial: tipo),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
                     for (final cuenta in porTipoPersonal[tipo]!)
                       _CuentaCard(
                         cuenta: cuenta,
@@ -353,7 +233,7 @@ class _CuentasComunicacionScreenState
                             ? () => _registrarWebhook(cuenta)
                             : null,
                       ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Spacing.md),
                   ],
               // Botón añadir cuenta personal
               Align(
@@ -365,13 +245,13 @@ class _CuentasComunicacionScreenState
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(FluentIcons.add, size: 14),
-                      SizedBox(width: 6),
+                      SizedBox(width: Spacing.sm),
                       Text('Añadir cuenta personal'),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: Spacing.lg),
             ],
           );
         },
@@ -384,53 +264,39 @@ class _CuentasComunicacionScreenState
   // -------------------------------------------------------------------------
 
   Future<void> _toggleActivo(CuentaItem cuenta) async {
-    try {
-      await Supabase.instance.client
-          .from('com_cuentas')
-          .update({'activo': !cuenta.activo})
-          .eq('id', cuenta.id);
+    final result = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .toggleActivo(cuentaId: cuenta.id, nuevoValor: !cuenta.activo);
+    if (result.ok) {
       ref.invalidate(comCuentasProvider);
-    } catch (e) {
-      if (mounted) _showError(context, e.toString());
+    } else {
+      if (mounted) _showError(context, result.error ?? 'Error desconocido');
     }
   }
 
   Future<void> _setDefecto(CuentaItem cuenta) async {
-    try {
-      await Supabase.instance.client
-          .from('com_cuentas')
-          .update({'es_defecto': false})
-          .eq('tipo', cuenta.tipo)
-          .neq('id', cuenta.id);
-      await Supabase.instance.client
-          .from('com_cuentas')
-          .update({'es_defecto': true, 'activo': true})
-          .eq('id', cuenta.id);
+    final result = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .setDefecto(cuentaId: cuenta.id, tipo: cuenta.tipo);
+    if (result.ok) {
       ref.invalidate(comCuentasProvider);
-    } catch (e) {
-      if (mounted) _showError(context, e.toString());
+    } else {
+      if (mounted) _showError(context, result.error ?? 'Error desconocido');
     }
   }
 
   Future<void> _cambiarOwnership(CuentaItem cuenta, String? uid) async {
-    try {
-      if (cuenta.esPersonal) {
-        // Hacer compartida: pasar null
-        await Supabase.instance.client.rpc('com_set_cuenta_usuario', params: {
-          'p_cuenta_id': cuenta.id,
-          'p_usuario_id': null,
-        });
-      } else {
-        // Hacer personal del usuario actual
-        if (uid == null) return;
-        await Supabase.instance.client.rpc('com_set_cuenta_usuario', params: {
-          'p_cuenta_id': cuenta.id,
-          'p_usuario_id': uid,
-        });
-      }
+    if (!cuenta.esPersonal && uid == null) return;
+    final result = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .cambiarOwnership(
+          cuentaId: cuenta.id,
+          userId: cuenta.esPersonal ? null : uid,
+        );
+    if (result.ok) {
       ref.invalidate(comCuentasProvider);
-    } catch (e) {
-      if (mounted) _showError(context, e.toString());
+    } else {
+      if (mounted) _showError(context, result.error ?? 'Error desconocido');
     }
   }
 
@@ -461,26 +327,24 @@ class _CuentasComunicacionScreenState
     );
 
     if (confirm == true) {
-      try {
-        await Supabase.instance.client
-            .from('com_cuentas')
-            .delete()
-            .eq('id', cuenta.id);
+      final result = await ref
+          .read(cuentasComunicacionProvider.notifier)
+          .eliminarCuenta(cuentaId: cuenta.id);
+      if (result.ok) {
         ref.invalidate(comCuentasProvider);
-      } catch (e) {
-        if (mounted) _showError(this.context, e.toString());
+      } else {
+        if (mounted) _showError(this.context, result.error ?? 'Error desconocido');
       }
     }
   }
 
   Future<void> _registrarWebhook(CuentaItem cuenta) async {
-    try {
-      await Supabase.instance.client.functions.invoke(
-        'com-telegram-setup',
-        body: {'account_id': cuenta.id},
-      );
+    final result = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .registrarWebhookTelegram(cuentaId: cuenta.id);
+    if (!mounted) return;
+    if (result.ok) {
       ref.invalidate(comCuentasProvider);
-      if (!mounted) return;
       // ignore: use_build_context_synchronously
       displayInfoBar(
         context,
@@ -491,10 +355,9 @@ class _CuentasComunicacionScreenState
           onClose: close,
         ),
       );
-    } catch (e) {
-      if (!mounted) return;
+    } else {
       // ignore: use_build_context_synchronously
-      _showError(context, 'Error al registrar webhook:\n$e');
+      _showError(context, 'Error al registrar webhook:\n${result.error}');
     }
   }
 
@@ -564,11 +427,11 @@ class _GroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: Spacing.xs),
       child: Row(
         children: [
           Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           Text(label, style: theme.typography.subtitle),
           const Expanded(child: Divider(style: DividerThemeData())),
         ],
@@ -598,8 +461,8 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      margin: const EdgeInsets.only(bottom: Spacing.xxs),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.sm),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
@@ -608,7 +471,7 @@ class _SectionHeader extends StatelessWidget {
       child: Row(
         children: [
           Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
+          const SizedBox(width: Spacing.sm),
           Text(label,
               style: theme.typography.bodyStrong?.copyWith(color: color)),
           const Spacer(),
@@ -638,7 +501,7 @@ class _AccesoChip extends StatelessWidget {
 
     if (!esPersonal) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
         decoration: BoxDecoration(
           color: theme.accentColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12),
@@ -647,7 +510,7 @@ class _AccesoChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(FluentIcons.people, size: 11, color: theme.accentColor),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Text(
               'Compartida',
               style: TextStyle(fontSize: 11, color: theme.accentColor),
@@ -661,7 +524,7 @@ class _AccesoChip extends StatelessWidget {
     final label =
         'Personal${usuarioNombre != null ? ' — $usuarioNombre' : ''}';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: theme.resources.subtleFillColorSecondary,
         borderRadius: BorderRadius.circular(12),
@@ -674,7 +537,7 @@ class _AccesoChip extends StatelessWidget {
             size: 11,
             color: theme.resources.textFillColorSecondary,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           Text(
             label,
             style: TextStyle(
@@ -756,9 +619,9 @@ class _CuentaCardState extends State<_CuentaCard> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: Spacing.sm),
       child: Card(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.ms),
         child: Row(
           children: [
             // Canal icon con color de marca + status dot overlay
@@ -800,7 +663,7 @@ class _CuentaCardState extends State<_CuentaCard> {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: Spacing.ms),
             // Info
             Expanded(
               child: Column(
@@ -814,10 +677,10 @@ class _CuentaCardState extends State<_CuentaCard> {
                             overflow: TextOverflow.ellipsis),
                       ),
                       if (defecto) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: Spacing.sm),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                              horizontal: Spacing.sm, vertical: Spacing.xxs),
                           decoration: BoxDecoration(
                             color: theme.accentColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
@@ -827,7 +690,7 @@ class _CuentaCardState extends State<_CuentaCard> {
                                   color: theme.accentColor)),
                         ),
                       ],
-                      const SizedBox(width: 8),
+                      const SizedBox(width: Spacing.sm),
                       _AccesoChip(
                         esPersonal: cuenta.esPersonal,
                         usuarioNombre: cuenta.usuarioNombre,
@@ -835,12 +698,12 @@ class _CuentaCardState extends State<_CuentaCard> {
                     ],
                   ),
                   if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: Spacing.xxs),
                     Text(subtitle, style: theme.typography.caption),
                   ],
                   // Link directo al bot de Telegram
                   if (tipo == 'telegram') ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: Spacing.xxs),
                     SelectableText(
                       't.me/${cfg['bot_username'] ?? ''}',
                       style: theme.typography.caption?.copyWith(
@@ -985,7 +848,10 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   bool _esPersonal = false;
   bool _saving = false;
 
-  // WhatsApp fields
+  // WhatsApp BSP selector
+  String _waBsp = 'meta'; // 'meta' | '360dialog' | 'twilio'
+
+  // WhatsApp — Meta fields
   final _waAppUidCtrl = TextEditingController();
   final _waAccountUidCtrl = TextEditingController();
   final _waPhoneUidCtrl = TextEditingController();
@@ -993,6 +859,18 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   final _waTokenCtrl = TextEditingController();
   final _waAppSecretCtrl = TextEditingController();
   final _waVerifyTokenCtrl = TextEditingController();
+
+  // WhatsApp — 360dialog fields
+  final _wa360ApiKeyCtrl = TextEditingController();
+  final _wa360WabaIdCtrl = TextEditingController();
+  final _wa360PhoneUidCtrl = TextEditingController();
+  final _wa360PhoneNumberCtrl = TextEditingController();
+  final _wa360VerifyTokenCtrl = TextEditingController();
+
+  // WhatsApp — Twilio fields
+  final _waTwilioSidCtrl = TextEditingController();
+  final _waTwilioTokenCtrl = TextEditingController();
+  final _waTwilioPhoneCtrl = TextEditingController();
 
   // Email API fields
   String _emailProvider = 'resend';
@@ -1036,14 +914,28 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     final cfg = c.configJson;
     switch (_tipo) {
       case 'whatsapp':
-        _waAppUidCtrl.text = cfg['app_uid'] as String? ?? '';
-        _waAccountUidCtrl.text = cfg['account_uid'] as String? ?? '';
-        _waPhoneUidCtrl.text = cfg['phone_uid'] as String? ?? '';
-        _waPhoneNumberCtrl.text = cfg['phone_number'] as String? ?? '';
-        _waTokenCtrl.text = cfg['token'] as String? ?? '';
-        _waAppSecretCtrl.text = cfg['app_secret'] as String? ?? '';
-        _waVerifyTokenCtrl.text =
-            cfg['webhook_verify_token'] as String? ?? '';
+        _waBsp = cfg['bsp'] as String? ?? 'meta';
+        switch (_waBsp) {
+          case '360dialog':
+            _wa360ApiKeyCtrl.text = cfg['api_key'] as String? ?? '';
+            _wa360WabaIdCtrl.text = cfg['waba_id'] as String? ?? '';
+            _wa360PhoneUidCtrl.text = cfg['phone_uid'] as String? ?? '';
+            _wa360PhoneNumberCtrl.text = cfg['phone_number'] as String? ?? '';
+            _wa360VerifyTokenCtrl.text = cfg['webhook_verify_token'] as String? ?? '';
+          case 'twilio':
+            _waTwilioSidCtrl.text = cfg['account_sid'] as String? ?? '';
+            _waTwilioTokenCtrl.text = cfg['auth_token'] as String? ?? '';
+            _waTwilioPhoneCtrl.text = cfg['phone_number'] as String? ?? '';
+            _waVerifyTokenCtrl.text = cfg['webhook_verify_token'] as String? ?? '';
+          default: // meta
+            _waAppUidCtrl.text = cfg['app_uid'] as String? ?? '';
+            _waAccountUidCtrl.text = cfg['account_uid'] as String? ?? '';
+            _waPhoneUidCtrl.text = cfg['phone_uid'] as String? ?? '';
+            _waPhoneNumberCtrl.text = cfg['phone_number'] as String? ?? '';
+            _waTokenCtrl.text = cfg['token'] as String? ?? '';
+            _waAppSecretCtrl.text = cfg['app_secret'] as String? ?? '';
+            _waVerifyTokenCtrl.text = cfg['webhook_verify_token'] as String? ?? '';
+        }
       case 'email_api':
         _emailProvider = cfg['provider'] as String? ?? 'resend';
         _apiKeyCtrl.text = cfg['api_key'] as String? ?? '';
@@ -1070,15 +962,36 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
   Map<String, dynamic> _buildConfigJson() {
     switch (_tipo) {
       case 'whatsapp':
-        return {
-          'app_uid': _waAppUidCtrl.text.trim(),
-          'account_uid': _waAccountUidCtrl.text.trim(),
-          'phone_uid': _waPhoneUidCtrl.text.trim(),
-          'phone_number': _waPhoneNumberCtrl.text.trim(),
-          'token': _waTokenCtrl.text.trim(),
-          'app_secret': _waAppSecretCtrl.text.trim(),
-          'webhook_verify_token': _waVerifyTokenCtrl.text.trim(),
-        };
+        switch (_waBsp) {
+          case '360dialog':
+            return {
+              'bsp': '360dialog',
+              'api_key': _wa360ApiKeyCtrl.text.trim(),
+              'waba_id': _wa360WabaIdCtrl.text.trim(),
+              'phone_uid': _wa360PhoneUidCtrl.text.trim(),
+              'phone_number': _wa360PhoneNumberCtrl.text.trim(),
+              'webhook_verify_token': _wa360VerifyTokenCtrl.text.trim(),
+            };
+          case 'twilio':
+            return {
+              'bsp': 'twilio',
+              'account_sid': _waTwilioSidCtrl.text.trim(),
+              'auth_token': _waTwilioTokenCtrl.text.trim(),
+              'phone_number': _waTwilioPhoneCtrl.text.trim(),
+              'webhook_verify_token': _waVerifyTokenCtrl.text.trim(),
+            };
+          default: // meta
+            return {
+              'bsp': 'meta',
+              'app_uid': _waAppUidCtrl.text.trim(),
+              'account_uid': _waAccountUidCtrl.text.trim(),
+              'phone_uid': _waPhoneUidCtrl.text.trim(),
+              'phone_number': _waPhoneNumberCtrl.text.trim(),
+              'token': _waTokenCtrl.text.trim(),
+              'app_secret': _waAppSecretCtrl.text.trim(),
+              'webhook_verify_token': _waVerifyTokenCtrl.text.trim(),
+            };
+        }
       case 'email_api':
         return {
           'provider': _emailProvider,
@@ -1120,87 +1033,82 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     }
 
     setState(() => _saving = true);
-    try {
-      final uid = _esPersonal
-          ? Supabase.instance.client.auth.currentUser?.id
-          : null;
 
-      final empresaId =
-          Supabase.instance.client.auth.currentSession?.user.appMetadata['empresa_id'] as String?;
+    final uid = _esPersonal
+        ? Supabase.instance.client.auth.currentUser?.id
+        : null;
+    final empresaId = Supabase.instance.client.auth.currentSession
+        ?.user.appMetadata['empresa_id'] as String?;
 
-      final payload = <String, dynamic>{
-        if (empresaId != null) 'empresa_id': empresaId,
-        'nombre': nombre,
-        'tipo': _tipo,
-        'activo': _activo,
-        'es_defecto': _esDefecto,
-        'config_json': _buildConfigJson(),
-        'usuario_id': uid,
-      };
+    final payload = <String, dynamic>{
+      if (empresaId != null) 'empresa_id': empresaId,
+      'nombre': nombre,
+      'tipo': _tipo,
+      'activo': _activo,
+      'es_defecto': _esDefecto,
+      'config_json': _buildConfigJson(),
+      'usuario_id': uid,
+    };
 
-      String accountId;
-      if (_isEditing) {
-        accountId = widget.cuenta!.id;
-        await Supabase.instance.client
-            .from('com_cuentas')
-            .update(payload)
-            .eq('id', accountId);
-      } else {
-        final result = await Supabase.instance.client
-            .from('com_cuentas')
-            .insert(payload)
-            .select('id')
-            .single();
-        accountId = result['id'] as String;
-      }
+    final saveResult = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .guardarCuenta(
+          payload: payload,
+          cuentaIdExistente: _isEditing ? widget.cuenta!.id : null,
+        );
 
-      // Registrar webhook automáticamente para cuentas Telegram.
-      if (_tipo == 'telegram') {
-        final error = await _callTelegramSetup(accountId);
-        if (error != null && mounted) {
-          // El webhook falló pero el registro en DB fue exitoso.
-          // Mostramos advertencia y dejamos al usuario decidir.
-          final continuar = await showDialog<bool>(
-            context: context,
-            builder: (dialogCtx) => ContentDialog(
-              title: const Text('Cuenta guardada — webhook pendiente'),
-              content: Text(
-                'La cuenta fue guardada correctamente, pero el registro '
-                'del webhook en Telegram falló:\n\n$error\n\n'
-                'Puedes re-intentarlo desde el menú "··· → Re-registrar webhook".',
-              ),
-              actions: [
-                FilledButton(
-                  child: const Text('Entendido'),
-                  onPressed: () => Navigator.of(dialogCtx).pop(true),
-                ),
-              ],
-            ),
-          );
-          if (continuar == true && mounted) Navigator.pop(context, true);
-          return;
-        }
-      }
+    if (!mounted) return;
 
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
+    if (!saveResult.ok) {
       setState(() => _saving = false);
-      if (mounted) {
-        showDialog<void>(
+      showDialog<void>(
+        context: context,
+        builder: (dialogCtx) => ContentDialog(
+          title: const Text('Error'),
+          content: Text(saveResult.error ?? 'Error desconocido'),
+          actions: [
+            FilledButton(
+              child: const Text('OK'),
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final accountId = saveResult.accountId ?? (widget.cuenta?.id ?? '');
+
+    // Registrar webhook automáticamente para cuentas Telegram.
+    if (_tipo == 'telegram') {
+      final webhookResult = await ref
+          .read(cuentasComunicacionProvider.notifier)
+          .registrarWebhookTelegram(cuentaId: accountId);
+      if (webhookResult.error != null && mounted) {
+        // El webhook falló pero el registro en DB fue exitoso.
+        final continuar = await showDialog<bool>(
           context: context,
           builder: (dialogCtx) => ContentDialog(
-            title: const Text('Error'),
-            content: Text(e.toString()),
+            title: const Text('Cuenta guardada — webhook pendiente'),
+            content: Text(
+              'La cuenta fue guardada correctamente, pero el registro '
+              'del webhook en Telegram falló:\n\n${webhookResult.error}\n\n'
+              'Puedes re-intentarlo desde el menú "··· → Re-registrar webhook".',
+            ),
             actions: [
               FilledButton(
-                child: const Text('OK'),
-                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Entendido'),
+                onPressed: () => Navigator.of(dialogCtx).pop(true),
               ),
             ],
           ),
         );
+        if (continuar == true && mounted) Navigator.pop(context, true);
+        return;
       }
     }
+
+    if (mounted) Navigator.pop(context, true);
   }
 
   @override
@@ -1208,6 +1116,9 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     for (final c in [
       _nombreCtrl, _waAppUidCtrl, _waAccountUidCtrl, _waPhoneUidCtrl,
       _waPhoneNumberCtrl, _waTokenCtrl, _waAppSecretCtrl, _waVerifyTokenCtrl,
+      _wa360ApiKeyCtrl, _wa360WabaIdCtrl, _wa360PhoneUidCtrl,
+      _wa360PhoneNumberCtrl, _wa360VerifyTokenCtrl,
+      _waTwilioSidCtrl, _waTwilioTokenCtrl, _waTwilioPhoneCtrl,
       _apiKeyCtrl, _fromNameCtrl, _fromEmailCtrl,
       _smtpHostCtrl, _smtpPortCtrl, _smtpUserCtrl, _smtpPassCtrl,
       _imapHostCtrl, _imapPortCtrl,
@@ -1237,7 +1148,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                 placeholder: 'Ej: WhatsApp Empresa Principal',
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
 
             // Tipo (solo al crear)
             if (!_isEditing) ...[
@@ -1250,7 +1161,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                             value: t,
                             child: Row(children: [
                               Icon(_tipoIcons[t], size: 16),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: Spacing.sm),
                               Text(_tipoLabels[t]!),
                             ]),
                           ))
@@ -1258,12 +1169,12 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                   onChanged: (v) => setState(() => _tipo = v!),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Spacing.md),
             ],
 
             // Campos por tipo
             _buildTipoFields(),
-            const SizedBox(height: 16),
+            const SizedBox(height: Spacing.md),
 
             // Opciones
             Row(
@@ -1273,7 +1184,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                   checked: _activo,
                   onChanged: (v) => setState(() => _activo = v ?? true),
                 ),
-                const SizedBox(width: 24),
+                const SizedBox(width: Spacing.lg),
                 Checkbox(
                   content: const Text('Predeterminada'),
                   checked: _esDefecto,
@@ -1281,13 +1192,13 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: Spacing.ml),
 
             // ── Acceso ───────────────────────────────────────────────────────
             if (widget.puedeCompartida) ...[
               Text('Acceso a esta cuenta',
                   style: theme.typography.bodyStrong),
-              const SizedBox(height: 10),
+              const SizedBox(height: Spacing.ms),
               RadioGroup<bool>(
                 groupValue: _esPersonal,
                 onChanged: (v) =>
@@ -1303,7 +1214,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                           Row(children: [
                             Icon(FluentIcons.people, size: 14,
                                 color: theme.accentColor),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: Spacing.sm),
                             const Text('Compartida'),
                           ]),
                           Text(
@@ -1314,7 +1225,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Spacing.ms),
                     RadioButton<bool>(
                       value: true,
                       content: Column(
@@ -1324,7 +1235,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                             Icon(FluentIcons.contact, size: 14,
                                 color:
                                     theme.resources.textFillColorSecondary),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: Spacing.sm),
                             const Text('Personal'),
                           ]),
                           Text(
@@ -1350,11 +1261,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
         FilledButton(
           onPressed: _saving ? null : _save,
           child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: ProgressRing(strokeWidth: 2),
-                )
+              ? const PilarProgressRing.small()
               : Text(_isEditing ? 'Guardar' : 'Crear'),
         ),
       ],
@@ -1380,17 +1287,63 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _field('App UID (Facebook App ID)', _waAppUidCtrl),
-        _field('Account UID (WABA ID)', _waAccountUidCtrl),
-        _field('Phone Number ID', _waPhoneUidCtrl),
-        _field('Número de teléfono', _waPhoneNumberCtrl,
-            placeholder: '+593XXXXXXXXX'),
-        _field('Access Token', _waTokenCtrl, obscure: true),
-        _field('App Secret', _waAppSecretCtrl, obscure: true),
-        _field('Webhook Verify Token', _waVerifyTokenCtrl,
-            placeholder: 'Token secreto para verificar webhook Meta'),
+        // BSP selector
+        InfoLabel(
+          label: 'Proveedor (BSP)',
+          child: ComboBox<String>(
+            value: _waBsp,
+            items: const [
+              ComboBoxItem(value: 'meta', child: Text('Meta Cloud API (directo)')),
+              ComboBoxItem(value: '360dialog', child: Text('360dialog')),
+              ComboBoxItem(value: 'twilio', child: Text('Twilio')),
+            ],
+            onChanged: (v) => setState(() => _waBsp = v!),
+          ),
+        ),
+        const SizedBox(height: Spacing.md),
+        ..._buildWhatsAppBspFields(),
       ],
     );
+  }
+
+  List<Widget> _buildWhatsAppBspFields() {
+    switch (_waBsp) {
+      case '360dialog':
+        return [
+          _field('API Key', _wa360ApiKeyCtrl, obscure: true,
+              placeholder: 'D360-API-KEY de tu canal'),
+          _field('WABA ID (opcional)', _wa360WabaIdCtrl,
+              placeholder: 'ID de tu WhatsApp Business Account'),
+          _field('Phone Number ID (channel_id)', _wa360PhoneUidCtrl,
+              placeholder: 'ID del número en 360dialog'),
+          _field('Número de teléfono', _wa360PhoneNumberCtrl,
+              placeholder: '+593XXXXXXXXX'),
+          _field('Webhook Verify Token', _wa360VerifyTokenCtrl,
+              placeholder: 'Token secreto para verificar webhook'),
+        ];
+      case 'twilio':
+        return [
+          _field('Account SID', _waTwilioSidCtrl,
+              placeholder: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
+          _field('Auth Token', _waTwilioTokenCtrl, obscure: true),
+          _field('Número WhatsApp', _waTwilioPhoneCtrl,
+              placeholder: '+14155238886 (número Twilio aprobado)'),
+          _field('Webhook Verify Token', _waVerifyTokenCtrl,
+              placeholder: 'Token para identificar esta cuenta'),
+        ];
+      default: // meta
+        return [
+          _field('App UID (Facebook App ID)', _waAppUidCtrl),
+          _field('Account UID (WABA ID)', _waAccountUidCtrl),
+          _field('Phone Number ID', _waPhoneUidCtrl),
+          _field('Número de teléfono', _waPhoneNumberCtrl,
+              placeholder: '+593XXXXXXXXX'),
+          _field('Access Token', _waTokenCtrl, obscure: true),
+          _field('App Secret', _waAppSecretCtrl, obscure: true),
+          _field('Webhook Verify Token', _waVerifyTokenCtrl,
+              placeholder: 'Token secreto para verificar webhook Meta'),
+        ];
+    }
   }
 
   Widget _buildEmailApiFields() {
@@ -1410,7 +1363,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
             onChanged: (v) => setState(() => _emailProvider = v!),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         _field('API Key', _apiKeyCtrl, obscure: true),
         _field('Nombre del remitente', _fromNameCtrl,
             placeholder: 'Tu Empresa'),
@@ -1456,19 +1409,19 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
         // ── Presets ──────────────────────────────────────────────────────────
         Text('Configuración rápida', style: theme.typography.caption
             ?.copyWith(color: theme.inactiveColor)),
-        const SizedBox(height: 6),
+        const SizedBox(height: Spacing.sm),
         Wrap(
-          spacing: 8,
+          spacing: Spacing.sm,
           children: _smtpPresets.keys.map((name) => Button(
             child: Text(name),
             onPressed: () => _applySmtpPreset(name),
           )).toList(),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // ── SMTP ─────────────────────────────────────────────────────────────
         Text('Servidor de envío (SMTP)', style: theme.typography.bodyStrong),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1477,7 +1430,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
               child: _field('Host SMTP', _smtpHostCtrl,
                   placeholder: 'smtp.gmail.com'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: Spacing.ms),
             Expanded(
               child: _field('Puerto', _smtpPortCtrl, placeholder: '587'),
             ),
@@ -1488,7 +1441,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           checked: _smtpTls,
           onChanged: (v) => setState(() => _smtpTls = v ?? true),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.ms),
         _field('Nombre del remitente', _fromNameCtrl,
             placeholder: 'Tu Empresa'),
         _field('Email remitente', _fromEmailCtrl,
@@ -1497,11 +1450,11 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
             placeholder: 'usuario@gmail.com'),
         _field('Contraseña / App Password', _smtpPassCtrl, obscure: true,
             placeholder: 'Contraseña o App Password de 16 caracteres'),
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.md),
 
         // ── IMAP ─────────────────────────────────────────────────────────────
         Text('Servidor de recepción (IMAP)', style: theme.typography.bodyStrong),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1510,7 +1463,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
               child: _field('Host IMAP', _imapHostCtrl,
                   placeholder: 'imap.gmail.com'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: Spacing.ms),
             Expanded(
               child: _field('Puerto', _imapPortCtrl, placeholder: '993'),
             ),
@@ -1521,7 +1474,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
           checked: _imapSsl,
           onChanged: (v) => setState(() => _imapSsl = v ?? true),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: Spacing.xs),
         const InfoBar(
           title: Text('App Password requerida'),
           content: Text(
@@ -1542,8 +1495,8 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
       children: [
         // Info: registro automático
         Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          margin: const EdgeInsets.only(bottom: Spacing.md),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.ms, vertical: Spacing.ms),
           decoration: BoxDecoration(
             color: theme.accentColor.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(6),
@@ -1555,7 +1508,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(FluentIcons.info, size: 14, color: theme.accentColor),
-              const SizedBox(width: 8),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   'Al guardar, el webhook se registrará automáticamente '
@@ -1577,12 +1530,12 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
             final username = _tgUsernameCtrl.text.trim();
             if (username.isEmpty) return const SizedBox.shrink();
             return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: Spacing.ms),
               child: Row(
                 children: [
                   Icon(FluentIcons.link, size: 12,
                       color: theme.inactiveColor),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Text('t.me/$username',
                       style: theme.typography.caption?.copyWith(
                         color: theme.accentColor,
@@ -1595,7 +1548,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
         ),
         // Webhook Secret con botón "Generar"
         Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: Spacing.ms),
           child: InfoLabel(
             label: 'Webhook Secret',
             child: Row(
@@ -1606,7 +1559,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
                     placeholder: 'Se genera automáticamente al guardar',
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Spacing.sm),
                 Tooltip(
                   message: 'Generar secret aleatorio',
                   child: Button(
@@ -1631,7 +1584,7 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
     bool obscure = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: Spacing.ms),
       child: InfoLabel(
         label: label,
         child: TextBox(
@@ -1672,38 +1625,28 @@ class _CuentaRolesDialogState extends ConsumerState<_CuentaRolesDialog> {
     String empresaId,
   ) async {
     setState(() => _saving = true);
-    try {
-      if (actualmente) {
-        // Quitar rol
-        await Supabase.instance.client
-            .from('com_cuentas_roles')
-            .delete()
-            .eq('cuenta_id', widget.cuenta.id)
-            .eq('rol_id', rol['id'] as String);
-      } else {
-        // Agregar rol
-        await Supabase.instance.client.from('com_cuentas_roles').insert({
-          'cuenta_id': widget.cuenta.id,
-          'rol_id': rol['id'] as String,
-          'empresa_id': empresaId,
-        });
-      }
-      ref.invalidate(cuentaRolesProvider(widget.cuenta.id));
-    } catch (e) {
-      if (mounted) {
-        await displayInfoBar(
-          context,
-          builder: (ctx, close) => InfoBar(
-            title: const Text('Error al actualizar rol'),
-            content: Text(e.toString()),
-            severity: InfoBarSeverity.error,
-            action: IconButton(
-                icon: const Icon(FluentIcons.clear), onPressed: close),
-          ),
+    final result = await ref
+        .read(cuentasComunicacionProvider.notifier)
+        .toggleRolCuenta(
+          cuentaId: widget.cuenta.id,
+          rolId: rol['id'] as String,
+          agregar: !actualmente,
         );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (result.ok) {
+      ref.invalidate(cuentaRolesProvider(widget.cuenta.id));
+    } else {
+      await displayInfoBar(
+        context,
+        builder: (ctx, close) => InfoBar(
+          title: const Text('Error al actualizar rol'),
+          content: Text(result.error ?? 'Error desconocido'),
+          severity: InfoBarSeverity.error,
+          action: IconButton(
+              icon: const Icon(FluentIcons.clear), onPressed: close),
+        ),
+      );
     }
   }
 
@@ -1721,7 +1664,7 @@ class _CuentaRolesDialogState extends ConsumerState<_CuentaRolesDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Acceso por rol — ${widget.cuenta.nombre}'),
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
         ],
       ),
       content: Column(
@@ -1736,18 +1679,18 @@ class _CuentaRolesDialogState extends ConsumerState<_CuentaRolesDialog> {
             ),
             severity: InfoBarSeverity.info,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.md),
           Text('Roles con acceso:', style: theme.typography.bodyStrong),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.sm),
           rolesAsync.when(
-            loading: () => const Center(child: ProgressRing()),
+            loading: () => const PilarLoadingCenter(),
             error: (e, _) => InfoBar(
               title: const Text('Error cargando roles'),
               content: Text(e.toString()),
               severity: InfoBarSeverity.error,
             ),
             data: (todos) => cuentaRolesAsync.when(
-              loading: () => const Center(child: ProgressRing()),
+              loading: () => const PilarLoadingCenter(),
               error: (e, _) => InfoBar(
                 title: const Text('Error cargando roles de la cuenta'),
                 content: Text(e.toString()),
@@ -1777,7 +1720,7 @@ class _CuentaRolesDialogState extends ConsumerState<_CuentaRolesDialog> {
                     final codigo = rol['codigo'] as String? ?? '';
 
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.only(bottom: Spacing.sm),
                       child: Checkbox(
                         checked: tieneAcceso,
                         onChanged: _saving

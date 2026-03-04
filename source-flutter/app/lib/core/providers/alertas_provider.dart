@@ -154,6 +154,33 @@ final alertasActivasProvider = StreamProvider<List<AlertaItem>>((ref) async* {
 });
 
 // ---------------------------------------------------------------------------
+// Acciones sobre alertas
+// ---------------------------------------------------------------------------
+
+/// Resuelve una alerta con una nota opcional.
+Future<void> resolverAlerta(
+  SupabaseClient client,
+  String alertaId, {
+  String? nota,
+}) async {
+  await client.rpc(
+    'resolver_alerta',
+    params: {
+      'p_alerta_id': alertaId,
+      if (nota != null && nota.isNotEmpty) 'p_nota': nota,
+    },
+  );
+}
+
+/// Ignora (descarta) una alerta.
+Future<void> ignorarAlerta(SupabaseClient client, String alertaId) async {
+  await client.rpc(
+    'ignorar_alerta',
+    params: {'p_alerta_id': alertaId},
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Provider — conteo en tiempo real (badge del header)
 // ---------------------------------------------------------------------------
 

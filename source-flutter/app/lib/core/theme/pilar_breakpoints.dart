@@ -1,12 +1,15 @@
 import 'package:flutter/widgets.dart';
+import 'pilar_spacing.dart';
 
 /// Layout breakpoints and default window dimensions for PilarShell.
 abstract final class PilarBreakpoints {
   /// Below this width: mobile layout (drawer nav, bottom nav).
-  static const double mobile = 600;
+  /// Matches fluent_ui NavigationView minimal mode threshold (≤640 px).
+  static const double mobile = 640;
 
   /// Between [mobile] and [tablet]: tablet layout (navigation rail).
-  static const double tablet = 900;
+  /// Matches fluent_ui NavigationView compact→expanded transition (≥1008 px).
+  static const double tablet = 1008;
 
   /// Above [desktop]: large desktop layout (expanded sidebar).
   static const double desktop = 1200;
@@ -154,9 +157,9 @@ abstract final class PilarSizes {
 
   /// Padding interior de tarjetas (Card, ContentDialog sections).
   static EdgeInsets cardPadding(DeviceSize size) => switch (size) {
-        DeviceSize.mobile => const EdgeInsets.all(12),
-        DeviceSize.tablet => const EdgeInsets.all(14),
-        DeviceSize.desktop => const EdgeInsets.all(16),
+        DeviceSize.mobile => const EdgeInsets.all(Spacing.ms),
+        DeviceSize.tablet => const EdgeInsets.all(Spacing.md),
+        DeviceSize.desktop => const EdgeInsets.all(Spacing.md),
       };
 
   /// Padding horizontal de contenido principal de pantalla.

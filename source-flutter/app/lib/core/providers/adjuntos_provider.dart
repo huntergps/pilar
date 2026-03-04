@@ -5,11 +5,14 @@
 
 import 'dart:async';
 
+import 'package:brick_gen/brick_gen.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../models/adjunto_model.dart';
 import '../services/upload_service.dart';
+import 'repository_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Providers de lectura
@@ -21,6 +24,24 @@ import '../services/upload_service.dart';
 final adjuntosProvider = FutureProvider.family<List<AdjuntoItem>, (String, String)>(
   (ref, args) async {
     final (entidadTipo, entidadId) = args;
+
+    // Native: local-first con Brick
+    final repo = ref.read(repositoryProvider);
+    if (!kIsWeb && repo != null) {
+      try {
+        final results = await repo.get<Adjunto>(
+          policy: OfflineFirstGetPolicy.awaitRemote,
+          query: Query(where: [
+            Where.exact('entidadTipo', entidadTipo),
+            Where.exact('entidadId', entidadId),
+          ]),
+        );
+        if (results.isNotEmpty) return results;
+      } catch (_) {
+        // fall through to RPC
+      }
+    }
+
     final rows = await Supabase.instance.client
         .rpc('get_adjuntos', params: {
           'p_entidad_tipo': entidadTipo,
@@ -28,6 +49,24 @@ final adjuntosProvider = FutureProvider.family<List<AdjuntoItem>, (String, Strin
         })
         .select();
 
+    return (rows as List<dynamic>)
+        .map((r) => AdjuntoItem.fromJson(r as Map<String, dynamic>))
+        .toList();
+  },
+);
+
+/// Adjuntos por lista de IDs — usado por _AdjuntosChips en ChatterWidget.
+///
+/// Uso: `ref.watch(adjuntosByIdsProvider(ids))`
+final adjuntosByIdsProvider =
+    FutureProvider.autoDispose.family<List<AdjuntoItem>, List<String>>(
+  (ref, ids) async {
+    if (ids.isEmpty) return [];
+    final rows = await Supabase.instance.client
+        .from('adjuntos')
+        .select()
+        .inFilter('id', ids)
+        .isFilter('eliminado_en', null);
     return (rows as List<dynamic>)
         .map((r) => AdjuntoItem.fromJson(r as Map<String, dynamic>))
         .toList();
@@ -218,6 +257,26 @@ class AdjuntosNotifier
   }
 
   // -------------------------------------------------------------------------
+  // Registrar adjunto (sin upload — el archivo ya fue subido por el llamador)
+  // -------------------------------------------------------------------------
+
+  /// Registra en DB un adjunto ya subido a Storage y retorna su ID.
+  ///
+  /// Uso desde ChatterWidget: el widget sube el archivo vía TUS y luego
+  /// llama a este método para insertar el registro en la tabla `adjuntos`.
+  Future<String> registrarAdjunto(Map<String, dynamic> params) async {
+    final row = await Supabase.instance.client
+        .rpc('registrar_adjunto', params: params);
+    String id = '';
+    if (row is Map<String, dynamic>) {
+      id = (row['id'] as String?) ?? '';
+    } else if (row is String) {
+      id = row;
+    }
+    return id;
+  }
+
+  // -------------------------------------------------------------------------
   // Eliminar
   // -------------------------------------------------------------------------
 
@@ -275,7 +334,9 @@ class AdjuntosNotifier
                     descripcion: a.descripcion,
                     esPublico: a.esPublico,
                     subidoPor: a.subidoPor,
+                    tagsJson: a.tagsJson,
                     createdAt: a.createdAt,
+                    version: a.version,
                   )
                 : a)
             .toList(),
@@ -301,6 +362,23 @@ class AdjuntosNotifier
   // -------------------------------------------------------------------------
 
   Future<List<AdjuntoItem>> _fetchItems() async {
+    // Native: local-first con Brick
+    final repo = ref.read(repositoryProvider);
+    if (!kIsWeb && repo != null) {
+      try {
+        final results = await repo.get<Adjunto>(
+          policy: OfflineFirstGetPolicy.awaitRemote,
+          query: Query(where: [
+            Where.exact('entidadTipo', _entidadTipo),
+            Where.exact('entidadId', _entidadId),
+          ]),
+        );
+        if (results.isNotEmpty) return results;
+      } catch (_) {
+        // fall through to RPC
+      }
+    }
+
     final rows = await Supabase.instance.client
         .rpc('get_adjuntos', params: {
           'p_entidad_tipo': _entidadTipo,

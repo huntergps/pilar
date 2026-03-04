@@ -2,9 +2,12 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/alertas_provider.dart';
+import '../../../core/providers/auth_provider.dart';
+import '../../../core/theme/pilar_spacing.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/loading_spinner.dart';
 
 /// Panel de alertas activas de la empresa.
 ///
@@ -24,18 +27,9 @@ class AlertasPanel extends ConsumerWidget {
       content: PilarAsyncBuilder<List<AlertaItem>>(
         value: alertasAsync,
         isEmpty: (list) => list.isEmpty,
-        emptyWidget: const Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(FluentIcons.shield_alert, size: 40),
-                SizedBox(height: 12),
-                Text('No hay alertas activas'),
-              ],
-            ),
-          ),
+        emptyWidget: const PilarEmptyState(
+          message: 'No hay alertas activas',
+          icon: FluentIcons.completed,
         ),
         builder: (context, alertas) => ListView.separated(
           shrinkWrap: true,
@@ -84,12 +78,10 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
 
     setState(() => _loading = true);
     try {
-      await Supabase.instance.client.rpc(
-        'resolver_alerta',
-        params: {
-          'p_alerta_id': widget.alerta.id,
-          if (nota.isNotEmpty) 'p_nota': nota,
-        },
+      await resolverAlerta(
+        ref.read(supabaseClientProvider),
+        widget.alerta.id,
+        nota: nota.isNotEmpty ? nota : null,
       );
       widget.onResolved();
     } catch (e) {
@@ -112,9 +104,9 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
   Future<void> _ignorar() async {
     setState(() => _loading = true);
     try {
-      await Supabase.instance.client.rpc(
-        'ignorar_alerta',
-        params: {'p_alerta_id': widget.alerta.id},
+      await ignorarAlerta(
+        ref.read(supabaseClientProvider),
+        widget.alerta.id,
       );
       widget.onResolved();
     } catch (e) {
@@ -171,13 +163,13 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
     final color = _severityColor(alerta.severidad, theme);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Icono de severidad
           Padding(
-            padding: const EdgeInsets.only(top: 2, right: 12),
+            padding: const EdgeInsets.only(top: Spacing.xxs, right: Spacing.ms),
             child: Icon(
               _severityIcon(alerta.severidad),
               size: 18,
@@ -201,7 +193,7 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
                     // Badge de severidad
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                          horizontal: Spacing.sm, vertical: Spacing.xxs),
                       decoration: BoxDecoration(
                         color: color.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
@@ -226,7 +218,7 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                const SizedBox(height: 4),
+                const SizedBox(height: Spacing.xs),
                 Row(
                   children: [
                     Text(
@@ -237,14 +229,10 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 // Acciones
                 if (_loading)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: ProgressRing(strokeWidth: 2),
-                  )
+                  const PilarProgressRing.small()
                 else
                   Row(
                     children: [
@@ -252,7 +240,7 @@ class _AlertaTileState extends ConsumerState<_AlertaTile> {
                         onPressed: _resolver,
                         child: const Text('Resolver'),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: Spacing.sm),
                       Button(
                         onPressed: _ignorar,
                         child: const Text('Ignorar'),
