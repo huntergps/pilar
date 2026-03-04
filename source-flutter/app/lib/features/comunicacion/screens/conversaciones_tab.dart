@@ -1224,9 +1224,9 @@ class _NuevaConversacionDialogState
             // ---- Aviso WhatsApp ----
             if (_canal == 'whatsapp') ...[
               const SizedBox(height: 8),
-              InfoBar(
-                title: const Text('WhatsApp Business'),
-                content: const Text(
+              const InfoBar(
+                title: Text('WhatsApp Business'),
+                content: Text(
                   'Solo puedes iniciar conversaciones si el contacto te escribió en las últimas 24h, '
                   'o usando una plantilla aprobada por Meta.',
                 ),
