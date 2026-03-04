@@ -8,6 +8,7 @@ import '../shell/pilar_shell.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/mfa_challenge_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
+import '../../features/auth/screens/set_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/onboarding/screens/onboarding_wizard.dart';
 import '../../features/select_empresa/screens/select_empresa_screen.dart';
@@ -54,6 +55,7 @@ abstract final class PilarRoutes {
   static const String login = '/auth/login';
   static const String mfaChallenge = '/auth/mfa';
   static const String resetPassword = '/auth/reset-password';
+  static const String setPassword = '/auth/set-password';
   static const String onboarding = '/onboarding';
   static const String selectEmpresa = '/select-empresa';
   static const String dashboard = '/dashboard';
@@ -118,9 +120,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 2. Not authenticated → login.
       if (!isLoggedIn && !isAuthRoute) return PilarRoutes.login;
 
+      // 2.5. Authenticated but needs to set password (first-time invitation).
+      //      The invite-user function sets needs_password=true in user_metadata.
+      if (isLoggedIn && loc != PilarRoutes.setPassword) {
+        final needsPassword =
+            supabase.auth.currentUser?.userMetadata?['needs_password'] == true;
+        if (needsPassword) return PilarRoutes.setPassword;
+      }
+
       // 3. Authenticated on auth screen → into the app.
-      //    Exception: /auth/mfa must stay accessible for the MFA challenge.
-      if (isLoggedIn && isAuthRoute && loc != PilarRoutes.mfaChallenge) {
+      //    Exceptions: /auth/mfa stays for MFA; /auth/set-password stays for
+      //    first-time password setup.
+      if (isLoggedIn &&
+          isAuthRoute &&
+          loc != PilarRoutes.mfaChallenge &&
+          loc != PilarRoutes.setPassword) {
         final empresaId = session.user.appMetadata['empresa_id'] as String?;
         return empresaId != null
             ? PilarRoutes.dashboard
@@ -175,6 +189,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: PilarRoutes.resetPassword,
         builder: (_, __) => const ResetPasswordScreen(),
+      ),
+      GoRoute(
+        path: PilarRoutes.setPassword,
+        builder: (_, __) => const SetPasswordScreen(),
       ),
 
       // ---- Onboarding (empresa setup after first login, no shell) ----

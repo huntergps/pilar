@@ -178,6 +178,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           invitacion_rol_id: rol_id,   // leído por on_auth_user_created como v_rol_id
           invitado_por,
           invitacion_id,               // útil para trazabilidad; no obligatorio para el trigger
+          needs_password: true,        // el router Flutter redirige a /auth/set-password
         },
       });
 
