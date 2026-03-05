@@ -81,75 +81,37 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      # ── 4b. Sincronizar historial de migraciones ─────────────────────────────────
-      # Elimina del remote las versiones que no existen localmente.
-      # Esto ocurre cuando migraciones fueron aplicadas vía MCP/Studio pero no
-      # están en el repositorio. El CLI rechaza hacer push si encuentra esas
-      # versiones "huérfanas". Al eliminarlas, db push aplica solo las nuevas.
-      # Las migraciones de módulos usan IF NOT EXISTS, por lo que son idempotentes.
-      - name: Sync migration history (remove remote-only versions)
+      # ── 5. Push migrations (con auto-repair del historial) ───────────────────
+      # Estrategia: primer intento de push; si falla con "Remote migration versions
+      # not found", el CLI mismo indica qué versiones reparar con
+      # "migration repair --status reverted VER1 VER2 ...". Extraemos esa lista
+      # y ejecutamos el repair (usa conexión directa a Postgres, no Management API).
+      # Luego hacemos push de nuevo. Las migraciones de módulos usan IF NOT EXISTS.
+      - name: Push database migrations
         working-directory: foundation
         run: |
-          python3 << 'PYEOF'
-          import os, json, urllib.request, glob, sys
+          PUSH_OUT=$(supabase db push 2>&1)
+          PUSH_EXIT=$?
+          echo "$PUSH_OUT"
 
-          token = os.environ['SUPABASE_ACCESS_TOKEN']
-          ref   = os.environ['SUPABASE_PROJECT_REF']
+          if [[ $PUSH_EXIT -eq 0 ]]; then
+            echo "✓ Push completado sin reparaciones"
+            exit 0
+          fi
 
-          # Versiones locales (timestamp prefix de cada archivo NNN_*.sql)
-          local_versions = set()
-          for f in glob.glob('supabase/migrations/[0-9]*.sql'):
-              basename = os.path.basename(f)
-              version = basename.split('_')[0]
-              local_versions.add(version)
+          # Extraer la lista de versiones a reparar del mensaje de error del CLI
+          VERSIONS=$(echo "$PUSH_OUT" | grep "migration repair --status reverted" | awk -F'reverted ' '{print $2}')
 
-          print(f"ℹ  Versiones locales: {len(local_versions)}")
+          if [[ -z "$VERSIONS" ]]; then
+            echo "✗ Push falló por razón desconocida — no hay versiones a reparar"
+            exit 1
+          fi
 
-          # Versiones en el remote
-          req = urllib.request.Request(
-            f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': 'SELECT version FROM supabase_migrations.schema_migrations ORDER BY version'}).encode(),
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-            method='POST'
-          )
-          try:
-            with urllib.request.urlopen(req) as resp:
-              remote_rows = json.loads(resp.read())
-          except urllib.error.HTTPError as e:
-            print(f"ℹ  No se pudo leer supabase_migrations: {e.read().decode()} — continuando")
-            sys.exit(0)
+          echo "Reparando historial de migraciones ($(echo $VERSIONS | wc -w) versiones)..."
+          supabase migration repair --status reverted $VERSIONS
 
-          remote_versions = [r['version'] for r in remote_rows]
-          orphans = [v for v in remote_versions if v not in local_versions]
-
-          if not orphans:
-            print("✓ Historial en sincronía — sin versiones huérfanas")
-            sys.exit(0)
-
-          print(f"ℹ  Eliminando {len(orphans)} versiones huérfanas del historial remote...")
-          versions_sql = ', '.join(f"'{v}'" for v in orphans)
-          del_sql = f"DELETE FROM supabase_migrations.schema_migrations WHERE version IN ({versions_sql})"
-          del_req = urllib.request.Request(
-            f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': del_sql}).encode(),
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-            method='POST'
-          )
-          try:
-            with urllib.request.urlopen(del_req) as resp:
-              print(f"✓ Eliminadas {len(orphans)} versiones — historial reparado")
-          except urllib.error.HTTPError as e:
-            print(f"✗ Error al reparar historial: {e.read().decode()}", file=sys.stderr)
-            sys.exit(1)
-          PYEOF
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
-
-      # ── 5. Push migrations ───────────────────────────────────────────────────
-      - name: Push database migrations
-        run: supabase db push
-        working-directory: foundation
+          echo "Reintentando push..."
+          supabase db push
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
