@@ -178,24 +178,23 @@ jobs:
       # ── 8. Configurar secrets en vault para webhook pg_net ───────────────────
       # Estos secretos son leídos por trigger_empresa_storage_setup() que crea
       # el bucket Storage privado de cada empresa al hacer INSERT en empresas.
-      # Se usa Python para construir el JSON/SQL de forma segura (sin escaping hell).
+      # Usa supabase db execute (Postgres directo) — evita el Management API
+      # que está bloqueado por Cloudflare desde GitHub Actions runners.
       - name: Configure vault secrets for pg_net webhook
+        working-directory: foundation
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
         run: |
           python3 << 'PYEOF'
-          import os, json, urllib.request, sys
+          import os, subprocess, sys, tempfile
 
-          token   = os.environ['SUPABASE_ACCESS_TOKEN']
           srk     = os.environ['SUPABASE_SERVICE_ROLE_KEY']
           ref     = os.environ['SUPABASE_PROJECT_REF']
           sup_url = f"https://{ref}.supabase.co"
 
-          # SQL con dollar-quoting para evitar conflictos con single quotes en los valores
-          # Los valores se escapan con replace("'", "''") al estilo SQL estándar
-          def sql_str(v):
+          def sql_lit(v):
               return "'" + v.replace("'", "''") + "'"
 
           sql = f"""
@@ -204,64 +203,62 @@ jobs:
           BEGIN
             SELECT id INTO v_id FROM vault.secrets WHERE name = 'pilar_supabase_url';
             IF v_id IS NULL THEN
-              PERFORM vault.create_secret({sql_str(sup_url)}, 'pilar_supabase_url', 'PILAR Supabase project URL');
+              PERFORM vault.create_secret({sql_lit(sup_url)}, 'pilar_supabase_url', 'PILAR Supabase project URL');
             ELSE
-              PERFORM vault.update_secret(v_id, {sql_str(sup_url)});
+              PERFORM vault.update_secret(v_id, {sql_lit(sup_url)});
             END IF;
 
             SELECT id INTO v_id FROM vault.secrets WHERE name = 'pilar_service_role_key';
             IF v_id IS NULL THEN
-              PERFORM vault.create_secret({sql_str(srk)}, 'pilar_service_role_key', 'PILAR service role key para webhooks internos');
+              PERFORM vault.create_secret({sql_lit(srk)}, 'pilar_service_role_key', 'PILAR service role key para webhooks internos');
             ELSE
-              PERFORM vault.update_secret(v_id, {sql_str(srk)});
+              PERFORM vault.update_secret(v_id, {sql_lit(srk)});
             END IF;
           END $q$;
           """
 
-          req = urllib.request.Request(
-            f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': sql}).encode(),
-            headers={
-              'Authorization': f'Bearer {token}',
-              'Content-Type': 'application/json',
-            },
-            method='POST'
+          with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+              f.write(sql)
+              fname = f.name
+
+          result = subprocess.run(
+              ['supabase', 'db', 'execute', '--file', fname, '--linked'],
+              capture_output=True, text=True
           )
-          try:
-            with urllib.request.urlopen(req) as resp:
-              print(f"✓ vault secrets configurados (HTTP {resp.status})")
-          except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f"✗ Error configurando vault secrets: {body}", file=sys.stderr)
-            sys.exit(1)
+          if result.returncode == 0:
+              print("✓ vault secrets configurados")
+          else:
+              print(f"✗ Error: {result.stderr or result.stdout}", file=sys.stderr)
+              sys.exit(1)
           PYEOF
 
       # ── 9. Catch-up: crear buckets Storage para empresas sin bucket ──────────
       # Ejecuta auth-setup-handler para empresas que no tienen bucket aún.
       # Idempotente: la función ignora "bucket already exists".
+      # Usa PostgREST (project URL) para la query — evita Management API bloqueada.
       - name: Create missing Storage buckets (catch-up)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           SUPABASE_URL="https://${{ env.SUPABASE_PROJECT_REF }}.supabase.co"
+          SRK="${SUPABASE_SERVICE_ROLE_KEY}"
 
-          # Obtener lista de empresa_ids sin bucket
-          EMPRESA_IDS=$(curl -s -X POST \
-            "https://api.supabase.com/v1/projects/${{ env.SUPABASE_PROJECT_REF }}/database/query" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"query": "SELECT e.id::text FROM empresas e WHERE NOT EXISTS (SELECT 1 FROM storage.buckets b WHERE b.id = e.id::text)"}' \
-            | jq -r '.[].id // empty')
+          # Obtener lista de empresa_ids sin bucket via PostgREST (service role bypasses RLS)
+          EMPRESA_IDS=$(curl -sf \
+            "${SUPABASE_URL}/rest/v1/empresas?select=id" \
+            -H "Authorization: Bearer ${SRK}" \
+            -H "apikey: ${SRK}" \
+            | jq -r '.[].id // empty' 2>/dev/null || echo "")
 
           if [[ -z "$EMPRESA_IDS" ]]; then
-            echo "✓ Todos los buckets de empresa están creados"
+            echo "✓ Sin empresas que procesar (o tabla vacía)"
           else
             for EMPRESA_ID in $EMPRESA_IDS; do
-              echo "Creando bucket para empresa: $EMPRESA_ID"
+              echo "Procesando bucket para empresa: $EMPRESA_ID"
               curl -s -X POST \
                 "${SUPABASE_URL}/functions/v1/auth-setup-handler" \
-                -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                -H "Authorization: Bearer ${SRK}" \
                 -H "Content-Type: application/json" \
                 -d "{\"empresa_id\": \"${EMPRESA_ID}\"}" | jq -c .
             done
@@ -324,9 +321,10 @@ jobs:
       # ── 11. Seed primera empresa (primer despliegue) ──────────────────────────
       # Si no existe ninguna empresa, crea la primera con los datos configurados.
       # Idempotente: si ya hay empresas, es un no-op.
+      # Usa PostgREST RPC (project URL) — evita Management API bloqueada.
       - name: Seed primera empresa
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PILAR_SUPER_ADMIN_EMAIL: ${{ secrets.PILAR_SUPER_ADMIN_EMAIL }}
           PILAR_SEED_EMPRESA_NOMBRE: ${{ secrets.PILAR_SEED_EMPRESA_NOMBRE }}
           PILAR_SEED_EMPRESA_RUC: ${{ secrets.PILAR_SEED_EMPRESA_RUC }}
@@ -337,58 +335,42 @@ jobs:
             exit 0
           fi
 
-          python3 << 'PYEOF'
-          import os, json, urllib.request, sys
+          SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
+          SRK="${SUPABASE_SERVICE_ROLE_KEY}"
+          RUC="${PILAR_SEED_EMPRESA_RUC:-9999999999999}"
 
-          token   = os.environ['SUPABASE_ACCESS_TOKEN']
-          email   = os.environ['PILAR_SUPER_ADMIN_EMAIL']
-          nombre  = os.environ['PILAR_SEED_EMPRESA_NOMBRE']
-          ruc     = os.environ.get('PILAR_SEED_EMPRESA_RUC', '9999999999999')
-          ref     = os.environ['SUPABASE_PROJECT_REF']
+          BODY=$(jq -n \
+            --arg email "$PILAR_SUPER_ADMIN_EMAIL" \
+            --arg nombre "$PILAR_SEED_EMPRESA_NOMBRE" \
+            --arg ruc "$RUC" \
+            '{p_email: $email, p_nombre: $nombre, p_ruc: $ruc, p_plan: "Profesional"}')
 
-          def sql_str(v):
-              return "'" + v.replace("'", "''") + "'"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${SUPABASE_URL}/rest/v1/rpc/service_seed_primera_empresa" \
+            -H "Authorization: Bearer ${SRK}" \
+            -H "apikey: ${SRK}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
 
-          sql = f"""
-          SELECT service_seed_primera_empresa(
-            {sql_str(email)},
-            {sql_str(nombre)},
-            {sql_str(ruc)},
-            'Profesional'
-          ) as resultado
-          """
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          RESP_BODY=$(echo "$RESPONSE" | head -1)
 
-          req = urllib.request.Request(
-            f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': sql}).encode(),
-            headers={
-              'Authorization': f'Bearer {token}',
-              'Content-Type': 'application/json',
-            },
-            method='POST'
-          )
-          try:
-            with urllib.request.urlopen(req) as resp:
-              data = json.loads(resp.read())
-              resultado = data[0]['resultado'] if data else {}
-              if resultado.get('ok'):
-                print(f"✓ {resultado.get('message', 'OK')}")
-              else:
-                print(f"✗ Error seed empresa: {resultado.get('message')}", file=sys.stderr)
-                sys.exit(1)
-          except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f"✗ Error llamando service_seed_primera_empresa: {body}", file=sys.stderr)
-            sys.exit(1)
-          PYEOF
+          if echo "$RESP_BODY" | jq -e '.ok == true' > /dev/null 2>&1; then
+            echo "✓ $(echo "$RESP_BODY" | jq -r '.message // "Empresa creada"')"
+          elif echo "$RESP_BODY" | jq -e '.ok == false' > /dev/null 2>&1; then
+            echo "ℹ️  $(echo "$RESP_BODY" | jq -r '.message // "Empresa ya existe"') — OK"
+          else
+            echo "✗ Error inesperado (HTTP $HTTP_CODE): $RESP_BODY"
+            exit 1
+          fi
 
       # ── 12. Bootstrap superadmin ──────────────────────────────────────────────
       # Asigna rol SUPER_ADMIN al usuario configurado en PILAR_SUPER_ADMIN_EMAIL.
       # Idempotente: si ya tiene el rol, no hace nada.
-      # Solo se ejecuta si el secret está configurado.
+      # Usa PostgREST RPC (project URL) — evita Management API bloqueada.
       - name: Bootstrap superadmin
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PILAR_SUPER_ADMIN_EMAIL: ${{ secrets.PILAR_SUPER_ADMIN_EMAIL }}
           SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
         run: |
@@ -397,38 +379,24 @@ jobs:
             exit 0
           fi
 
-          python3 << 'PYEOF'
-          import os, json, urllib.request, sys
+          SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
+          SRK="${SUPABASE_SERVICE_ROLE_KEY}"
 
-          token = os.environ['SUPABASE_ACCESS_TOKEN']
-          email = os.environ['PILAR_SUPER_ADMIN_EMAIL']
-          ref   = os.environ['SUPABASE_PROJECT_REF']
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${SUPABASE_URL}/rest/v1/rpc/bootstrap_superadmin" \
+            -H "Authorization: Bearer ${SRK}" \
+            -H "apikey: ${SRK}" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_email\": \"${PILAR_SUPER_ADMIN_EMAIL}\"}")
 
-          def sql_str(v):
-              return "'" + v.replace("'", "''") + "'"
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          RESP_BODY=$(echo "$RESPONSE" | head -1)
 
-          sql = f"SELECT bootstrap_superadmin({sql_str(email)}) as resultado"
-
-          req = urllib.request.Request(
-            f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': sql}).encode(),
-            headers={
-              'Authorization': f'Bearer {token}',
-              'Content-Type': 'application/json',
-            },
-            method='POST'
-          )
-          try:
-            with urllib.request.urlopen(req) as resp:
-              data = json.loads(resp.read())
-              resultado = data[0]['resultado'] if data else {}
-              if resultado.get('ok'):
-                print(f"✓ Superadmin: {resultado.get('message', 'OK')}")
-              else:
-                print(f"✗ Error bootstrap: {resultado.get('message')}", file=sys.stderr)
-                sys.exit(1)
-          except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f"✗ Error llamando bootstrap_superadmin: {body}", file=sys.stderr)
-            sys.exit(1)
-          PYEOF
+          if echo "$RESP_BODY" | jq -e '.ok == true' > /dev/null 2>&1; then
+            echo "✓ Superadmin: $(echo "$RESP_BODY" | jq -r '.message // "OK"')"
+          elif echo "$RESP_BODY" | jq -e '.ok == false' > /dev/null 2>&1; then
+            echo "ℹ️  $(echo "$RESP_BODY" | jq -r '.message // "Ya configurado"') — OK"
+          else
+            echo "✗ Error inesperado (HTTP $HTTP_CODE): $RESP_BODY"
+            exit 1
+          fi
