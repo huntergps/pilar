@@ -88,15 +88,17 @@ should_skip() {
 # ─── Cleanup: eliminar solo artefactos generados previamente ─────────────────
 section "── Limpiando artefactos anteriores ────────────────────────────────"
 
-# Solo eliminar mod_*.sql (nunca tocar 0NN_*.sql de foundation)
-MOD_FILES=("$MIGRATIONS_DIR"/mod_*.sql)
-if [[ -e "${MOD_FILES[0]}" ]]; then
-  for f in "${MOD_FILES[@]}"; do
-    rm -f "$f"
-    info "  Eliminado: $(basename "$f")"
-  done
-else
-  info "  Sin archivos mod_*.sql anteriores"
+# Solo eliminar artefactos de módulos generados (nunca tocar foundation 2026NNNNN_*.sql fijos)
+# Elimina tanto el formato antiguo mod_*.sql como el nuevo 202602NNNNNN_*.sql
+DELETED=0
+for f in "$MIGRATIONS_DIR"/mod_*.sql "$MIGRATIONS_DIR"/20260200*.sql; do
+  [[ -e "$f" ]] || continue
+  rm -f "$f"
+  info "  Eliminado: $(basename "$f")"
+  DELETED=$((DELETED+1))
+done
+if [[ $DELETED -eq 0 ]]; then
+  info "  Sin artefactos de módulos anteriores"
 fi
 
 # Eliminar subdirectorios de functions que NO sean de foundation
@@ -132,11 +134,13 @@ copy_migrations() {
 
   local found=0
   for f in $(ls "$src_dir"/*.sql 2>/dev/null | sort); do
-    local basename dest
+    local basename dest ts
     basename="$(basename "$f")"
-    dest="$MIGRATIONS_DIR/mod_$(printf '%03d' $N)_${module_name}_${basename}"
+    # Usa timestamp 20260200NNNNNN para que Supabase CLI lo reconozca como migración válida
+    ts="20260200$(printf '%06d' $N)"
+    dest="$MIGRATIONS_DIR/${ts}_${module_name}_${basename}"
     cp "$f" "$dest"
-    info "  + mod_$(printf '%03d' $N)_${module_name}_${basename}"
+    info "  + ${ts}_${module_name}_${basename}"
     N=$((N + 1))
     MOD_MIGRATIONS=$((MOD_MIGRATIONS + 1))
     found=1

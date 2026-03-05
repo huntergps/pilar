@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart'; // BuildContextBreakpoints extension
 import '../../../core/widgets/chatter_vincular_dialog.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
@@ -144,29 +145,12 @@ class _PanelLista extends ConsumerWidget {
         Expanded(
           child: conversaciones.when(
             loading: () => const PilarLoadingCenter(),
-            error: (e, _) => Center(
-              child: InfoBar(
-                title: const Text('Error cargando conversaciones'),
-                content: Text(e.toString()),
-                severity: InfoBarSeverity.error,
-              ),
-            ),
+            error: (e, _) => PilarErrorState(error: e),
             data: (lista) {
               if (lista.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(FluentIcons.chat, size: 48),
-                      const SizedBox(height: Spacing.ms),
-                      Text(
-                        'Sin conversaciones',
-                        style: FluentTheme.of(context).typography.subtitle,
-                      ),
-                      const SizedBox(height: Spacing.xs),
-                      const Text('Pulsa + para iniciar una conversación'),
-                    ],
-                  ),
+                return const PilarEmptyState(
+                  icon: FluentIcons.chat,
+                  message: 'Sin conversaciones',
                 );
               }
               return ListView.builder(
@@ -317,18 +301,9 @@ class _PanelDetalle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final conv = ref.watch(convSeleccionadaDetalleProvider);
     if (conv == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(FluentIcons.chat, size: 64),
-            const SizedBox(height: Spacing.md),
-            Text(
-              'Selecciona una conversación',
-              style: FluentTheme.of(context).typography.subtitle,
-            ),
-          ],
-        ),
+      return const PilarEmptyState(
+        icon: FluentIcons.chat,
+        message: 'Selecciona una conversación',
       );
     }
     return _ThreadView(conv: conv);
@@ -539,21 +514,12 @@ class _ThreadViewState extends ConsumerState<_ThreadView> {
         Expanded(
           child: mensajesAsync.when(
             loading: () => const PilarLoadingCenter(),
-            error: (e, _) => Center(
-              child: InfoBar(
-                title: const Text('Error cargando mensajes'),
-                content: Text(e.toString()),
-                severity: InfoBarSeverity.error,
-              ),
-            ),
+            error: (e, _) => PilarErrorState(error: e),
             data: (mensajes) {
               if (mensajes.isEmpty) {
-                return Center(
-                  child: Text(
-                    'Sin mensajes',
-                    style: theme.typography.body
-                        ?.copyWith(color: theme.inactiveColor),
-                  ),
+                return const PilarEmptyState(
+                  icon: FluentIcons.chat,
+                  message: 'Sin mensajes',
                 );
               }
               return ListView.builder(

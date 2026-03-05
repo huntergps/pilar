@@ -5,6 +5,7 @@ import 'package:brick_gen/brick_gen.dart';
 import '../../../core/providers/presencia_provider.dart' show EstadoPresencia;
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_spinner.dart';
 import '../../../core/widgets/user_card.dart';
@@ -119,13 +120,7 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
         Expanded(
           child: canalesAsync.when(
             loading: () => const PilarLoadingCenter(),
-            error: (e, _) => Center(
-              child: InfoBar(
-                title: const Text('Error'),
-                content: Text(e.toString()),
-                severity: InfoBarSeverity.error,
-              ),
-            ),
+            error: (e, _) => PilarErrorState(error: e),
             data: (canales) {
               final grupos = canales
                   .where((c) => (c['tipo'] as String? ?? 'group') != 'directo')
@@ -142,25 +137,13 @@ class _PanelCanalesState extends ConsumerState<_PanelCanales> {
               };
 
               if (!hayContenido) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        scope == ChatScope.personal
-                            ? FluentIcons.contact
-                            : FluentIcons.people,
-                        size: 40,
-                      ),
-                      const SizedBox(height: Spacing.sm),
-                      Text(
-                        scope == ChatScope.personal
-                            ? 'Sin mensajes directos'
-                            : 'Sin canales',
-                        style: theme.typography.body,
-                      ),
-                    ],
-                  ),
+                return PilarEmptyState(
+                  icon: scope == ChatScope.personal
+                      ? FluentIcons.contact
+                      : FluentIcons.people,
+                  message: scope == ChatScope.personal
+                      ? 'Sin mensajes directos'
+                      : 'Sin canales',
                 );
               }
 
@@ -356,14 +339,11 @@ class _NuevoCanalGrupalDialogState
                         }).toList();
 
                   if (filtrados.isEmpty) {
-                    return Center(
-                      child: Text(
-                        _busqueda.isEmpty
-                            ? 'Sin otros usuarios'
-                            : 'Sin resultados',
-                        style: theme.typography.body
-                            ?.copyWith(color: theme.inactiveColor),
-                      ),
+                    return PilarEmptyState(
+                      message: _busqueda.isEmpty
+                          ? 'Sin otros usuarios'
+                          : 'Sin resultados',
+                      icon: FluentIcons.contact,
                     );
                   }
 
@@ -514,13 +494,7 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
               height: 280,
               child: miembrosAsync.when(
                 loading: () => const PilarLoadingCenter(),
-                error: (e, _) => Center(
-                  child: InfoBar(
-                    title: const Text('Error'),
-                    content: Text(e.toString()),
-                    severity: InfoBarSeverity.error,
-                  ),
-                ),
+                error: (e, _) => PilarErrorState(error: e),
                 data: (miembros) {
                   final filtrados = _busqueda.isEmpty
                       ? miembros
@@ -534,12 +508,11 @@ class _NuevoDmDialogState extends ConsumerState<_NuevoDmDialog> {
                         }).toList();
 
                   if (filtrados.isEmpty) {
-                    return Center(
-                      child: Text(
-                        _busqueda.isEmpty ? 'Sin otros usuarios' : 'Sin resultados',
-                        style: theme.typography.body
-                            ?.copyWith(color: theme.inactiveColor),
-                      ),
+                    return PilarEmptyState(
+                      message: _busqueda.isEmpty
+                          ? 'Sin otros usuarios'
+                          : 'Sin resultados',
+                      icon: FluentIcons.contact,
                     );
                   }
 
@@ -752,18 +725,9 @@ class _PanelMensajes extends ConsumerWidget {
     final canalId = ref.watch(canalSeleccionadoProvider);
 
     if (canalId == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(FluentIcons.people, size: 64),
-            const SizedBox(height: Spacing.md),
-            Text(
-              'Selecciona un canal',
-              style: FluentTheme.of(context).typography.subtitle,
-            ),
-          ],
-        ),
+      return const PilarEmptyState(
+        icon: FluentIcons.people,
+        message: 'Selecciona un canal',
       );
     }
 
@@ -874,23 +838,12 @@ class _CanalMensajesView extends ConsumerWidget {
         Expanded(
           child: mensajesAsync.when(
             loading: () => const PilarLoadingCenter(),
-            error: (e, _) => Center(
-              child: InfoBar(
-                title: const Text('Error cargando mensajes'),
-                content: Text(e.toString()),
-                severity: InfoBarSeverity.error,
-              ),
-            ),
+            error: (e, _) => PilarErrorState(error: e),
             data: (mensajes) {
               if (mensajes.isEmpty) {
-                return Center(
-                  child: Text(
-                    'Sin mensajes',
-                    style: FluentTheme.of(context)
-                        .typography
-                        .body
-                        ?.copyWith(color: FluentTheme.of(context).inactiveColor),
-                  ),
+                return const PilarEmptyState(
+                  icon: FluentIcons.chat,
+                  message: 'Sin mensajes',
                 );
               }
               return ListView.builder(

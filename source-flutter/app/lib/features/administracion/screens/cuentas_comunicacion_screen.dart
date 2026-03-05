@@ -2,8 +2,6 @@ import 'dart:math';
 
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
@@ -124,12 +122,7 @@ class _CuentasComunicacionScreenState
           }
 
           // Separar en empresa vs personales
-          String? uid;
-          try {
-            uid = Supabase.instance.client.auth.currentUser?.id;
-          } catch (_) {
-            uid = null; // Supabase no inicializado (tests)
-          }
+          final uid = ref.read(sessionProvider)?.user.id;
           final empresariales = cuentas.where((c) => !c.esPersonal).toList();
           final personales =
               cuentas.where((c) => c.esPersonal).toList();
@@ -1034,11 +1027,9 @@ class _CuentaDialogState extends ConsumerState<_CuentaDialog> {
 
     setState(() => _saving = true);
 
-    final uid = _esPersonal
-        ? Supabase.instance.client.auth.currentUser?.id
-        : null;
-    final empresaId = Supabase.instance.client.auth.currentSession
-        ?.user.appMetadata['empresa_id'] as String?;
+    final session = ref.read(sessionProvider);
+    final uid = _esPersonal ? session?.user.id : null;
+    final empresaId = session?.user.appMetadata['empresa_id'] as String?;
 
     final payload = <String, dynamic>{
       if (empresaId != null) 'empresa_id': empresaId,

@@ -2,8 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/empresa_provider.dart';
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
@@ -408,7 +407,7 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
                 label: 'Email',
                 initialValue: (empresa.email?.isNotEmpty == true)
                     ? empresa.email
-                    : Supabase.instance.client.auth.currentUser?.email,
+                    : ref.read(sessionProvider)?.user.email,
                 keyboardType: TextInputType.emailAddress,
                 readOnly: !puedeEditar,
                 onSaved: (v) => _email = v,

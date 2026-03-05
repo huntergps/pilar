@@ -3,11 +3,11 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 
 import '../../../core/offline/connectivity_service.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/perfil_provider.dart';
 import '../../../core/utils/timezones.dart';
 import '../../../core/widgets/user_card.dart';
@@ -47,8 +47,7 @@ class UsuariosScreen extends ConsumerStatefulWidget {
 }
 
 class _UsuariosScreenState extends ConsumerState<UsuariosScreen> {
-  String get _currentUserId =>
-      Supabase.instance.client.auth.currentUser?.id ?? '';
+  String get _currentUserId => ref.read(sessionProvider)?.user.id ?? '';
 
   void _showInviteDialog(BuildContext context) {
     showDialog<void>(
