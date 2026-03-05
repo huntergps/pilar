@@ -90,16 +90,16 @@ jobs:
       - name: Push database migrations
         working-directory: foundation
         run: |
-          PUSH_OUT=$(supabase db push 2>&1)
-          PUSH_EXIT=$?
-          echo "$PUSH_OUT"
-
-          if [[ $PUSH_EXIT -eq 0 ]]; then
+          # Capturar output sin que set -e aborte al primer intento fallido
+          if PUSH_OUT=$(supabase db push 2>&1); then
             echo "✓ Push completado sin reparaciones"
+            echo "$PUSH_OUT"
             exit 0
           fi
 
-          # Extraer la lista de versiones a reparar del mensaje de error del CLI
+          echo "$PUSH_OUT"
+
+          # Extraer versiones a reparar del mensaje de error del CLI
           VERSIONS=$(echo "$PUSH_OUT" | grep "migration repair --status reverted" | awk -F'reverted ' '{print $2}')
 
           if [[ -z "$VERSIONS" ]]; then
@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
 
-          echo "Reparando historial de migraciones ($(echo $VERSIONS | wc -w) versiones)..."
+          echo "Reparando historial de migraciones ($(echo $VERSIONS | wc -w | tr -d ' ') versiones)..."
           supabase migration repair --status reverted $VERSIONS
 
           echo "Reintentando push..."
