@@ -1,6 +1,5 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show StorageException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluent_ui_reactive/fluent_ui_reactive.dart';
 import '../../../core/providers/auth_provider.dart';
@@ -195,13 +194,13 @@ class _EmpresaScreenState extends ConsumerState<EmpresaScreen> {
           .updateEmpresa(params: {'logo_url': url});
       // La invalidación de empresaConfigProvider y misEmpresasProvider
       // la hace el provider internamente.
-    } on StorageException catch (e) {
+    } catch (e) {
       if (mounted) {
         displayInfoBar(
           context,
           builder: (_, close) => InfoBar(
             title: const Text('Error al subir logo'),
-            content: Text(e.message),
+            content: Text(e.toString()),
             severity: InfoBarSeverity.error,
             onClose: close,
           ),

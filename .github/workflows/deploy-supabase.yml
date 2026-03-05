@@ -81,39 +81,66 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      # ── 4b. Reparar historial de migraciones (eliminar entradas mod_* obsoletas) ─
-      # Las versiones con formato "mod_NNN_*" son artefactos del build anterior.
-      # El nuevo formato usa timestamps (202602NNNNNN_*). Limpiamos la tabla
-      # supabase_migrations para que db push pueda aplicar las nuevas versiones.
-      - name: Repair migration history (remove legacy mod_* entries)
+      # ── 4b. Sincronizar historial de migraciones ─────────────────────────────────
+      # Elimina del remote las versiones que no existen localmente.
+      # Esto ocurre cuando migraciones fueron aplicadas vía MCP/Studio pero no
+      # están en el repositorio. El CLI rechaza hacer push si encuentra esas
+      # versiones "huérfanas". Al eliminarlas, db push aplica solo las nuevas.
+      # Las migraciones de módulos usan IF NOT EXISTS, por lo que son idempotentes.
+      - name: Sync migration history (remove remote-only versions)
+        working-directory: foundation
         run: |
           python3 << 'PYEOF'
-          import os, json, urllib.request, sys
+          import os, json, urllib.request, glob, sys
 
           token = os.environ['SUPABASE_ACCESS_TOKEN']
           ref   = os.environ['SUPABASE_PROJECT_REF']
 
-          sql = """
-          DELETE FROM supabase_migrations.schema_migrations
-          WHERE version LIKE 'mod_%';
-          """
+          # Versiones locales (timestamp prefix de cada archivo NNN_*.sql)
+          local_versions = set()
+          for f in glob.glob('supabase/migrations/[0-9]*.sql'):
+              basename = os.path.basename(f)
+              version = basename.split('_')[0]
+              local_versions.add(version)
 
+          print(f"ℹ  Versiones locales: {len(local_versions)}")
+
+          # Versiones en el remote
           req = urllib.request.Request(
             f'https://api.supabase.com/v1/projects/{ref}/database/query',
-            data=json.dumps({'query': sql}).encode(),
-            headers={
-              'Authorization': f'Bearer {token}',
-              'Content-Type': 'application/json',
-            },
+            data=json.dumps({'query': 'SELECT version FROM supabase_migrations.schema_migrations ORDER BY version'}).encode(),
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
             method='POST'
           )
           try:
             with urllib.request.urlopen(req) as resp:
-              print(f"✓ Historial de migraciones reparado (HTTP {resp.status})")
+              remote_rows = json.loads(resp.read())
           except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            # Si la tabla no existe o no hay entradas, no es error crítico
-            print(f"ℹ️  Repair migration: {body} — continuando")
+            print(f"ℹ  No se pudo leer supabase_migrations: {e.read().decode()} — continuando")
+            sys.exit(0)
+
+          remote_versions = [r['version'] for r in remote_rows]
+          orphans = [v for v in remote_versions if v not in local_versions]
+
+          if not orphans:
+            print("✓ Historial en sincronía — sin versiones huérfanas")
+            sys.exit(0)
+
+          print(f"ℹ  Eliminando {len(orphans)} versiones huérfanas del historial remote...")
+          versions_sql = ', '.join(f"'{v}'" for v in orphans)
+          del_sql = f"DELETE FROM supabase_migrations.schema_migrations WHERE version IN ({versions_sql})"
+          del_req = urllib.request.Request(
+            f'https://api.supabase.com/v1/projects/{ref}/database/query',
+            data=json.dumps({'query': del_sql}).encode(),
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            method='POST'
+          )
+          try:
+            with urllib.request.urlopen(del_req) as resp:
+              print(f"✓ Eliminadas {len(orphans)} versiones — historial reparado")
+          except urllib.error.HTTPError as e:
+            print(f"✗ Error al reparar historial: {e.read().decode()}", file=sys.stderr)
+            sys.exit(1)
           PYEOF
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
