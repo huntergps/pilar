@@ -91,7 +91,7 @@ jobs:
         working-directory: foundation
         run: |
           # Capturar output sin que set -e aborte al primer intento fallido
-          if PUSH_OUT=$(supabase db push 2>&1); then
+          if PUSH_OUT=$(supabase db push --yes 2>&1); then
             echo "✓ Push completado sin reparaciones"
             echo "$PUSH_OUT"
             exit 0
@@ -111,7 +111,7 @@ jobs:
           supabase migration repair --status reverted $VERSIONS
 
           echo "Reintentando push..."
-          supabase db push
+          supabase db push --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
