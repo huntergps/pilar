@@ -25,6 +25,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pilar_print/pilar_print.dart';
 import 'package:pilar_erp/core/providers/usuario_provider.dart';
 import 'package:pilar_erp/features/administracion/screens/impresoras_screen.dart';
+import 'package:pilar_erp/features/administracion/providers/impresoras_admin_provider.dart';
 
 import '../../helpers/test_utils.dart';
 

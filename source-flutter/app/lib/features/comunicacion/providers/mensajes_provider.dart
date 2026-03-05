@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:brick_offline_first/brick_offline_first.dart';
+import 'package:brick_sqlite/brick_sqlite.dart';
 
 import 'package:brick_gen/brick_gen.dart';
 
@@ -54,6 +57,23 @@ final mensajesProvider = FutureProvider.autoDispose
     channel.unsubscribe();
   });
 
+  // Ruta nativa (SQLite) en plataformas non-web.
+  if (!kIsWeb && PilarRepository.isInitialized) {
+    final repo = PilarRepository.instance;
+    final results = await repo.get<ComMensaje>(
+      query: Query(where: [Where.exact('conversacionId', convId)]),
+      policy: OfflineFirstGetPolicy.localOnly,
+    );
+    // Si hay datos locales los devolvemos; luego Realtime actualizará.
+    if (results.isNotEmpty) return results;
+    // Sin caché local: fetch remoto y almacenar en SQLite.
+    return repo.get<ComMensaje>(
+      query: Query(where: [Where.exact('conversacionId', convId)]),
+      policy: OfflineFirstGetPolicy.awaitRemote,
+    );
+  }
+
+  // Web fallback: RPC directa.
   final rows = await Supabase.instance.client.rpc(
     'com_get_mensajes_conversacion',
     params: {'p_conv_id': convId, 'p_limit': 100, 'p_offset': 0},
@@ -76,6 +96,21 @@ final historialMensajesProvider =
   final empresaId = ref.watch(empresaActivaIdProvider);
   if (empresaId == null) return const [];
 
+  // Ruta nativa (SQLite) en plataformas non-web.
+  if (!kIsWeb && PilarRepository.isInitialized) {
+    final repo = PilarRepository.instance;
+    final results = await repo.get<ComMensaje>(
+      query: Query(
+        where: [Where.exact('tipo', 'outbound')],
+        orderBy: [const OrderBy('creadoEn', ascending: false)],
+        limit: 200,
+      ),
+      policy: OfflineFirstGetPolicy.awaitRemote,
+    );
+    return results;
+  }
+
+  // Web fallback: SELECT directo.
   final rows = await Supabase.instance.client
       .from('com_mensajes')
       .select()

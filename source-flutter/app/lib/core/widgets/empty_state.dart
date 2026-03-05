@@ -15,13 +15,23 @@ class PilarEmptyState extends StatelessWidget {
   const PilarEmptyState({
     super.key,
     required this.message,
+    this.subtitle,
     this.icon,
+    this.iconColor,
     this.action,
     this.iconSize = 48.0,
   });
 
   final String message;
+
+  /// Texto secundario opcional bajo el mensaje principal.
+  final String? subtitle;
+
   final IconData? icon;
+
+  /// Color del ícono. Si es null, usa `theme.inactiveColor.withValues(alpha: 0.5)`.
+  final Color? iconColor;
+
   final Widget? action;
   final double iconSize;
 
@@ -37,14 +47,23 @@ class PilarEmptyState extends StatelessWidget {
             Icon(
               icon ?? FluentIcons.inbox,
               size: iconSize,
-              color: theme.inactiveColor.withValues(alpha: 0.5),
+              color: iconColor ?? theme.inactiveColor.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 12),
             Text(
               message,
-              style: theme.typography.body?.copyWith(color: theme.inactiveColor),
+              style: theme.typography.subtitle?.copyWith(color: theme.inactiveColor),
               textAlign: TextAlign.center,
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle!,
+                style: theme.typography.body?.copyWith(
+                    color: theme.resources.textFillColorSecondary),
+                textAlign: TextAlign.center,
+              ),
+            ],
             if (action != null) ...[
               const SizedBox(height: 16),
               action!,

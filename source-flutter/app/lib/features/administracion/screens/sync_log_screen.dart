@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/pilar_breakpoints.dart';
 import '../../../core/theme/pilar_spacing.dart';
 import '../../../core/widgets/loading_spinner.dart';
+import '../../../core/widgets/empty_state.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -227,8 +228,22 @@ class _SyncLogScreenState extends ConsumerState<SyncLogScreen> {
               ),
               data: (items) {
                 if (items.isEmpty) {
-                  return _EmptyState(
-                    onRefresh: () => ref.invalidate(syncQueueItemsProvider),
+                  return PilarEmptyState(
+                    icon: FluentIcons.sync_status,
+                    iconColor: Colors.successPrimaryColor,
+                    message: 'Cola vacía — todo sincronizado',
+                    subtitle: 'No hay requests pendientes de envío a Supabase.',
+                    action: Button(
+                      onPressed: () => ref.invalidate(syncQueueItemsProvider),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(FluentIcons.refresh, size: 14),
+                          SizedBox(width: Spacing.sm),
+                          Text('Actualizar'),
+                        ],
+                      ),
+                    ),
                   );
                 }
                 return LayoutBuilder(
@@ -565,45 +580,6 @@ class _MethodBadge extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onRefresh});
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(FluentIcons.sync_status,
-              size: 48, color: Colors.successPrimaryColor),
-          const SizedBox(height: Spacing.ms),
-          Text('Cola vacía — todo sincronizado',
-              style: theme.typography.subtitle),
-          const SizedBox(height: Spacing.sm),
-          Text(
-            'No hay requests pendientes de envío a Supabase.',
-            style: theme.typography.body?.copyWith(
-                color: theme.resources.textFillColorSecondary),
-          ),
-          const SizedBox(height: Spacing.md),
-          Button(
-            onPressed: onRefresh,
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(FluentIcons.refresh, size: 14),
-                SizedBox(width: Spacing.sm),
-                Text('Actualizar'),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _WebUnavailable extends StatelessWidget {
   const _WebUnavailable();

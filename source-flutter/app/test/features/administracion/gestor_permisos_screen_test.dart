@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pilar_erp/core/providers/usuario_provider.dart';
 import 'package:pilar_erp/features/administracion/screens/gestor_permisos_screen.dart';
+import 'package:pilar_erp/features/administracion/providers/gestor_permisos_provider.dart';
 
 import '../../helpers/test_utils.dart';
 
@@ -412,9 +413,10 @@ void main() {
       );
 
       await tester.pumpWidget(app);
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(find.textContaining('Error'), findsOneWidget);
+      // PilarErrorState muestra el texto de la excepción (e.g. "Exception: sin conexión")
+      expect(find.textContaining('sin conexión'), findsOneWidget);
     });
   });
 

@@ -9,6 +9,7 @@ import '../../../core/config/pilar_constants.dart';
 import '../../../core/providers/usuario_provider.dart';
 import '../../../core/theme/pilar_spacing.dart';
 import '../../../core/widgets/loading_spinner.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../providers/impresoras_admin_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,17 @@ class ImpresorasScreen extends ConsumerWidget {
       ),
       content: impresorasAsync.when(
         data: (impresoras) => impresoras.isEmpty
-            ? _EmptyState(tieneAdmin: tieneAdmin, onCrear: () => _showCrearDialog(context, ref))
+            ? PilarEmptyState(
+                icon: FluentIcons.print,
+                message: 'No hay impresoras configuradas',
+                subtitle: 'Crea impresoras virtuales para gestionar la impresión en $kAppName.',
+                action: tieneAdmin
+                    ? FilledButton(
+                        onPressed: () => _showCrearDialog(context, ref),
+                        child: const Text('Crear primera impresora'),
+                      )
+                    : null,
+              )
             : _ImpresorasList(impresoras: impresoras, tieneAdmin: tieneAdmin),
         loading: () => const PilarLoadingCenter(),
         error: (e, _) => Center(
@@ -830,35 +841,3 @@ class _CrearImpresoraDialogState extends ConsumerState<_CrearImpresoraDialog> {
 // Empty state
 // ---------------------------------------------------------------------------
 
-class _EmptyState extends StatelessWidget {
-  final bool tieneAdmin;
-  final VoidCallback onCrear;
-
-  const _EmptyState({required this.tieneAdmin, required this.onCrear});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(FluentIcons.print, size: 48),
-          const SizedBox(height: Spacing.md),
-          Text(
-            'No hay impresoras configuradas',
-            style: FluentTheme.of(context).typography.subtitle,
-          ),
-          const SizedBox(height: Spacing.sm),
-          const Text('Crea impresoras virtuales para gestionar la impresión en $kAppName.'),
-          if (tieneAdmin) ...[
-            const SizedBox(height: Spacing.md),
-            FilledButton(
-              onPressed: onCrear,
-              child: const Text('Crear primera impresora'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
